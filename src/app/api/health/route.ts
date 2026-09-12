@@ -16,7 +16,11 @@ export async function GET() {
       { status: "ok", database: "reachable" },
       { headers: { "cache-control": "no-store" } },
     );
-  } catch {
+  } catch (error) {
+    console.error(
+      "TutorFlow health check failed:",
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return Response.json(
       { status: "degraded", database: "unreachable" },
       { status: 503, headers: { "cache-control": "no-store" } },
