@@ -24,8 +24,33 @@ const schema = z.object({
 
 export type ServerEnv = z.infer<typeof schema>;
 
+function vercelProductionUrl(): string | undefined {
+  const value = process.env.VERCEL_PROJECT_PRODUCTION_URL;
+  if (!value) return undefined;
+  return value.startsWith("http://") || value.startsWith("https://")
+    ? value
+    : `https://${value}`;
+}
+
+function normalizedEnv() {
+  return {
+    ...process.env,
+    NEXT_PUBLIC_SUPABASE_URL:
+      process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
+      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.SUPABASE_PUBLISHABLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_ANON_KEY,
+    SUPABASE_SECRET_KEY:
+      process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY,
+    NEXT_PUBLIC_SITE_URL:
+      process.env.NEXT_PUBLIC_SITE_URL || vercelProductionUrl(),
+  };
+}
+
 export function serverEnv(): ServerEnv {
-  const parsed = schema.safeParse(process.env);
+  const parsed = schema.safeParse(normalizedEnv());
   if (!parsed.success) {
     throw new Error(
       `Invalid server configuration: ${parsed.error.issues.map((issue) => issue.path.join(".")).join(", ")}`,
@@ -35,7 +60,9 @@ export function serverEnv(): ServerEnv {
 }
 
 export function siteUrl(): string {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "");
+  const configured = (
+    process.env.NEXT_PUBLIC_SITE_URL || vercelProductionUrl()
+  )?.replace(/\/$/, "");
   if (configured) return configured;
   if (process.env.NODE_ENV !== "production") return "http://localhost:3000";
   throw new Error("NEXT_PUBLIC_SITE_URL is required in production");
@@ -43,7 +70,10 @@ export function siteUrl(): string {
 
 export function isSupabaseConfigured(): boolean {
   return Boolean(
-    process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL) &&
+    (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+      process.env.SUPABASE_PUBLISHABLE_KEY ||
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_ANON_KEY),
   );
 }

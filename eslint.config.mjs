@@ -10,5 +10,6 @@ export default defineConfig([
     "node_modules/**",
     "coverage/**",
     ".tutorflow/**",
+    ".agents/**",
   ]),
 ]);

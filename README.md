@@ -34,7 +34,7 @@ npx supabase db push
 npx supabase migration list
 ```
 
-The required migration is `supabase/migrations/20260912121318_production_foundation.sql`. It creates profiles, subscriptions, tenant aggregates, durable sync/reminder/payment queues, webhook idempotency records, private attachment metadata, RLS, and the private `attachments` bucket.
+The required migrations are `supabase/migrations/20260912121318_production_foundation.sql` and `supabase/migrations/20260912181500_fix_payu_plan_ambiguity.sql`. They create profiles, subscriptions, tenant aggregates, durable sync/reminder/payment queues, webhook idempotency records, private attachment metadata, RLS, the private `attachments` bucket, and the production PayU confirmation function.
 
 3. Run database policy tests against a local Supabase stack before production changes:
 
@@ -101,6 +101,13 @@ Import the GitHub repository and use:
 - Production branch: the protected production branch
 
 Add every variable from `.env.example` to Production. Use separate Supabase/Google/PayU sandbox credentials for Preview. Never set `TUTORFLOW_DATA_DIR` in Vercel. `NEXT_PUBLIC_SITE_URL` must be the canonical HTTPS custom domain, not a Vercel preview or localhost URL.
+
+If the official Supabase Vercel integration is connected, TutorFlow also accepts
+its `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and
+`SUPABASE_SERVICE_ROLE_KEY` variables. Explicit `NEXT_PUBLIC_SUPABASE_*` and
+`SUPABASE_SECRET_KEY` values take precedence. On Vercel,
+`VERCEL_PROJECT_PRODUCTION_URL` is used as a safe site URL fallback when
+`NEXT_PUBLIC_SITE_URL` is absent.
 
 Attach and verify the custom domain in Vercel, make it primary, redirect the generated `*.vercel.app` hostname to it, and redeploy after setting the domain-dependent variables.
 
