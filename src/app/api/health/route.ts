@@ -1,11 +1,9 @@
 import { createSupabaseAdminClient } from "@/server/supabase";
-import { serverEnv } from "@/server/env";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    serverEnv();
     const supabase = createSupabaseAdminClient();
     const { error } = await supabase
       .from("profiles")
