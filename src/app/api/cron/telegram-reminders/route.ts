@@ -1,13 +1,24 @@
 import { decryptSecret } from "@/server/crypto";
-import { isAuthorizedCron } from "@/server/cron";
+import {
+  isAuthorizedCron,
+  schedulerFailureResponse,
+  schedulerUnauthorizedResponse,
+} from "@/server/cron";
 import { createSupabaseAdminClient } from "@/server/supabase";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  if (!isAuthorizedCron(request))
-    return Response.json({ ok: false }, { status: 401 });
+  if (!isAuthorizedCron(request)) return schedulerUnauthorizedResponse();
+  try {
+    return await processReminders();
+  } catch {
+    return schedulerFailureResponse();
+  }
+}
+
+async function processReminders() {
   const supabase = createSupabaseAdminClient();
   const now = new Date().toISOString();
   const { data: deliveries, error } = await supabase
@@ -20,6 +31,10 @@ export async function GET(request: Request) {
     .limit(30);
   if (error) throw error;
   let sent = 0;
+  let retried = 0;
+  let skipped = 0;
+  let failed = 0;
+  let processed = 0;
   for (const delivery of deliveries ?? []) {
     const { data: claimed } = await supabase
       .from("reminder_deliveries")
@@ -27,7 +42,12 @@ export async function GET(request: Request) {
       .eq("id", delivery.id)
       .in("status", ["pending", "failed"])
       .select("id");
-    if (!claimed?.length) continue;
+    if (!claimed?.length) {
+      skipped += 1;
+      continue;
+    }
+    processed += 1;
+    if (delivery.attempts > 0) retried += 1;
     try {
       const [{ data: connection }, { data: stateRow }, { data: profile }] =
         await Promise.all([
@@ -72,6 +92,7 @@ export async function GET(request: Request) {
             sent_at: null,
           })
           .eq("id", delivery.id);
+        skipped += 1;
         continue;
       }
       const names = lesson.participantIds
@@ -110,6 +131,7 @@ export async function GET(request: Request) {
         .eq("id", delivery.id);
       sent += 1;
     } catch (error) {
+      failed += 1;
       const attempts = delivery.attempts + 1;
       await supabase
         .from("reminder_deliveries")
@@ -125,5 +147,12 @@ export async function GET(request: Request) {
         .eq("id", delivery.id);
     }
   }
-  return Response.json({ ok: true, processed: deliveries?.length ?? 0, sent });
+  return Response.json({
+    ok: true,
+    processed,
+    sent,
+    retried,
+    skipped,
+    failed,
+  });
 }

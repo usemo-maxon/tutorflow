@@ -1,4 +1,8 @@
-import { isAuthorizedCron } from "@/server/cron";
+import {
+  isAuthorizedCron,
+  schedulerFailureResponse,
+  schedulerUnauthorizedResponse,
+} from "@/server/cron";
 import { updateStateAsAdmin } from "@/server/admin-state";
 import { createSupabaseAdminClient } from "@/server/supabase";
 
@@ -6,11 +10,18 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  if (!isAuthorizedCron(request))
-    return Response.json({ ok: false }, { status: 401 });
+  if (!isAuthorizedCron(request)) return schedulerUnauthorizedResponse();
+  try {
+    return await runMaintenance();
+  } catch {
+    return schedulerFailureResponse();
+  }
+}
+
+async function runMaintenance() {
   const supabase = createSupabaseAdminClient();
   const now = new Date();
-  await supabase
+  const { error: trialError } = await supabase
     .from("subscriptions")
     .update({
       status: "read_only",
@@ -19,7 +30,8 @@ export async function GET(request: Request) {
     })
     .eq("status", "trial")
     .lt("trial_ends_at", now.toISOString());
-  await supabase
+  if (trialError) throw trialError;
+  const { error: renewalError } = await supabase
     .from("subscriptions")
     .update({
       status: "past_due",
@@ -28,10 +40,12 @@ export async function GET(request: Request) {
     })
     .eq("status", "active")
     .lt("renews_at", now.toISOString());
+  if (renewalError) throw renewalError;
 
-  const { data: states } = await supabase
+  const { data: states, error: statesError } = await supabase
     .from("teacher_states")
     .select("teacher_id,state");
+  if (statesError) throw statesError;
   let transitioned = 0;
   for (const row of states ?? []) {
     const lessons =
@@ -69,28 +83,32 @@ export async function GET(request: Request) {
     });
   }
 
-  const { data: expired } = await supabase
+  const { data: expired, error: expiredError } = await supabase
     .from("attachments")
     .select("id,object_path")
     .lt("expires_at", now.toISOString())
     .limit(500);
+  if (expiredError) throw expiredError;
   const paths = (expired ?? []).map((item) => item.object_path);
   if (paths.length) {
     const { error: storageError } = await supabase.storage
       .from("attachments")
       .remove(paths);
-    if (!storageError)
-      await supabase
-        .from("attachments")
-        .delete()
-        .in(
-          "id",
-          (expired ?? []).map((item) => item.id),
-        );
+    if (storageError) throw storageError;
+    const { error: metadataError } = await supabase
+      .from("attachments")
+      .delete()
+      .in(
+        "id",
+        (expired ?? []).map((item) => item.id),
+      );
+    if (metadataError) throw metadataError;
   }
   return Response.json({
     ok: true,
+    processed: (states?.length ?? 0) + (expired?.length ?? 0),
     lessonsTransitioned: transitioned,
     attachmentsRemoved: paths.length,
+    failed: 0,
   });
 }

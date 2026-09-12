@@ -57,7 +57,9 @@ describe("production security boundaries", () => {
     expect(encrypted).not.toContain("secret");
     expect(decryptSecret(encrypted)).toEqual({ refreshToken: "secret" });
     const parts = encrypted.split(".");
-    parts[2] = `${parts[2].slice(0, -1)}A`;
+    const ciphertext = Buffer.from(parts[2], "base64url");
+    ciphertext[0] ^= 1;
+    parts[2] = ciphertext.toString("base64url");
     expect(() => decryptSecret(parts.join("."))).toThrow();
   });
 });

@@ -1,6 +1,6 @@
 # TutorFlow
 
-TutorFlow is a Next.js 16 App Router application for private teachers. The production stack is Vercel for the web/API/cron runtime and Supabase for PostgreSQL, Auth, and private Storage.
+TutorFlow is a Next.js 16 App Router application for private teachers. The production stack is Vercel Hobby for the web/API/webhook runtime and Supabase for PostgreSQL, Auth, and private Storage. Scheduled execution is delegated to a trusted external scheduler.
 
 Local development can use the existing file-backed demo store. It is deliberately disabled in `NODE_ENV=production`; production fails closed unless Supabase is configured.
 
@@ -104,13 +104,34 @@ Add every variable from `.env.example` to Production. Use separate Supabase/Goog
 
 Attach and verify the custom domain in Vercel, make it primary, redirect the generated `*.vercel.app` hostname to it, and redeploy after setting the domain-dependent variables.
 
-`vercel.json` registers these secret-protected schedules (Vercel sends `Authorization: Bearer $CRON_SECRET`):
+`vercel.json` intentionally contains no `crons` configuration, so the deployment is compatible with Vercel Hobby's daily-only cron restriction. Do not add a daily Vercel workaround: the endpoints below are invoked by an external scheduler.
 
-- `GET /api/cron/telegram-reminders` every 5 minutes
-- `GET /api/cron/google-sync` every 5 minutes
-- `GET /api/cron/maintenance` daily at 02:17 UTC (lesson state transitions, access expiry, attachment retention)
+#### External scheduler
 
-Use a Vercel plan that supports the required five-minute cron frequency. Both processors claim durable PostgreSQL jobs, retry failures with backoff, and are safe against duplicate delivery/event creation.
+The scheduler needs only the HTTPS endpoint and `CRON_SECRET`. It must not receive Supabase keys, Google credentials, the Telegram bot token, PayU secrets, or any teacher data. Business logic and idempotency remain in TutorFlow and PostgreSQL; the scheduler only triggers one processing pass.
+
+##### Telegram reminders
+
+- Method: `GET`
+- URL: `https://YOUR_DOMAIN/api/cron/telegram-reminders`
+- Header: `Authorization: Bearer CRON_SECRET`
+- Recommended interval: `15 min`
+
+##### Google Calendar sync
+
+- Method: `GET`
+- URL: `https://YOUR_DOMAIN/api/cron/google-sync`
+- Header: `Authorization: Bearer CRON_SECRET`
+- Recommended interval: `15 min`
+
+##### Maintenance
+
+- Method: `GET`
+- URL: `https://YOUR_DOMAIN/api/cron/maintenance`
+- Header: `Authorization: Bearer CRON_SECRET`
+- Recommended interval: `daily`
+
+All endpoints return `401` without the exact Bearer token. Successful responses contain only compact operational counters. Telegram deliveries and Google jobs are claimed from durable PostgreSQL state; repeated scheduler calls cannot send an already completed reminder or create another Google event for the same lesson. Maintenance transitions and cleanup operations are state-based and safe to repeat.
 
 After deployment verify `GET https://YOUR_DOMAIN/api/health` returns HTTP 200 and `{ "status": "ok", "database": "reachable" }`.
 

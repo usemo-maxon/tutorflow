@@ -11,3 +11,11 @@ export function isAuthorizedCron(request: Request): boolean {
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+export function schedulerUnauthorizedResponse(): Response {
+  return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
+}
+
+export function schedulerFailureResponse(): Response {
+  return Response.json({ ok: false, error: "job_failed" }, { status: 500 });
+}

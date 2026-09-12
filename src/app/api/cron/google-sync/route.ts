@@ -1,5 +1,9 @@
 import { updateStateAsAdmin, type PersistedState } from "@/server/admin-state";
-import { isAuthorizedCron } from "@/server/cron";
+import {
+  isAuthorizedCron,
+  schedulerFailureResponse,
+  schedulerUnauthorizedResponse,
+} from "@/server/cron";
 import { googleEvent, validGoogleAccessToken } from "@/server/google-calendar";
 import { createSupabaseAdminClient } from "@/server/supabase";
 
@@ -7,8 +11,15 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
-  if (!isAuthorizedCron(request))
-    return Response.json({ ok: false }, { status: 401 });
+  if (!isAuthorizedCron(request)) return schedulerUnauthorizedResponse();
+  try {
+    return await processSyncJobs();
+  } catch {
+    return schedulerFailureResponse();
+  }
+}
+
+async function processSyncJobs() {
   const supabase = createSupabaseAdminClient();
   const { data: jobs, error } = await supabase
     .from("google_sync_jobs")
@@ -20,7 +31,14 @@ export async function GET(request: Request) {
   if (error) throw error;
   const results = [];
   for (const job of jobs ?? []) results.push(await processJob(job));
-  return Response.json({ ok: true, processed: results.length });
+  return Response.json({
+    ok: true,
+    processed: results.length,
+    succeeded: results.filter((result) => result === "succeeded").length,
+    retried: (jobs ?? []).filter((job) => job.attempts > 0).length,
+    skipped: results.filter((result) => result === "skipped").length,
+    failed: results.filter((result) => result === "failed").length,
+  });
 }
 
 async function processJob(job: {
