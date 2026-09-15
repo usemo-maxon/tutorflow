@@ -82,11 +82,11 @@ export function TodayPage() {
     hasActiveStudents ? openLessonComposer() : openStudentComposer();
   return (
     <div
-      className={`today-page page-enter${data.students.length === 0 ? " today-page--new" : ""}`}
+      className={`today-page page-enter${data.students.length === 0 ? " today-page--new" : !derived.next ? " today-page--no-next" : ""}`}
     >
       <header className="page-header">
         <div>
-          <p className="eyebrow">Twój dzień pracy</p>
+          <p className="eyebrow">Dzisiaj, po Twojemu</p>
           <h1>{capitalize(formatDay(now, timezone))}</h1>
         </div>
         <button
@@ -99,71 +99,8 @@ export function TodayPage() {
         </button>
       </header>
       <div className="today-grid">
-        <section className="day-plan panel" aria-labelledby="day-plan-title">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow" id="day-plan-title">
-                Dzisiejszy plan
-              </span>
-              <h2>{lessonCountLabel(derived.today.length)}</h2>
-            </div>
-            <Link className="text-link" href="/app/kalendarz">
-              Pełny kalendarz <ArrowRight size={16} />
-            </Link>
-          </div>
-          {derived.today.length ? (
-            <ol className="agenda-list">
-              {derived.today.map((lesson) => {
-                const names = lesson.participantIds
-                  .map(
-                    (id) =>
-                      data.students.find((student) => student.id === id)?.name,
-                  )
-                  .filter(Boolean);
-                return (
-                  <li key={lesson.id}>
-                    <time>{formatTime(lesson.startsAt, timezone)}</time>
-                    <span className="agenda-line" aria-hidden="true" />
-                    <Link
-                      href={`/app/lekcje/${lesson.id}`}
-                      className="agenda-card"
-                    >
-                      <span>
-                        <strong>{names.join(", ")}</strong>
-                        <small>
-                          {lesson.topic || "Temat do ustalenia"} ·{" "}
-                          {lesson.durationMinutes} min
-                        </small>
-                      </span>
-                      <LessonStatusBadge status={lesson.status} />
-                    </Link>
-                  </li>
-                );
-              })}
-            </ol>
-          ) : (
-            <EmptyState
-              title={
-                hasActiveStudents
-                  ? "Dziś nie masz lekcji. Wybierz wolny termin i zaplanuj kolejną."
-                  : "Zacznij od karty pierwszego ucznia. Potem od razu zaplanujesz lekcję."
-              }
-              action={
-                <button
-                  className="button button--secondary"
-                  disabled={data.teacher.subscription.readOnly}
-                  onClick={startPlanning}
-                >
-                  {hasActiveStudents ? copy.actions.addLesson : "Dodaj ucznia"}
-                </button>
-              }
-            />
-          )}
-        </section>
-
         {data.students.length > 0 && (
           <aside className="next-lesson-card" aria-labelledby="next-title">
-            <div className="next-card-accent" aria-hidden="true" />
             <div className="section-heading">
               <span className="eyebrow" id="next-title">
                 Następna lekcja
@@ -263,6 +200,67 @@ export function TodayPage() {
             )}
           </aside>
         )}
+        <section className="day-plan panel" aria-labelledby="day-plan-title">
+          <div className="section-heading">
+            <div>
+              <span className="eyebrow" id="day-plan-title">
+                Dzisiejszy plan
+              </span>
+              <h2>{lessonCountLabel(derived.today.length)}</h2>
+            </div>
+            <Link className="text-link" href="/app/kalendarz">
+              Pełny kalendarz <ArrowRight size={16} />
+            </Link>
+          </div>
+          {derived.today.length ? (
+            <ol className="agenda-list">
+              {derived.today.map((lesson) => {
+                const names = lesson.participantIds
+                  .map(
+                    (id) =>
+                      data.students.find((student) => student.id === id)?.name,
+                  )
+                  .filter(Boolean);
+                return (
+                  <li key={lesson.id}>
+                    <time>{formatTime(lesson.startsAt, timezone)}</time>
+                    <span className="agenda-line" aria-hidden="true" />
+                    <Link
+                      href={`/app/lekcje/${lesson.id}`}
+                      className="agenda-card"
+                    >
+                      <span>
+                        <strong>{names.join(", ")}</strong>
+                        <small>
+                          {lesson.topic || "Temat do ustalenia"} ·{" "}
+                          {lesson.durationMinutes} min
+                        </small>
+                      </span>
+                      <LessonStatusBadge status={lesson.status} />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <EmptyState
+              title={
+                hasActiveStudents
+                  ? "Dziś nie masz lekcji. Wybierz wolny termin i zaplanuj kolejną."
+                  : "Zacznij od karty pierwszego ucznia. Potem od razu zaplanujesz lekcję."
+              }
+              action={
+                <button
+                  className="button button--secondary"
+                  disabled={data.teacher.subscription.readOnly}
+                  onClick={startPlanning}
+                >
+                  {hasActiveStudents ? copy.actions.addLesson : "Dodaj ucznia"}
+                </button>
+              }
+            />
+          )}
+        </section>
       </div>
 
       <section

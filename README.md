@@ -1,6 +1,6 @@
-# TutorFlow
+# easy4tutor
 
-TutorFlow is a Next.js 16 App Router application for private teachers. The production stack is Vercel Hobby for the web/API/webhook runtime and Supabase for PostgreSQL, Auth, and private Storage. Scheduled execution is delegated to a trusted external scheduler.
+easy4tutor is a Next.js 16 App Router application for private teachers. The production stack is Vercel Hobby for the web/API/webhook runtime and Supabase for PostgreSQL, Auth, and private Storage. Scheduled execution is delegated to a trusted external scheduler.
 
 Local development can use the existing file-backed demo store. It is deliberately disabled in `NODE_ENV=production`; production fails closed unless Supabase is configured.
 
@@ -102,7 +102,7 @@ Import the GitHub repository and use:
 
 Add every variable from `.env.example` to Production. Use separate Supabase/Google/PayU sandbox credentials for Preview. Never set `TUTORFLOW_DATA_DIR` in Vercel. `NEXT_PUBLIC_SITE_URL` must be the canonical HTTPS custom domain, not a Vercel preview or localhost URL.
 
-If the official Supabase Vercel integration is connected, TutorFlow also accepts
+If the official Supabase Vercel integration is connected, easy4tutor also accepts
 its `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and
 `SUPABASE_SERVICE_ROLE_KEY` variables. Explicit `NEXT_PUBLIC_SUPABASE_*` and
 `SUPABASE_SECRET_KEY` values take precedence. On Vercel,
@@ -115,7 +115,7 @@ Attach and verify the custom domain in Vercel, make it primary, redirect the gen
 
 #### External scheduler
 
-The scheduler needs only the HTTPS endpoint and `CRON_SECRET`. It must not receive Supabase keys, Google credentials, the Telegram bot token, PayU secrets, or any teacher data. Business logic and idempotency remain in TutorFlow and PostgreSQL; the scheduler only triggers one processing pass.
+The scheduler needs only the HTTPS endpoint and `CRON_SECRET`. It must not receive Supabase keys, Google credentials, the Telegram bot token, PayU secrets, or any teacher data. Business logic and idempotency remain in easy4tutor and PostgreSQL; the scheduler only triggers one processing pass.
 
 ##### Telegram reminders
 

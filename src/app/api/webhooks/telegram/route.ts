@@ -57,7 +57,7 @@ export async function POST(request: Request) {
         .eq("code_hash", codeHash);
       await sendTelegram(
         update.message.chat.id,
-        "TutorFlow połączony. Przypomnienia wyślemy 24 godziny i 1 godzinę przed lekcją.",
+        "easy4tutor połączony. Przypomnienia wyślemy 24 godziny i 1 godzinę przed lekcją.",
       );
     }
   }

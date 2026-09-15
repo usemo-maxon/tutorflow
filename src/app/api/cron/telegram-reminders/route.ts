@@ -115,7 +115,7 @@ async function processReminders() {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             chat_id: chatId,
-            text: `Przypomnienie TutorFlow: za ${lead} masz lekcję${names ? ` z ${names}` : ""}. Termin: ${date}.`,
+            text: `Przypomnienie easy4tutor: za ${lead} masz lekcję${names ? ` z ${names}` : ""}. Termin: ${date}.`,
           }),
         },
       );

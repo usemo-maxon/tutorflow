@@ -63,15 +63,15 @@ export async function POST(request: Request) {
         merchantPosId: process.env.PAYU_POS_ID,
         description:
           parsed.data.plan === "annual"
-            ? "TutorFlow — plan roczny"
-            : "TutorFlow — plan miesięczny",
+            ? "easy4tutor — plan roczny"
+            : "easy4tutor — plan miesięczny",
         currencyCode: "PLN",
         totalAmount: String(amount),
         extOrderId,
         buyer: { email: teacher.email, language: "pl" },
         products: [
           {
-            name: "Subskrypcja TutorFlow",
+            name: "Subskrypcja easy4tutor",
             unitPrice: String(amount),
             quantity: "1",
           },

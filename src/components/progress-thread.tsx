@@ -1,6 +1,7 @@
 import { progressContext } from "@/lib/progress";
 import { Check, Circle, Diamond } from "lucide-react";
 import type { Lesson, Student } from "@/lib/domain";
+import Link from "next/link";
 
 interface ProgressThreadProps {
   student: Student;
@@ -36,6 +37,7 @@ export function ProgressThread({
     >
       <ThreadNode
         kind="done"
+        lessonId={completed?.id}
         label="Ostatnio"
         title={completed?.topic || "Brak zakończonej lekcji"}
         detail={
@@ -48,6 +50,7 @@ export function ProgressThread({
       />
       <ThreadNode
         kind="now"
+        lessonId={upcoming?.id}
         label="Teraz"
         title={upcoming?.topic || "Plan czeka na uzupełnienie"}
         detail={
@@ -58,6 +61,7 @@ export function ProgressThread({
       />
       <ThreadNode
         kind="next"
+        lessonId={afterUpcoming?.id}
         label="Następnie"
         title={afterUpcoming?.topic || "Kolejny temat pojawi się tutaj"}
       />
@@ -70,11 +74,13 @@ function ThreadNode({
   label,
   title,
   detail,
+  lessonId,
 }: {
   kind: "done" | "now" | "next";
   label: string;
   title: string;
   detail?: string;
+  lessonId?: string;
 }) {
   const Icon = kind === "done" ? Check : kind === "now" ? Diamond : Circle;
   return (
@@ -84,7 +90,13 @@ function ThreadNode({
       </span>
       <div>
         <small>{label}</small>
-        <strong>{title}</strong>
+        <strong>
+          {lessonId ? (
+            <Link href={`/app/lekcje/${lessonId}`}>{title}</Link>
+          ) : (
+            title
+          )}
+        </strong>
         {detail && <p>{detail}</p>}
       </div>
     </div>

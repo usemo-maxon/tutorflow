@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LoaderCircle } from "lucide-react";
+import Link from "next/link";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -70,7 +71,14 @@ export function ProfileSettings() {
         </label>
         <label className="field">
           <span>Adres e-mail</span>
-          <input value={data.teacher.email} readOnly />
+          <input
+            value={
+              data.teacher.email === "demo@tutorflow.local"
+                ? "demo@easy4tutor.local"
+                : data.teacher.email
+            }
+            readOnly
+          />
           <small>Zmiana adresu będzie wymagała ponownej weryfikacji.</small>
         </label>
         <label className="field">
@@ -95,6 +103,15 @@ export function ProfileSettings() {
           zmiany
         </button>
       </form>
+      <section className="account-settings" aria-labelledby="account-title">
+        <div>
+          <h3 id="account-title">Konto</h3>
+          <p>Zadbaj o bezpieczny dostęp do swojego obszaru pracy.</p>
+        </div>
+        <Link className="button button--secondary" href="/odzyskaj-haslo">
+          Ustaw nowe hasło
+        </Link>
+      </section>
     </section>
   );
 }

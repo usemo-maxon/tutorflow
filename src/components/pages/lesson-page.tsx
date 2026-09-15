@@ -351,7 +351,7 @@ export function LessonPage() {
                 ? copy.status.deletedGoogle
                 : "Nie udało się zsynchronizować wydarzenia z Google Calendar."}
             </strong>
-            <p>Lekcja jest bezpiecznie zapisana w TutorFlow.</p>
+            <p>Lekcja jest bezpiecznie zapisana w easy4tutor.</p>
           </div>
           <div>
             <button

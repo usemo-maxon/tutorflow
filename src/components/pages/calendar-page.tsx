@@ -252,6 +252,18 @@ export function CalendarPage() {
           ))}
         </div>
       </div>
+      {data.lessons.some((lesson) =>
+        ["failed", "deleted_in_google"].includes(lesson.syncStatus),
+      ) && (
+        <div className="calendar-sync-notice" role="status">
+          <AlertTriangle size={16} aria-hidden="true" />
+          <span>
+            Nie wszystkie lekcje są widoczne w Google Calendar. Tutaj Twój plan
+            jest zapisany.
+          </span>
+          <Link href="/app/ustawienia/integracje">Sprawdź połączenie</Link>
+        </div>
+      )}
       <div className="planning-bar">
         <label>
           <Users size={17} aria-hidden="true" />

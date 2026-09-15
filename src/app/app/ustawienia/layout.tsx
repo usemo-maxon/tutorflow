@@ -6,8 +6,8 @@ import type { ReactNode } from "react";
 
 const settingsNav = [
   ["/app/ustawienia/profil", "Profil"],
-  ["/app/ustawienia/integracje", "Integracje"],
   ["/app/ustawienia/dostepnosc", "Dostępność"],
+  ["/app/ustawienia/integracje", "Integracje"],
   ["/app/ustawienia/subskrypcja", "Subskrypcja"],
 ] as const;
 
@@ -27,6 +27,7 @@ export default function SettingsLayout({ children }: { children: ReactNode }) {
             key={href}
             href={href}
             className={pathname === href ? "active" : ""}
+            aria-current={pathname === href ? "page" : undefined}
           >
             {label}
           </Link>

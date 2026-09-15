@@ -1,3 +1,4 @@
+import { BrandLogo } from "@/components/brand-logo";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -17,12 +18,9 @@ export default async function LandingPage() {
         <Link
           className="brand brand--public"
           href="/"
-          aria-label="TutorFlow — strona główna"
+          aria-label="easy4tutor — strona główna"
         >
-          <span className="brand-mark" aria-hidden="true">
-            <span />
-          </span>
-          TutorFlow
+          <BrandLogo />
         </Link>
         <nav aria-label="Nawigacja publiczna">
           <a href="#jak-dziala">Jak działa</a>
@@ -42,10 +40,14 @@ export default async function LandingPage() {
       <section className="landing-hero">
         <div className="hero-copy">
           <p className="eyebrow">Planer pracy prywatnego nauczyciela</p>
-          <h1>Lekcje, postępy i płatności — w jednym spokojnym miejscu.</h1>
+          <h1>
+            Mniej organizacji.
+            <br />
+            <em>Więcej uczenia.</em>
+          </h1>
           <p className="hero-lead">
-            TutorFlow łączy plan dnia z historią ucznia. Wiesz, co było
-            ostatnio, co zrobisz dziś i za co trzeba jeszcze rozliczyć lekcję.
+            Twój kalendarz, postępy uczniów i rozliczenia w jednym miejscu.
+            Przygotuj kolejną lekcję, pamiętając o poprzedniej.
           </p>
           <div className="hero-actions">
             <Link
@@ -55,10 +57,10 @@ export default async function LandingPage() {
               Wypróbuj przez 14 dni <ArrowRight size={18} aria-hidden="true" />
             </Link>
             <Link
-              className="button button--secondary button--large"
+              className="button button--quiet button--large"
               href="/logowanie"
             >
-              Zobacz konto demonstracyjne
+              Poznaj swój obszar pracy
             </Link>
           </div>
           <p className="hero-note">
@@ -67,56 +69,65 @@ export default async function LandingPage() {
           </p>
         </div>
 
-        <div className="hero-workspace" aria-label="Podgląd następnej lekcji">
-          <div className="hero-workspace-top">
-            <div>
-              <span className="eyebrow">Następna lekcja</span>
-              <h2>Marta Kowalska</h2>
-            </div>
-            <time>14:30</time>
+        <div className="hero-product-preview">
+          <div className="preview-caption">
+            <span>Twój obszar pracy</span>
+            <span>Przykładowa lekcja</span>
           </div>
-          <div className="hero-lesson-meta">
-            <span>
-              <CalendarDays size={16} aria-hidden="true" /> Dzisiaj · 60 min
-            </span>
-            <span className="status-badge status-badge--warning">
-              Nieopłacona
-            </span>
-          </div>
-          <div className="progress-thread progress-thread--hero">
-            <div className="thread-node thread-node--done">
-              <span className="thread-symbol">
-                <Check size={12} aria-hidden="true" />
-              </span>
+          <div className="hero-workspace" aria-label="Podgląd następnej lekcji">
+            <div className="hero-workspace-top">
               <div>
-                <small>Ostatnio</small>
-                <strong>Past Simple</strong>
-                <p>Końcówki -ed wymagają powtórki</p>
+                <span className="eyebrow">Następna lekcja</span>
+                <h2>Marta Kowalska</h2>
+              </div>
+              <time>14:30</time>
+            </div>
+            <div className="hero-lesson-meta">
+              <span>
+                <CalendarDays size={16} aria-hidden="true" /> Dzisiaj · 60 min
+              </span>
+              <span className="status-badge status-badge--warning">
+                Nieopłacona
+              </span>
+            </div>
+            <div className="progress-thread progress-thread--hero">
+              <div className="thread-node thread-node--done">
+                <span className="thread-symbol">
+                  <Check size={12} aria-hidden="true" />
+                </span>
+                <div>
+                  <small>Ostatnio</small>
+                  <strong>Past Simple</strong>
+                  <p>Końcówki -ed wymagają powtórki</p>
+                </div>
+              </div>
+              <div className="thread-node thread-node--now">
+                <span className="thread-symbol">
+                  <Diamond size={12} aria-hidden="true" />
+                </span>
+                <div>
+                  <small>Teraz</small>
+                  <strong>Present Perfect</strong>
+                  <p>3 punkty planu</p>
+                </div>
+              </div>
+              <div className="thread-node thread-node--next">
+                <span className="thread-symbol">
+                  <Circle size={12} aria-hidden="true" />
+                </span>
+                <div>
+                  <small>Następnie</small>
+                  <strong>Present Perfect vs Past Simple</strong>
+                </div>
               </div>
             </div>
-            <div className="thread-node thread-node--now">
-              <span className="thread-symbol">
-                <Diamond size={12} aria-hidden="true" />
-              </span>
-              <div>
-                <small>Teraz</small>
-                <strong>Present Perfect</strong>
-                <p>3 punkty planu</p>
-              </div>
-            </div>
-            <div className="thread-node thread-node--next">
-              <span className="thread-symbol">
-                <Circle size={12} aria-hidden="true" />
-              </span>
-              <div>
-                <small>Następnie</small>
-                <strong>Present Perfect vs Past Simple</strong>
-              </div>
-            </div>
+            <Link
+              href="/logowanie"
+              className="button button--primary hero-open"
+            >
+              Otwórz lekcję
+            </Link>
           </div>
-          <Link href="/logowanie" className="button button--primary hero-open">
-            Otwórz lekcję
-          </Link>
         </div>
       </section>
 
@@ -166,7 +177,7 @@ export default async function LandingPage() {
         </div>
       </section>
       <footer className="landing-footer">
-        <span>© 2026 TutorFlow</span>
+        <span>© 2026 easy4tutor</span>
         <Link href="/polityka-prywatnosci">Polityka prywatności</Link>
         <Link href="/regulamin">Regulamin</Link>
       </footer>

@@ -68,7 +68,7 @@ export async function GET(
     return new Response(csv, {
       headers: {
         "content-type": "text/csv; charset=utf-8",
-        "content-disposition": `attachment; filename="tutorflow-${kind}.csv"`,
+        "content-disposition": `attachment; filename="easy4tutor-${kind}.csv"`,
         "cache-control": "private, no-store",
       },
     });

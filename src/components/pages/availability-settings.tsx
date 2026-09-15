@@ -95,7 +95,7 @@ export function AvailabilitySettings() {
         <p className="eyebrow">Granice kalendarza</p>
         <h2>Czas niedostępny</h2>
         <p>
-          TutorFlow sprawdzi te reguły przed zapisaniem pojedynczej lekcji,
+          easy4tutor sprawdzi te reguły przed zapisaniem pojedynczej lekcji,
           wielu terminów i serii.
         </p>
         <div className="availability-list">

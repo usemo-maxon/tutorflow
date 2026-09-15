@@ -1,5 +1,7 @@
 "use client";
 
+import { BrandLogo } from "@/components/brand-logo";
+
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   BarChart3,
@@ -122,10 +124,7 @@ function ShellBody({
       <aside className="sidebar">
         <div className="sidebar-head">
           <Link className="brand" href="/app/dzisiaj">
-            <span className="brand-mark" aria-hidden="true">
-              <span />
-            </span>
-            TutorFlow
+            <BrandLogo />
           </Link>
           <button
             className="icon-button sidebar-close"
@@ -179,7 +178,11 @@ function ShellBody({
           </span>
           <span>
             <strong>{data?.teacher.name ?? teacher.name}</strong>
-            <small>{data?.teacher.email ?? teacher.email}</small>
+            <small>
+              {(data?.teacher.email ?? teacher.email) === "demo@tutorflow.local"
+                ? "Konto demonstracyjne"
+                : (data?.teacher.email ?? teacher.email)}
+            </small>
           </span>
           <button
             className="icon-button"
@@ -203,7 +206,9 @@ function ShellBody({
             }}
           >
             <header className="dialog-header">
-              <Dialog.Title>TutorFlow</Dialog.Title>
+              <Dialog.Title className="brand">
+                <BrandLogo />
+              </Dialog.Title>
               <Dialog.Close className="icon-button" aria-label="Zamknij menu">
                 <X size={20} />
               </Dialog.Close>
@@ -241,10 +246,7 @@ function ShellBody({
           <Menu size={22} />
         </button>
         <Link className="brand" href="/app/dzisiaj">
-          <span className="brand-mark" aria-hidden="true">
-            <span />
-          </span>
-          TutorFlow
+          <BrandLogo />
         </Link>
         <button
           className="icon-button icon-button--blue"

@@ -1,3 +1,4 @@
+import { BrandLogo } from "@/components/brand-logo";
 import Link from "next/link";
 import { Suspense } from "react";
 import { AuthForm } from "./auth-form";
@@ -7,10 +8,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
     <main className="auth-layout">
       <section className="auth-panel">
         <Link className="brand brand--public" href="/">
-          <span className="brand-mark" aria-hidden="true">
-            <span />
-          </span>
-          TutorFlow
+          <BrandLogo />
         </Link>
         <div className="auth-card">
           <p className="eyebrow">
@@ -44,13 +42,17 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
           </p>
         </div>
       </section>
-      <aside className="auth-aside" aria-label="TutorFlow w praktyce">
-        <p className="eyebrow eyebrow--light">Dzisiaj · 4 lekcje</p>
-        <blockquote>
-          „Co było ostatnio?” nie musi być pierwszym pytaniem przed każdą
-          lekcją.
-        </blockquote>
-        <div className="auth-mini-thread">
+      <aside className="auth-aside" aria-label="easy4tutor w praktyce">
+        <p className="eyebrow">Mniej organizacji. Więcej uczenia.</p>
+        <blockquote>Każda lekcja ma swój ciąg dalszy.</blockquote>
+        <p className="auth-aside-description">
+          Ostatni temat, dzisiejszy plan i kolejny krok. Wszystko pod ręką,
+          zanim zacznie się lekcja.
+        </p>
+        <div
+          className="auth-mini-thread"
+          aria-label="Przykładowa nitka postępu"
+        >
           <span className="mini-node mini-node--done" />
           <div>
             <small>Ostatnio</small>
@@ -69,6 +71,7 @@ export function AuthPage({ mode }: { mode: "login" | "register" }) {
             <strong>Porównanie czasów</strong>
           </div>
         </div>
+        <p className="auth-aside-note">Twój spokojny rytm nauczania.</p>
       </aside>
     </main>
   );

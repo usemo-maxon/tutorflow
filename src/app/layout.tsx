@@ -1,28 +1,29 @@
 import type { Metadata } from "next";
-import { DM_Mono, Literata, Manrope } from "next/font/google";
+import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import { Providers } from "@/components/providers";
 import "./globals.css";
 
-const manrope = Manrope({
-  subsets: ["latin", "latin-ext"],
+const manrope = localFont({
+  src: "./fonts/manrope-variable.ttf",
+  weight: "200 800",
   variable: "--font-ui",
   display: "swap",
 });
-const literata = Literata({
-  subsets: ["latin", "latin-ext"],
-  variable: "--font-display",
-  display: "swap",
-});
-const dmMono = DM_Mono({
-  subsets: ["latin", "latin-ext"],
-  weight: ["400", "500"],
-  variable: "--font-data",
+const literata = localFont({
+  src: "./fonts/literata-variable.ttf",
+  weight: "200 900",
+  preload: false,
+  variable: "--font-editorial",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "TutorFlow — spokojny rytm lekcji",
+  title: {
+    default: "easy4tutor — mniej organizacji, więcej uczenia",
+    template: "%s · easy4tutor",
+  },
+  applicationName: "easy4tutor",
   description: "Lekcje, postępy i płatności w jednym spokojnym miejscu.",
 };
 
@@ -33,7 +34,7 @@ export default function RootLayout({
     <html
       lang="pl"
       data-scroll-behavior="smooth"
-      className={`${manrope.variable} ${literata.variable} ${dmMono.variable}`}
+      className={`${manrope.variable} ${literata.variable}`}
     >
       <body>
         <Providers>{children}</Providers>

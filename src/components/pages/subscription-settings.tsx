@@ -42,7 +42,7 @@ export function SubscriptionSettings() {
   return (
     <section className="settings-panel settings-panel--subscription">
       <div className="settings-copy">
-        <p className="eyebrow">Dostęp do TutorFlow</p>
+        <p className="eyebrow">Dostęp do easy4tutor</p>
         <h2>Subskrypcja</h2>
         <p>
           Po zakończeniu opłaconego okresu dane pozostaną dostępne do odczytu i

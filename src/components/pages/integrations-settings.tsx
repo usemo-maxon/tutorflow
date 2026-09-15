@@ -28,7 +28,7 @@ export function IntegrationsSettings() {
         <p className="eyebrow">Połączenia</p>
         <h2>Integracje</h2>
         <p>
-          Lekcja zawsze zapisuje się najpierw w TutorFlow. Problemy z dostawcą
+          Lekcja zawsze zapisuje się najpierw w easy4tutor. Problemy z dostawcą
           nie blokują kalendarza.
         </p>
       </div>
@@ -79,7 +79,7 @@ export function IntegrationsSettings() {
           icon={<Settings2 />}
           name="PayU"
           state={data.integrations.payu.status}
-          description="Płatność za subskrypcję TutorFlow. Nie służy do pobierania opłat od uczniów."
+          description="Płatność za subskrypcję easy4tutor. Nie służy do pobierania opłat od uczniów."
         />
       </div>
     </section>
@@ -131,7 +131,7 @@ function IntegrationCard({
         {state === "not_configured" && (
           <div className="integration-note">
             Połączenie nie jest jeszcze dostępne. Możesz nadal planować lekcje i
-            zapisywać wyniki w TutorFlow.
+            zapisywać wyniki w easy4tutor.
           </div>
         )}
         {children}

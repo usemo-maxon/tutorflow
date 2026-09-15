@@ -76,8 +76,8 @@ export function googleEvent(lesson: Lesson, studentNames: string[]) {
   return {
     summary: studentNames.length
       ? `Lekcja: ${studentNames.join(", ")}`
-      : "Lekcja TutorFlow",
-    description: lesson.topic || "Lekcja zaplanowana w TutorFlow",
+      : "Lekcja easy4tutor",
+    description: lesson.topic || "Lekcja zaplanowana w easy4tutor",
     start: { dateTime: lesson.startsAt },
     end: { dateTime: end },
     location: lesson.location || undefined,

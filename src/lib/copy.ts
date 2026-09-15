@@ -1,5 +1,5 @@
 export const copy = {
-  brand: "TutorFlow",
+  brand: "easy4tutor",
   nav: {
     today: "Dzisiaj",
     calendar: "Kalendarz",

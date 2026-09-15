@@ -1,19 +1,19 @@
+import type { Metadata } from "next";
+export const metadata: Metadata = { title: "Odzyskaj dostęp" };
+import { BrandLogo } from "@/components/brand-logo";
 import Link from "next/link";
 import { Suspense } from "react";
 import { PasswordResetForm } from "@/components/password-reset-form";
 
 export default function ResetPage() {
   return (
-    <main className="legal-page">
+    <main className="reset-page">
       <Link className="brand brand--public" href="/">
-        <span className="brand-mark" aria-hidden="true">
-          <span />
-        </span>
-        TutorFlow
+        <BrandLogo />
       </Link>
-      <article>
+      <article className="auth-card">
         <p className="eyebrow">Odzyskiwanie dostępu</p>
-        <h1>Ustaw bezpieczne hasło.</h1>
+        <h1>Wróć do swojego planu.</h1>
         <p>Wyślemy jednorazowy link na adres przypisany do konta.</p>
         <Suspense
           fallback={
