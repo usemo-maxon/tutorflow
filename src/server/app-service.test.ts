@@ -252,6 +252,28 @@ describe("refined user journeys preserve the existing domain rules", () => {
       }),
     ).rejects.toThrow();
   });
+  it("blocks lessons on a day marked unavailable for the whole day", async () => {
+    const created = await perform(teacherId, {
+      type: "createAvailability",
+      rule: {
+        kind: "single",
+        allDay: true,
+        label: "Urlop",
+        start: "2032-04-09T22:00:00.000Z",
+        end: "2032-04-10T22:00:00.000Z",
+      },
+    });
+    expect(created.data.availability.at(-1)).toMatchObject({
+      allDay: true,
+      label: "Urlop",
+    });
+    await expect(
+      perform(teacherId, {
+        type: "createLesson",
+        lesson: create("2032-04-10"),
+      }),
+    ).rejects.toThrow();
+  });
   it("does not allow another teacher to address tenant-owned IDs", async () => {
     const other = await storage.createTeacher({
       name: "Inny nauczyciel",

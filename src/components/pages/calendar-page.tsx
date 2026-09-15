@@ -69,8 +69,7 @@ function availabilityForDay(data: AppData, day: Date, timezone: string) {
   return data.availability.filter(
     (rule) =>
       (rule.kind === "recurring" && rule.weekday === weekday) ||
-      (rule.kind === "single" &&
-        localDateKey(rule.start, timezone) === dayKey),
+      (rule.kind === "single" && localDateKey(rule.start, timezone) === dayKey),
   );
 }
 
@@ -116,6 +115,7 @@ export function CalendarPage() {
   }, [data, rangeDays, timezone]);
 
   if (isPending || !data) return <PageLoading />;
+  const calendarData = data;
   const { startHour, endHour } = calendarBounds(rangeLessons, timezone);
   const readOnly = data.teacher.subscription.readOnly;
   const planningStudent = data.students.find(
@@ -137,7 +137,7 @@ export function CalendarPage() {
   function handleSlot(day: Date, time: string, occupied?: Lesson) {
     if (readOnly) return;
     const date = localDateKey(day, timezone);
-    if (isAllDayUnavailable(data, day, timezone)) {
+    if (isAllDayUnavailable(calendarData, day, timezone)) {
       showToast({ message: "Ten dzień jest oznaczony jako niedostępny" });
       return;
     }
@@ -159,7 +159,7 @@ export function CalendarPage() {
   async function dropLesson(event: DragEvent<HTMLDivElement>, day: Date) {
     event.preventDefault();
     if (!dragged || readOnly || mutation.isPending) return;
-    if (isAllDayUnavailable(data, day, timezone)) {
+    if (isAllDayUnavailable(calendarData, day, timezone)) {
       showToast({ message: "Nie można przenieść lekcji na niedostępny dzień" });
       setDragged(null);
       return;
@@ -598,36 +598,38 @@ function CalendarGrid({
                   style={{ top: (hour - startHour) * hourHeight }}
                 />
               ))}
-              {availability.filter((rule) => !rule.allDay).map((rule) => {
-                const start =
-                  Number(formatInTimeZone(rule.start, timezone, "H")) * 60 +
-                  Number(formatInTimeZone(rule.start, timezone, "m"));
-                const end =
-                  Number(formatInTimeZone(rule.end, timezone, "H")) * 60 +
-                  Number(formatInTimeZone(rule.end, timezone, "m"));
-                return (
-                  <div
-                    key={rule.id}
-                    className="availability-block"
-                    style={{
-                      top:
-                        ((Math.max(start, startHour * 60) - startHour * 60) /
-                          60) *
-                        hourHeight,
-                      height:
-                        (Math.max(
-                          0,
-                          Math.min(end, endHour * 60) -
-                            Math.max(start, startHour * 60),
-                        ) /
-                          60) *
-                        hourHeight,
-                    }}
-                  >
-                    <span>{rule.label}</span>
-                  </div>
-                );
-              })}
+              {availability
+                .filter((rule) => !rule.allDay)
+                .map((rule) => {
+                  const start =
+                    Number(formatInTimeZone(rule.start, timezone, "H")) * 60 +
+                    Number(formatInTimeZone(rule.start, timezone, "m"));
+                  const end =
+                    Number(formatInTimeZone(rule.end, timezone, "H")) * 60 +
+                    Number(formatInTimeZone(rule.end, timezone, "m"));
+                  return (
+                    <div
+                      key={rule.id}
+                      className="availability-block"
+                      style={{
+                        top:
+                          ((Math.max(start, startHour * 60) - startHour * 60) /
+                            60) *
+                          hourHeight,
+                        height:
+                          (Math.max(
+                            0,
+                            Math.min(end, endHour * 60) -
+                              Math.max(start, startHour * 60),
+                          ) /
+                            60) *
+                          hourHeight,
+                      }}
+                    >
+                      <span>{rule.label}</span>
+                    </div>
+                  );
+                })}
               {dayLessons.map((lesson) => {
                 const localHour = Number(
                   formatInTimeZone(lesson.startsAt, timezone, "H"),

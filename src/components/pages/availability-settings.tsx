@@ -136,14 +136,14 @@ export function AvailabilitySettings() {
                         hour: "2-digit",
                         minute: "2-digit",
                         timeZone: data.teacher.timezone,
-                      }).format(new Date(rule.start))}–${new Intl.DateTimeFormat(
-                        "pl-PL",
-                        {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                          timeZone: data.teacher.timezone,
-                        },
-                      ).format(new Date(rule.end))}`} · {rule.label}
+                      }).format(
+                        new Date(rule.start),
+                      )}–${new Intl.DateTimeFormat("pl-PL", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: data.teacher.timezone,
+                      }).format(new Date(rule.end))}`}{" "}
+                  · {rule.label}
                 </small>
               </span>
               <button
@@ -205,11 +205,7 @@ export function AvailabilitySettings() {
           <div className="form-row">
             <label className="field">
               <span>Od</span>
-              <input
-                type="time"
-                disabled={allDay}
-                {...register("startTime")}
-              />
+              <input type="time" disabled={allDay} {...register("startTime")} />
             </label>
             <label className="field">
               <span>Do</span>

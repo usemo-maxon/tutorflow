@@ -3627,6 +3627,25 @@ h3 {
   color: var(--muted);
   font-size: 12px;
 }
+.all-day-choice {
+  align-items: flex-start;
+  padding: 11px 12px;
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.all-day-choice input {
+  margin-top: 2px;
+}
+.all-day-choice span {
+  display: grid;
+  gap: 1px;
+}
+.all-day-choice small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
 .settings-panel--subscription {
   grid-template-columns: 280px 1fr;
 }
