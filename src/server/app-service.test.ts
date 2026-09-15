@@ -213,6 +213,45 @@ describe("refined user journeys preserve the existing domain rules", () => {
       )?.topic,
     ).toBe(lesson.topic);
   });
+  it("imports detailed student statistics and rejects invalid scores", async () => {
+    const response = await perform(teacherId, {
+      type: "importStudentStats",
+      studentId,
+      sourceFile: "postep.csv",
+      records: [
+        {
+          occurredAt: "2031-03-08T12:00:00.000Z",
+          topic: "Speaking",
+          skill: "Płynność wypowiedzi",
+          score: 8.5,
+          durationMinutes: 45,
+          attendanceStatus: "present",
+        },
+      ],
+    });
+    expect(response.data.studentStatImports[0]).toMatchObject({
+      studentId,
+      sourceFile: "postep.csv",
+      score: 8.5,
+    });
+    await expect(
+      perform(teacherId, {
+        type: "importStudentStats",
+        studentId,
+        sourceFile: "bledny.csv",
+        records: [
+          {
+            occurredAt: "2031-03-08T12:00:00.000Z",
+            topic: "Test",
+            skill: "Gramatyka",
+            score: 12,
+            durationMinutes: 30,
+            attendanceStatus: "present",
+          },
+        ],
+      }),
+    ).rejects.toThrow();
+  });
   it("does not allow another teacher to address tenant-owned IDs", async () => {
     const other = await storage.createTeacher({
       name: "Inny nauczyciel",

@@ -25,6 +25,7 @@ import type {
   LessonParticipant,
   PlanItem,
   Student,
+  StudentStatImport,
   Teacher,
 } from "@/lib/domain";
 
@@ -48,6 +49,10 @@ export interface AvailabilityRecord extends AvailabilityRule {
   teacherId: string;
 }
 
+export interface StudentStatImportRecord extends StudentStatImport {
+  teacherId: string;
+}
+
 export interface SessionRecord {
   token: string;
   teacherId: string;
@@ -59,6 +64,7 @@ export interface StoreShape {
   teachers: TeacherRecord[];
   students: StudentRecord[];
   lessons: LessonRecord[];
+  studentStatImports: StudentStatImportRecord[];
   availability: AvailabilityRecord[];
   sessions: SessionRecord[];
 }
@@ -80,6 +86,7 @@ async function ensureStore(): Promise<void> {
       teachers: [],
       students: [],
       lessons: [],
+      studentStatImports: [],
       availability: [],
       sessions: [],
     });
@@ -353,6 +360,10 @@ export function appDataFromStore(
       .map(withoutTenant)
       .sort((a, b) => a.name.localeCompare(b.name, "pl")),
     lessons,
+    studentStatImports: (store.studentStatImports ?? [])
+      .filter((record) => record.teacherId === teacherId)
+      .map(withoutTenant)
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt)),
     availability: store.availability
       .filter((rule) => rule.teacherId === teacherId)
       .map(withoutTenant),

@@ -1,7 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Clock3, Plus, Trash2 } from "lucide-react";
+import { addDays, format, parseISO } from "date-fns";
+import { CalendarOff, Clock3, Plus, Trash2 } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
@@ -17,9 +18,10 @@ const schema = z
     weekday: z.number().min(1).max(7),
     startTime: z.string().min(1, "Wybierz godzinę rozpoczęcia."),
     endTime: z.string().min(1, "Wybierz godzinę zakończenia."),
+    allDay: z.boolean(),
     label: z.string().min(2, "Opis powinien zawierać co najmniej 2 znaki."),
   })
-  .refine((value) => value.endTime > value.startTime, {
+  .refine((value) => value.allDay || value.endTime > value.startTime, {
     path: ["endTime"],
     message: "Zakończenie musi być późniejsze niż rozpoczęcie.",
   });
@@ -52,26 +54,36 @@ export function AvailabilitySettings() {
       weekday: 1,
       startTime: "17:00",
       endTime: "20:00",
+      allDay: false,
       label: "Czas niedostępny",
     },
   });
   const kind = useWatch({ control, name: "kind" });
+  const allDay = useWatch({ control, name: "allDay" });
   if (isPending || !data) return <PageLoading />;
   const submit = handleSubmit(async (values) => {
     const baseDate =
       values.kind === "single" ? values.date : weekdayDates[values.weekday];
+    const endDate = values.allDay
+      ? format(addDays(parseISO(baseDate), 1), "yyyy-MM-dd")
+      : baseDate;
     try {
       await mutation.mutateAsync({
         type: "createAvailability",
         rule: {
           kind: values.kind,
+          allDay: values.allDay,
           label: values.label,
           start: localInputToUtc(
             baseDate,
-            values.startTime,
+            values.allDay ? "00:00" : values.startTime,
             data.teacher.timezone,
           ),
-          end: localInputToUtc(baseDate, values.endTime, data.teacher.timezone),
+          end: localInputToUtc(
+            endDate,
+            values.allDay ? "00:00" : values.endTime,
+            data.teacher.timezone,
+          ),
           weekday: values.kind === "recurring" ? values.weekday : undefined,
         },
       });
@@ -107,7 +119,7 @@ export function AvailabilitySettings() {
           )}
           {data.availability.map((rule) => (
             <div key={rule.id}>
-              <Clock3 size={17} />
+              {rule.allDay ? <CalendarOff size={17} /> : <Clock3 size={17} />}
               <span>
                 <strong>
                   {rule.kind === "recurring"
@@ -118,18 +130,20 @@ export function AvailabilitySettings() {
                       }).format(new Date(rule.start))}
                 </strong>
                 <small>
-                  {new Intl.DateTimeFormat("pl-PL", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    timeZone: data.teacher.timezone,
-                  }).format(new Date(rule.start))}
-                  –
-                  {new Intl.DateTimeFormat("pl-PL", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    timeZone: data.teacher.timezone,
-                  }).format(new Date(rule.end))}{" "}
-                  · {rule.label}
+                  {rule.allDay
+                    ? "Cały dzień"
+                    : `${new Intl.DateTimeFormat("pl-PL", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        timeZone: data.teacher.timezone,
+                      }).format(new Date(rule.start))}–${new Intl.DateTimeFormat(
+                        "pl-PL",
+                        {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          timeZone: data.teacher.timezone,
+                        },
+                      ).format(new Date(rule.end))}`} · {rule.label}
                 </small>
               </span>
               <button
@@ -181,15 +195,27 @@ export function AvailabilitySettings() {
               </select>
             </label>
           )}
+          <label className="check-row all-day-choice">
+            <input type="checkbox" {...register("allDay")} />
+            <span>
+              Cały dzień niedostępny
+              <small>Zablokuj wszystkie godziny tego dnia</small>
+            </span>
+          </label>
           <div className="form-row">
             <label className="field">
               <span>Od</span>
-              <input type="time" {...register("startTime")} />
+              <input
+                type="time"
+                disabled={allDay}
+                {...register("startTime")}
+              />
             </label>
             <label className="field">
               <span>Do</span>
               <input
                 type="time"
+                disabled={allDay}
                 {...register("endTime")}
                 aria-invalid={Boolean(errors.endTime)}
               />

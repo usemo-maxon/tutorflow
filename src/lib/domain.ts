@@ -25,6 +25,19 @@ export interface Student {
   createdAt: ISODateTime;
 }
 
+export interface StudentStatImport {
+  id: EntityId;
+  studentId: EntityId;
+  occurredAt: ISODateTime;
+  topic: string;
+  skill: string;
+  score?: number;
+  durationMinutes: number;
+  attendanceStatus: Exclude<AttendanceStatus, "unknown" | "cancelled">;
+  sourceFile: string;
+  importedAt: ISODateTime;
+}
+
 export interface PlanItem {
   id: EntityId;
   position: number;
@@ -89,6 +102,7 @@ export interface IntegrationState {
 export interface AvailabilityRule {
   id: EntityId;
   kind: "single" | "recurring";
+  allDay?: boolean;
   label: string;
   start: ISODateTime;
   end: ISODateTime;
@@ -99,6 +113,7 @@ export interface AppData {
   teacher: Teacher;
   students: Student[];
   lessons: Lesson[];
+  studentStatImports: StudentStatImport[];
   availability: AvailabilityRule[];
   integrations: {
     google: IntegrationState;
@@ -184,7 +199,23 @@ export type AppAction =
   | { type: "disableSync"; lessonId: string }
   | { type: "updateProfile"; name: string; timezone: string }
   | { type: "createAvailability"; rule: Omit<AvailabilityRule, "id"> }
-  | { type: "deleteAvailability"; ruleId: string };
+  | { type: "deleteAvailability"; ruleId: string }
+  | {
+      type: "importStudentStats";
+      studentId: string;
+      sourceFile: string;
+      records: Array<
+        Pick<
+          StudentStatImport,
+          | "occurredAt"
+          | "topic"
+          | "skill"
+          | "score"
+          | "durationMinutes"
+          | "attendanceStatus"
+        >
+      >;
+    };
 
 export interface MutationResponse {
   data: AppData;

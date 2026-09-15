@@ -21,6 +21,7 @@ const actionTypes = new Set<AppAction["type"]>([
   "updateProfile",
   "createAvailability",
   "deleteAvailability",
+  "importStudentStats",
 ]);
 
 export async function GET() {

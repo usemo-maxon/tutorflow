@@ -67,6 +67,7 @@ async function loadTenantStore(teacherId: string) {
   const state = stateResult.data!.state as {
     students: StoreShape["students"];
     lessons: StoreShape["lessons"];
+    studentStatImports?: StoreShape["studentStatImports"];
     availability: StoreShape["availability"];
   };
   const states = new Map(
@@ -106,6 +107,7 @@ async function loadTenantStore(teacherId: string) {
       teachers: [teacher],
       students: decorate(state.students ?? []),
       lessons: decorate(state.lessons ?? []),
+      studentStatImports: decorate(state.studentStatImports ?? []),
       availability: decorate(state.availability ?? []),
       sessions: [],
     } satisfies StoreShape,
@@ -132,6 +134,9 @@ export async function mutateStore<T>(
     const state = {
       students: loaded.store.students.map((row) => stripTenant(row)),
       lessons: loaded.store.lessons.map((row) => stripTenant(row)),
+      studentStatImports: loaded.store.studentStatImports.map((row) =>
+        stripTenant(row),
+      ),
       availability: loaded.store.availability.map((row) => stripTenant(row)),
     };
     const { error } = await loaded.supabase.rpc("update_teacher_state", {

@@ -391,6 +391,60 @@ export async function performAction(
         );
         break;
       }
+      case "importStudentStats": {
+        ownedStudent(store, teacherId, action.studentId);
+        store.studentStatImports ??= [];
+        if (!action.records.length || action.records.length > 1000) {
+          validation("records", "Plik musi zawierać od 1 do 1000 wierszy.");
+        }
+        const importedAt = new Date().toISOString();
+        const sourceFile =
+          action.sourceFile.trim().slice(0, 180) || "import.csv";
+        const records = action.records.map((record) => {
+          const occurredAt = new Date(record.occurredAt);
+          if (Number.isNaN(occurredAt.getTime())) {
+            validation("records", "Każdy wiersz musi mieć poprawną datę.");
+          }
+          if (
+            record.score !== undefined &&
+            (!Number.isFinite(record.score) ||
+              record.score < 0 ||
+              record.score > 10)
+          ) {
+            validation("records", "Wynik musi mieścić się w skali 0–10.");
+          }
+          if (
+            !Number.isFinite(record.durationMinutes) ||
+            record.durationMinutes < 0 ||
+            record.durationMinutes > 600
+          ) {
+            validation(
+              "records",
+              "Czas nauki musi mieścić się w zakresie 0–600 minut.",
+            );
+          }
+          if (!["present", "absent"].includes(record.attendanceStatus)) {
+            validation(
+              "records",
+              "Frekwencja musi mieć wartość present lub absent.",
+            );
+          }
+          return {
+            ...record,
+            id: randomUUID(),
+            teacherId,
+            studentId: action.studentId,
+            occurredAt: occurredAt.toISOString(),
+            topic: record.topic.trim().slice(0, 180),
+            skill: record.skill.trim().slice(0, 120),
+            sourceFile,
+            importedAt,
+          };
+        });
+        store.studentStatImports.push(...records);
+        result = { ids: records.map((record) => record.id) };
+        break;
+      }
     }
     return { data: appDataFromStore(store, teacherId), result };
   });
@@ -481,6 +535,7 @@ function findAvailabilityConflicts(
     if (rule.kind === "recurring") {
       const weekday = Number(formatInTimeZone(startsAt, timezone, "i"));
       if (weekday !== rule.weekday) return false;
+      if (rule.allDay) return true;
       const occurrenceStart =
         Number(formatInTimeZone(startsAt, timezone, "H")) * 60 +
         Number(formatInTimeZone(startsAt, timezone, "m"));

@@ -28,7 +28,7 @@ import { useMemo, useState, type DragEvent, type CSSProperties } from "react";
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { copy } from "@/lib/copy";
-import type { Lesson } from "@/lib/domain";
+import type { AppData, Lesson } from "@/lib/domain";
 import {
   formatTime,
   getWeekDays,
@@ -62,6 +62,21 @@ function calendarBounds(lessons: Lesson[], timezone: string) {
   };
 }
 const hourHeight = 68;
+
+function availabilityForDay(data: AppData, day: Date, timezone: string) {
+  const dayKey = localDateKey(day, timezone);
+  const weekday = Number(formatInTimeZone(day, timezone, "i"));
+  return data.availability.filter(
+    (rule) =>
+      (rule.kind === "recurring" && rule.weekday === weekday) ||
+      (rule.kind === "single" &&
+        localDateKey(rule.start, timezone) === dayKey),
+  );
+}
+
+function isAllDayUnavailable(data: AppData, day: Date, timezone: string) {
+  return availabilityForDay(data, day, timezone).some((rule) => rule.allDay);
+}
 
 export function CalendarPage() {
   const session = useSessionTeacher();
@@ -122,6 +137,10 @@ export function CalendarPage() {
   function handleSlot(day: Date, time: string, occupied?: Lesson) {
     if (readOnly) return;
     const date = localDateKey(day, timezone);
+    if (isAllDayUnavailable(data, day, timezone)) {
+      showToast({ message: "Ten dzień jest oznaczony jako niedostępny" });
+      return;
+    }
     if (
       occupied &&
       planningStudentId &&
@@ -140,6 +159,11 @@ export function CalendarPage() {
   async function dropLesson(event: DragEvent<HTMLDivElement>, day: Date) {
     event.preventDefault();
     if (!dragged || readOnly || mutation.isPending) return;
+    if (isAllDayUnavailable(data, day, timezone)) {
+      showToast({ message: "Nie można przenieść lekcji na niedostępny dzień" });
+      setDragged(null);
+      return;
+    }
     const rect = event.currentTarget.getBoundingClientRect();
     const minute = Math.max(
       0,
@@ -444,21 +468,28 @@ function CalendarGrid({
         {days.map((day) => {
           const today =
             localDateKey(day, timezone) === localDateKey(now, timezone);
+          const allDayUnavailable = isAllDayUnavailable(data, day, timezone);
           const count = lessons.filter(
             (lesson) =>
               localDateKey(lesson.startsAt, timezone) ===
               localDateKey(day, timezone),
           ).length;
           return (
-            <div key={day.toISOString()} className={today ? "today" : ""}>
+            <div
+              key={day.toISOString()}
+              className={`${today ? "today" : ""}${allDayUnavailable ? " calendar-day-head--unavailable" : ""}`}
+            >
               <span>
                 {formatInTimeZone(day, timezone, "EEE", { locale: pl })}
               </span>
               <strong>{formatInTimeZone(day, timezone, "d")}</strong>
               <small>{lessonCountLabel(count)}</small>
+              {allDayUnavailable && (
+                <span className="calendar-day-status">Niedostępny</span>
+              )}
               <button
                 className="calendar-add-day"
-                disabled={readOnly}
+                disabled={readOnly || allDayUnavailable}
                 aria-label={`Dodaj lekcję: ${formatInTimeZone(day, timezone, "d MMMM", { locale: pl })}`}
                 onClick={() => onSlot(day, "09:00")}
               >
@@ -479,27 +510,27 @@ function CalendarGrid({
           const dayLessons = lessons.filter(
             (lesson) => localDateKey(lesson.startsAt, timezone) === dayKey,
           );
-          const weekday = Number(formatInTimeZone(day, timezone, "i"));
-          const availability = data.availability.filter(
-            (rule) =>
-              (rule.kind === "recurring" && rule.weekday === weekday) ||
-              (rule.kind === "single" &&
-                localDateKey(rule.start, timezone) === dayKey),
-          );
+          const availability = availabilityForDay(data, day, timezone);
+          const allDayUnavailable = availability.some((rule) => rule.allDay);
           const today = dayKey === localDateKey(now, timezone);
           const nowMinutes =
             Number(formatInTimeZone(now, timezone, "H")) * 60 +
             Number(formatInTimeZone(now, timezone, "m"));
           return (
             <div
-              className={`calendar-day-column${today ? " today" : ""}`}
+              className={`calendar-day-column${today ? " today" : ""}${allDayUnavailable ? " calendar-day-column--unavailable" : ""}`}
               key={dayKey}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => onDrop(event, day)}
+              onDragOver={(event) => {
+                if (!allDayUnavailable) event.preventDefault();
+              }}
+              onDrop={(event) => {
+                if (!allDayUnavailable) onDrop(event, day);
+              }}
               onMouseLeave={() => setHoverSlot(null)}
               onMouseMove={(event) => {
                 if (
                   readOnly ||
+                  allDayUnavailable ||
                   (event.target as HTMLElement).closest("[data-event]")
                 ) {
                   setHoverSlot(null);
@@ -522,6 +553,7 @@ function CalendarGrid({
               onClick={(event) => {
                 if (
                   readOnly ||
+                  allDayUnavailable ||
                   (event.target as HTMLElement).closest("[data-event]")
                 )
                   return;
@@ -541,7 +573,12 @@ function CalendarGrid({
                 );
               }}
             >
-              {hoverSlot?.day === dayKey && (
+              {allDayUnavailable && (
+                <div className="calendar-full-day-block" aria-hidden="true">
+                  <span>Cały dzień niedostępny</span>
+                </div>
+              )}
+              {!allDayUnavailable && hoverSlot?.day === dayKey && (
                 <span
                   aria-hidden="true"
                   className="calendar-slot-preview"
@@ -561,7 +598,7 @@ function CalendarGrid({
                   style={{ top: (hour - startHour) * hourHeight }}
                 />
               ))}
-              {availability.map((rule) => {
+              {availability.filter((rule) => !rule.allDay).map((rule) => {
                 const start =
                   Number(formatInTimeZone(rule.start, timezone, "H")) * 60 +
                   Number(formatInTimeZone(rule.start, timezone, "m"));
@@ -730,13 +767,13 @@ function AgendaView({
         const lessons = data.lessons.filter(
           (lesson) => localDateKey(lesson.startsAt, timezone) === key,
         );
-        const unavailable = data.availability.filter((rule) =>
-          rule.kind === "recurring"
-            ? rule.weekday === Number(formatInTimeZone(day, timezone, "i"))
-            : localDateKey(rule.start, timezone) === key,
-        );
+        const unavailable = availabilityForDay(data, day, timezone);
+        const allDayUnavailable = unavailable.some((rule) => rule.allDay);
         return (
-          <section key={key}>
+          <section
+            key={key}
+            className={allDayUnavailable ? "agenda-day--unavailable" : ""}
+          >
             <div className="agenda-day-head">
               <span>
                 <strong>
@@ -748,7 +785,9 @@ function AgendaView({
               </span>
               <button
                 className="icon-button icon-button--border"
-                disabled={data.teacher.subscription.readOnly}
+                disabled={
+                  data.teacher.subscription.readOnly || allDayUnavailable
+                }
                 aria-label={`Dodaj lekcję: ${formatInTimeZone(day, timezone, "d MMMM", { locale: pl })}`}
                 onClick={() => openLessonComposer({ date: key })}
               >
@@ -756,10 +795,14 @@ function AgendaView({
               </button>
             </div>
             {unavailable.map((rule) => (
-              <p className="agenda-unavailable" key={rule.id}>
+              <p
+                className={`agenda-unavailable${rule.allDay ? " agenda-unavailable--all-day" : ""}`}
+                key={rule.id}
+              >
                 <time>
-                  {formatTime(rule.start, timezone)}–
-                  {formatTime(rule.end, timezone)}
+                  {rule.allDay
+                    ? "Cały dzień"
+                    : `${formatTime(rule.start, timezone)}–${formatTime(rule.end, timezone)}`}
                 </time>
                 <span>{rule.label || "Czas niedostępny"}</span>
               </p>
@@ -838,52 +881,45 @@ function MonthView({
         ))}
       </div>
       <div className="month-grid">
-        {cells.map((day, index) =>
-          day ? (
+        {cells.map((day, index) => {
+          if (!day) return <span key={`empty-${index}`} />;
+          const dayKey = localDateKey(day, timezone);
+          const dayLessons = data.lessons.filter(
+            (lesson) =>
+              localDateKey(lesson.startsAt, timezone) === dayKey &&
+              lesson.status !== "cancelled",
+          );
+          const allDayUnavailable = isAllDayUnavailable(data, day, timezone);
+          const today = dayKey === localDateKey(new Date(), timezone);
+          return (
             <button
               key={day.toISOString()}
-              aria-label={`${formatInTimeZone(day, timezone, "d MMMM yyyy", { locale: pl })} · ${lessonCountLabel(data.lessons.filter((lesson) => localDateKey(lesson.startsAt, timezone) === localDateKey(day, timezone) && lesson.status !== "cancelled").length)}`}
-              className={
-                localDateKey(day, timezone) ===
-                localDateKey(new Date(), timezone)
-                  ? "today"
-                  : ""
-              }
+              aria-label={`${formatInTimeZone(day, timezone, "d MMMM yyyy", { locale: pl })} · ${lessonCountLabel(dayLessons.length)}${allDayUnavailable ? " · Niedostępny cały dzień" : ""}`}
+              className={`${today ? "today" : ""}${allDayUnavailable ? " month-day--unavailable" : ""}`}
               onClick={() => onDay(day)}
             >
               <strong>{formatInTimeZone(day, timezone, "d")}</strong>
-              <small className="month-count">
-                {data.lessons.filter(
-                  (lesson) =>
-                    localDateKey(lesson.startsAt, timezone) ===
-                      localDateKey(day, timezone) &&
-                    lesson.status !== "cancelled",
-                ).length || "—"}
-                <span> lekcji</span>
-              </small>
-              {data.lessons
-                .filter(
-                  (lesson) =>
-                    localDateKey(lesson.startsAt, timezone) ===
-                      localDateKey(day, timezone) &&
-                    lesson.status !== "cancelled",
-                )
-                .slice(0, 3)
-                .map((lesson) => (
-                  <span key={lesson.id}>
-                    {formatTime(lesson.startsAt, timezone)} ·{" "}
-                    {
-                      data.students.find(
-                        (student) => student.id === lesson.participantIds[0],
-                      )?.name
-                    }
-                  </span>
-                ))}
+              {allDayUnavailable ? (
+                <small className="month-unavailable-label">Niedostępny</small>
+              ) : (
+                <small className="month-count">
+                  {dayLessons.length || "—"}
+                  <span> lekcji</span>
+                </small>
+              )}
+              {dayLessons.slice(0, 3).map((lesson) => (
+                <span key={lesson.id}>
+                  {formatTime(lesson.startsAt, timezone)} ·{" "}
+                  {
+                    data.students.find(
+                      (student) => student.id === lesson.participantIds[0],
+                    )?.name
+                  }
+                </span>
+              ))}
             </button>
-          ) : (
-            <span key={`empty-${index}`} />
-          ),
-        )}
+          );
+        })}
       </div>
     </div>
   );

@@ -37,21 +37,32 @@ const occurrenceSchema = z.object({
   time: z.string().min(1, "Wybierz godzinę."),
   durationMinutes: z.number().min(15).max(360),
 });
-const schema = z.object({
-  participantIds: z
-    .array(z.string())
-    .min(1, "Wybierz co najmniej jednego ucznia."),
-  mode: z.enum(["single", "multiple", "recurring"]),
-  occurrences: z.array(occurrenceSchema).min(1),
-  frequency: z.enum(["weekly", "biweekly"]),
-  count: z.number().min(2).max(52),
-  format: z.enum(["online", "offline"]),
-  location: z.string().min(3, "Dodaj link lub adres spotkania."),
-  priceZloty: z.number().min(0),
-  trial: z.boolean(),
-  topic: z.string(),
-  plan: z.string(),
-});
+const schema = z
+  .object({
+    participantIds: z
+      .array(z.string())
+      .min(1, "Wybierz co najmniej jednego ucznia."),
+    mode: z.enum(["single", "multiple", "recurring"]),
+    occurrences: z.array(occurrenceSchema).min(1),
+    frequency: z.enum(["weekly", "biweekly"]),
+    count: z.number().min(2).max(52),
+    format: z.enum(["online", "offline"]),
+    location: z.string(),
+    atTeacherPlace: z.boolean(),
+    priceZloty: z.number().min(0),
+    trial: z.boolean(),
+    topic: z.string(),
+    plan: z.string(),
+  })
+  .superRefine((values, context) => {
+    if (!values.atTeacherPlace && values.location.trim().length < 3) {
+      context.addIssue({
+        code: "custom",
+        path: ["location"],
+        message: "Dodaj link lub adres spotkania.",
+      });
+    }
+  });
 type Values = z.infer<typeof schema>;
 
 interface ConflictState {
@@ -114,6 +125,8 @@ export function LessonComposer() {
     keyName: "fieldKey",
   });
   const trial = useWatch({ control, name: "trial" });
+  const formatValue = useWatch({ control, name: "format" });
+  const atTeacherPlace = useWatch({ control, name: "atTeacherPlace" });
   const mode = useWatch({ control, name: "mode" });
   const selectedIds = useWatch({ control, name: "participantIds" });
   const frequency = useWatch({ control, name: "frequency" });
@@ -161,15 +174,30 @@ export function LessonComposer() {
     const defaults = {
       format: student.defaultFormat,
       location: student.defaultLocation,
+      atTeacherPlace:
+        student.defaultFormat === "offline" &&
+        student.defaultLocation === "W domu / w biurze",
       priceZloty: (student.defaultPrice?.amount ?? 0) / 100,
       trial: student.defaultPrice === null,
     };
-    for (const key of ["format", "location", "priceZloty", "trial"] as const) {
+    for (const key of [
+      "format",
+      "location",
+      "atTeacherPlace",
+      "priceZloty",
+      "trial",
+    ] as const) {
       if (!getFieldState(key).isDirty) setValue(key, defaults[key]);
     }
     if (!getFieldState("occurrences.0.durationMinutes").isDirty)
       setValue("occurrences.0.durationMinutes", student.defaultDurationMinutes);
   }, [selectedIds, data?.students, getFieldState, setValue]);
+
+  useEffect(() => {
+    if (formatValue === "online" && atTeacherPlace) {
+      setValue("atTeacherPlace", false, { shouldDirty: true });
+    }
+  }, [atTeacherPlace, formatValue, setValue]);
 
   const recurringDates = (() => {
     if (mode !== "recurring" || !firstOccurrence?.date || !firstOccurrence.time)
@@ -235,7 +263,10 @@ export function LessonComposer() {
           mode: values.mode,
           occurrences: inputOccurrences,
           format: values.format,
-          location: values.location,
+          location:
+            values.format === "offline" && values.atTeacherPlace
+              ? "W domu / w biurze"
+              : values.location.trim(),
           priceAmount: values.trial
             ? null
             : Math.round(values.priceZloty * 100),
@@ -751,9 +782,28 @@ export function LessonComposer() {
                 <input type="checkbox" {...register("trial")} />
                 <span>Lekcja próbna bez ceny</span>
               </label>
+              <label
+                className={`check-row place-choice ${formatValue === "online" ? "place-choice--disabled" : ""}`}
+              >
+                <input
+                  type="checkbox"
+                  disabled={formatValue === "online"}
+                  {...register("atTeacherPlace")}
+                />
+                <span>
+                  W domu / w biurze
+                  <small>Nie trzeba podawać adresu</small>
+                </span>
+              </label>
               <label className="field">
                 <span>Link lub adres</span>
                 <input
+                  disabled={formatValue === "offline" && atTeacherPlace}
+                  placeholder={
+                    formatValue === "offline"
+                      ? "np. ul. Długa 12, Warszawa"
+                      : "np. https://meet.google.com/..."
+                  }
                   {...register("location")}
                   aria-invalid={Boolean(errors.location)}
                   aria-describedby={
@@ -882,6 +932,9 @@ function getDefaults(
     count: 4,
     format: selected?.defaultFormat ?? "online",
     location: selected?.defaultLocation ?? "",
+    atTeacherPlace:
+      selected?.defaultFormat === "offline" &&
+      selected?.defaultLocation === "W domu / w biurze",
     priceZloty: (selected?.defaultPrice?.amount ?? 0) / 100,
     trial: selected?.defaultPrice === null,
     topic: "",
