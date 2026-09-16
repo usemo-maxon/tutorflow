@@ -48,7 +48,7 @@ npx supabase test db
 
 4. Auth → URL Configuration:
    - Site URL: `https://YOUR_DOMAIN`
-   - Redirect URLs: `https://YOUR_DOMAIN/api/auth/callback` and, for previews only, the exact trusted preview callback URL.
+   - Redirect URLs: `https://YOUR_DOMAIN/auth/callback` (Google login), `https://YOUR_DOMAIN/api/auth/callback` (email confirmation and password reset), and, for previews only, the exact trusted preview callback URLs.
 5. Auth → Providers → Google: enable Google and enter the Auth OAuth client credentials. In Google Cloud, the authorized redirect URI for this Supabase provider is `https://PROJECT_REF.supabase.co/auth/v1/callback`.
 6. Keep email confirmation enabled. Configure production SMTP and edit confirmation/reset templates so links use the configured redirect URL.
 7. Storage: verify `attachments` is private, file limit is 10 MB, MIME allow-list matches the migration, and no public object policy exists. Object keys must start with the authenticated teacher UUID (`TEACHER_UUID/...`). Serve downloads only with short-lived signed URLs.
@@ -65,7 +65,7 @@ Create a separate Google OAuth 2.0 Web Application client for Calendar and enabl
 
 Add the canonical origin `https://YOUR_DOMAIN` as an authorized JavaScript origin if required by the consent configuration. Request only `https://www.googleapis.com/auth/calendar.events`. Configure and publish the OAuth consent screen. `GOOGLE_CLIENT_SECRET` is used only by Vercel Route Handlers and cron processing.
 
-Google login through Supabase and Calendar access are intentionally separate OAuth clients/flows. The app login callback is `https://YOUR_DOMAIN/api/auth/callback`; Google Cloud redirects Supabase Auth through `https://PROJECT_REF.supabase.co/auth/v1/callback`.
+Google login through Supabase and Calendar access are intentionally separate OAuth clients/flows. The app login callback is `https://YOUR_DOMAIN/auth/callback`; Google Cloud redirects Supabase Auth through `https://PROJECT_REF.supabase.co/auth/v1/callback`.
 
 ### 4. Telegram
 

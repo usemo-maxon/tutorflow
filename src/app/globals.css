@@ -734,6 +734,14 @@ h3 {
   flex: 1;
   background: var(--border);
 }
+.google-auth-button {
+  position: relative;
+}
+.google-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+}
 .auth-switch {
   margin: 24px 0 0;
   color: var(--muted);

@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { cookies } from "next/headers";
 import type { Teacher } from "@/lib/domain";
+import { safeAppPath } from "@/lib/auth-redirect";
 import { isSupabaseConfigured } from "./env";
 import { getTeacherBySession } from "./store";
 import { createSupabaseServerClient } from "./supabase";
@@ -61,9 +62,5 @@ export const currentTeacherId = cache(async (): Promise<string | null> => {
 });
 
 export function safeReturnTo(value: unknown): string {
-  return typeof value === "string" &&
-    value.startsWith("/app/") &&
-    !value.startsWith("//")
-    ? value
-    : "/app/dzisiaj";
+  return safeAppPath(typeof value === "string" ? value : null);
 }

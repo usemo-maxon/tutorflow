@@ -1,7 +1,6 @@
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { z } from "zod";
-import { SESSION_COOKIE, safeReturnTo } from "@/server/auth";
+import { SESSION_COOKIE } from "@/server/auth";
 import { isSupabaseConfigured, siteUrl } from "@/server/env";
 import { ApiFailure, errorResponse } from "@/server/errors";
 import { createSupabaseServerClient } from "@/server/supabase";
@@ -27,25 +26,10 @@ const registerSchema = loginSchema.extend({
 });
 
 export async function GET(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ action: string }> },
 ) {
   const { action } = await params;
-  if (action === "google") {
-    const supabase = await createSupabaseServerClient();
-    const returnTo = safeReturnTo(
-      new URL(request.url).searchParams.get("returnTo"),
-    );
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${siteUrl()}/api/auth/callback?next=${encodeURIComponent(returnTo)}`,
-        queryParams: { access_type: "offline", prompt: "select_account" },
-      },
-    });
-    if (error || !data.url) return redirect("/logowanie?error=oauth");
-    return redirect(data.url);
-  }
   if (action !== "session")
     return Response.json({ code: "NOT_FOUND" }, { status: 404 });
   if (isSupabaseConfigured()) {
