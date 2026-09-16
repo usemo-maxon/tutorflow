@@ -19,12 +19,19 @@ import {
   ChevronRight,
   GripVertical,
   Plus,
+  Trash2,
   Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useMemo, useState, type DragEvent, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type DragEvent,
+  type CSSProperties,
+} from "react";
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { copy } from "@/lib/copy";
@@ -42,19 +49,33 @@ import { PageLoading } from "../ui/loading";
 import { LessonStatusBadge } from "../ui/status-badge";
 
 type CalendarView = "day" | "week" | "month" | "agenda";
-function calendarBounds(lessons: Lesson[], timezone: string) {
+function calendarBounds(lessons: Lesson[], timezone: string, data?: AppData) {
   const starts = lessons.map(
     (l) =>
       Number(formatInTimeZone(l.startsAt, timezone, "H")) +
       Number(formatInTimeZone(l.startsAt, timezone, "m")) / 60,
   );
+  const available = (data?.availability ?? [])
+    .filter((rule) => rule.isAvailable && !rule.allDay)
+    .flatMap((rule) => [
+      Number(formatInTimeZone(rule.start, timezone, "H")),
+      Number(formatInTimeZone(rule.end, timezone, "H")),
+    ]);
+  const blockStarts = (data?.calendarBlocks ?? []).map((block) =>
+    Number(formatInTimeZone(block.startsAt, timezone, "H")),
+  );
+  const blockEnds = (data?.calendarBlocks ?? []).map(
+    (block) => Number(formatInTimeZone(block.endsAt, timezone, "H")) + 1,
+  );
   return {
-    startHour: Math.floor(Math.min(8, ...starts)),
+    startHour: Math.floor(Math.min(7, ...starts, ...available, ...blockStarts)),
     endHour: Math.min(
       24,
       Math.ceil(
         Math.max(
-          21,
+          22,
+          ...available,
+          ...blockEnds,
           ...lessons.map((l, i) => starts[i] + l.durationMinutes / 60),
         ),
       ),
@@ -74,16 +95,45 @@ function availabilityForDay(data: AppData, day: Date, timezone: string) {
 }
 
 function isAllDayUnavailable(data: AppData, day: Date, timezone: string) {
-  return availabilityForDay(data, day, timezone).some((rule) => rule.allDay);
+  return availabilityForDay(data, day, timezone).some(
+    (rule) => rule.allDay && !rule.isAvailable,
+  );
 }
 
 export function CalendarPage() {
   const session = useSessionTeacher();
-  const { data, isPending } = useAppData(session.id);
-  const mutation = useAppMutation(session.id);
-  const { openLessonComposer, showToast, showError } = useAppUi();
   const [view, setView] = useState<CalendarView>("week");
   const [anchor, setAnchor] = useState(new Date());
+  const queryRange = useMemo(() => {
+    const days = getWeekDays(anchor, session.timezone);
+    const startDay =
+      view === "day"
+        ? anchor
+        : view === "month"
+          ? startOfMonth(anchor)
+          : days[0];
+    const endDay =
+      view === "day"
+        ? addDays(anchor, 1)
+        : view === "month"
+          ? addDays(endOfMonth(anchor), 1)
+          : addDays(days[0], 7);
+    return {
+      start: localInputToUtc(
+        localDateKey(startDay, session.timezone),
+        "00:00",
+        session.timezone,
+      ),
+      end: localInputToUtc(
+        localDateKey(endDay, session.timezone),
+        "00:00",
+        session.timezone,
+      ),
+    };
+  }, [anchor, session.timezone, view]);
+  const { data, isPending } = useAppData(session.id, queryRange);
+  const mutation = useAppMutation(session.id);
+  const { openLessonComposer, showToast, showError } = useAppUi();
   const searchParams = useSearchParams();
   const [planningStudentId, setPlanningStudentId] = useState(
     searchParams.get("student") ?? "",
@@ -97,6 +147,31 @@ export function CalendarPage() {
     date: string;
     time: string;
   } | null>(null);
+  const [blockForm, setBlockForm] = useState({
+    open: false,
+    title: "Prywatne",
+    date: localDateKey(new Date(), session.timezone),
+    start: "12:00",
+    end: "13:00",
+  });
+  useEffect(() => {
+    const saved = window.localStorage.getItem(
+      "easy4tutor-calendar-view",
+    ) as CalendarView | null;
+    const mobile = window.matchMedia("(max-width: 720px)").matches;
+    const validSaved = ["day", "week", "month", "agenda"].includes(saved ?? "");
+    const preferred =
+      mobile && (!validSaved || saved === "week")
+        ? "day"
+        : validSaved
+          ? saved!
+          : "week";
+    const timer = window.setTimeout(() => setView(preferred), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem("easy4tutor-calendar-view", view);
+  }, [view]);
   const timezone = data?.teacher.timezone ?? session.timezone;
   const weekDays = useMemo(
     () => getWeekDays(anchor, timezone),
@@ -116,7 +191,11 @@ export function CalendarPage() {
 
   if (isPending || !data) return <PageLoading />;
   const calendarData = data;
-  const { startHour, endHour } = calendarBounds(rangeLessons, timezone);
+  const { startHour, endHour } = calendarBounds(
+    rangeLessons,
+    timezone,
+    calendarData,
+  );
   const readOnly = data.teacher.subscription.readOnly;
   const planningStudent = data.students.find(
     (student) => student.id === planningStudentId,
@@ -137,10 +216,6 @@ export function CalendarPage() {
   function handleSlot(day: Date, time: string, occupied?: Lesson) {
     if (readOnly) return;
     const date = localDateKey(day, timezone);
-    if (isAllDayUnavailable(calendarData, day, timezone)) {
-      showToast({ message: "Ten dzień jest oznaczony jako niedostępny" });
-      return;
-    }
     if (
       occupied &&
       planningStudentId &&
@@ -159,11 +234,6 @@ export function CalendarPage() {
   async function dropLesson(event: DragEvent<HTMLDivElement>, day: Date) {
     event.preventDefault();
     if (!dragged || readOnly || mutation.isPending) return;
-    if (isAllDayUnavailable(calendarData, day, timezone)) {
-      showToast({ message: "Nie można przenieść lekcji na niedostępny dzień" });
-      setDragged(null);
-      return;
-    }
     const rect = event.currentTarget.getBoundingClientRect();
     const minute = Math.max(
       0,
@@ -206,6 +276,33 @@ export function CalendarPage() {
     }
     setDragged(null);
   }
+  async function createBlock(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await mutation.mutateAsync({
+        type: "createCalendarBlock",
+        block: {
+          title: blockForm.title.trim(),
+          startsAt: localInputToUtc(blockForm.date, blockForm.start, timezone),
+          endsAt: localInputToUtc(blockForm.date, blockForm.end, timezone),
+          timezone,
+        },
+      });
+      setBlockForm((current) => ({ ...current, open: false }));
+      showToast({ message: "Czas został zablokowany" });
+    } catch (error) {
+      showError(error);
+    }
+  }
+  async function deleteBlock(blockId: string) {
+    if (!window.confirm("Usunąć tę blokadę czasu?")) return;
+    try {
+      await mutation.mutateAsync({ type: "deleteCalendarBlock", blockId });
+      showToast({ message: "Blokada czasu usunięta" });
+    } catch (error) {
+      showError(error);
+    }
+  }
 
   return (
     <div className="calendar-page page-enter">
@@ -214,18 +311,33 @@ export function CalendarPage() {
           <p className="eyebrow">Czas pod kontrolą</p>
           <h1>Kalendarz</h1>
         </div>
-        <button
-          className="button button--primary"
-          disabled={readOnly}
-          onClick={() =>
-            openLessonComposer({
-              studentIds: planningStudentId ? [planningStudentId] : undefined,
-            })
-          }
-        >
-          <Plus size={18} />
-          {copy.actions.addLesson}
-        </button>
+        <div className="calendar-header-actions">
+          <button
+            className="button button--secondary"
+            disabled={readOnly}
+            onClick={() =>
+              setBlockForm((current) => ({
+                ...current,
+                open: true,
+                date: localDateKey(anchor, timezone),
+              }))
+            }
+          >
+            Zablokuj czas
+          </button>
+          <button
+            className="button button--primary"
+            disabled={readOnly}
+            onClick={() =>
+              openLessonComposer({
+                studentIds: planningStudentId ? [planningStudentId] : undefined,
+              })
+            }
+          >
+            <Plus size={18} />
+            {copy.actions.addLesson}
+          </button>
+        </div>
       </header>
       <div className="calendar-toolbar">
         <div className="calendar-nav">
@@ -332,6 +444,7 @@ export function CalendarPage() {
           onDrop={dropLesson}
           readOnly={readOnly || mutation.isPending}
           onDragEnd={() => setDragged(null)}
+          onDeleteBlock={deleteBlock}
         />
       )}
       {view === "month" && (
@@ -356,6 +469,7 @@ export function CalendarPage() {
               studentIds: planningStudentId ? [planningStudentId] : undefined,
             })
           }
+          onDeleteBlock={deleteBlock}
         />
       )}
       <div className="mobile-calendar-agenda">
@@ -369,6 +483,7 @@ export function CalendarPage() {
               studentIds: planningStudentId ? [planningStudentId] : undefined,
             })
           }
+          onDeleteBlock={deleteBlock}
         />
       </div>
 
@@ -416,6 +531,101 @@ export function CalendarPage() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+      <Dialog.Root
+        open={blockForm.open}
+        onOpenChange={(open) =>
+          setBlockForm((current) => ({ ...current, open }))
+        }
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="dialog-content dialog-content--alert">
+            <Dialog.Title>Zablokuj czas</Dialog.Title>
+            <Dialog.Description>
+              Blokada zajmuje termin, ale nie tworzy lekcji ani płatności.
+            </Dialog.Description>
+            <form className="form-stack" onSubmit={createBlock}>
+              <label className="field">
+                <span>Tytuł</span>
+                <input
+                  required
+                  value={blockForm.title}
+                  onChange={(event) =>
+                    setBlockForm((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Data</span>
+                <input
+                  type="date"
+                  required
+                  value={blockForm.date}
+                  onChange={(event) =>
+                    setBlockForm((current) => ({
+                      ...current,
+                      date: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <div className="form-row">
+                <label className="field">
+                  <span>Od</span>
+                  <input
+                    type="time"
+                    required
+                    value={blockForm.start}
+                    onChange={(event) =>
+                      setBlockForm((current) => ({
+                        ...current,
+                        start: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Do</span>
+                  <input
+                    type="time"
+                    required
+                    min={blockForm.start}
+                    value={blockForm.end}
+                    onChange={(event) =>
+                      setBlockForm((current) => ({
+                        ...current,
+                        end: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+              <footer className="dialog-footer">
+                <button
+                  type="button"
+                  className="button button--quiet"
+                  onClick={() =>
+                    setBlockForm((current) => ({ ...current, open: false }))
+                  }
+                >
+                  Anuluj
+                </button>
+                <button
+                  className="button button--primary"
+                  disabled={
+                    mutation.isPending || blockForm.end <= blockForm.start
+                  }
+                >
+                  Zablokuj czas
+                </button>
+              </footer>
+            </form>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }
@@ -431,6 +641,7 @@ function CalendarGrid({
   onDrop,
   readOnly,
   onDragEnd,
+  onDeleteBlock,
 }: {
   days: Date[];
   lessons: Lesson[];
@@ -439,6 +650,7 @@ function CalendarGrid({
   planning: boolean;
   readOnly: boolean;
   onDragEnd: () => void;
+  onDeleteBlock: (blockId: string) => void;
   onSlot: (day: Date, time: string, lesson?: Lesson) => void;
   onDrag: (lesson: Lesson) => void;
   onDrop: (event: DragEvent<HTMLDivElement>, day: Date) => void;
@@ -448,7 +660,7 @@ function CalendarGrid({
     day: string;
     minute: number;
   } | null>(null);
-  const { startHour, endHour } = calendarBounds(lessons, timezone);
+  const { startHour, endHour } = calendarBounds(lessons, timezone, data);
   const hours = Array.from(
     { length: endHour - startHour },
     (_, i) => startHour + i,
@@ -489,7 +701,7 @@ function CalendarGrid({
               )}
               <button
                 className="calendar-add-day"
-                disabled={readOnly || allDayUnavailable}
+                disabled={readOnly}
                 aria-label={`Dodaj lekcję: ${formatInTimeZone(day, timezone, "d MMMM", { locale: pl })}`}
                 onClick={() => onSlot(day, "09:00")}
               >
@@ -510,6 +722,9 @@ function CalendarGrid({
           const dayLessons = lessons.filter(
             (lesson) => localDateKey(lesson.startsAt, timezone) === dayKey,
           );
+          const dayBlocks = data.calendarBlocks.filter(
+            (block) => localDateKey(block.startsAt, timezone) === dayKey,
+          );
           const availability = availabilityForDay(data, day, timezone);
           const allDayUnavailable = availability.some((rule) => rule.allDay);
           const today = dayKey === localDateKey(now, timezone);
@@ -521,16 +736,15 @@ function CalendarGrid({
               className={`calendar-day-column${today ? " today" : ""}${allDayUnavailable ? " calendar-day-column--unavailable" : ""}`}
               key={dayKey}
               onDragOver={(event) => {
-                if (!allDayUnavailable) event.preventDefault();
+                event.preventDefault();
               }}
               onDrop={(event) => {
-                if (!allDayUnavailable) onDrop(event, day);
+                onDrop(event, day);
               }}
               onMouseLeave={() => setHoverSlot(null)}
               onMouseMove={(event) => {
                 if (
                   readOnly ||
-                  allDayUnavailable ||
                   (event.target as HTMLElement).closest("[data-event]")
                 ) {
                   setHoverSlot(null);
@@ -553,7 +767,6 @@ function CalendarGrid({
               onClick={(event) => {
                 if (
                   readOnly ||
-                  allDayUnavailable ||
                   (event.target as HTMLElement).closest("[data-event]")
                 )
                   return;
@@ -599,7 +812,7 @@ function CalendarGrid({
                 />
               ))}
               {availability
-                .filter((rule) => !rule.allDay)
+                .filter((rule) => !rule.allDay && !rule.isAvailable)
                 .map((rule) => {
                   const start =
                     Number(formatInTimeZone(rule.start, timezone, "H")) * 60 +
@@ -630,6 +843,47 @@ function CalendarGrid({
                     </div>
                   );
                 })}
+              {dayBlocks.map((block) => {
+                const startMinutes =
+                  Number(formatInTimeZone(block.startsAt, timezone, "H")) * 60 +
+                  Number(formatInTimeZone(block.startsAt, timezone, "m"));
+                const endMinutes =
+                  Number(formatInTimeZone(block.endsAt, timezone, "H")) * 60 +
+                  Number(formatInTimeZone(block.endsAt, timezone, "m"));
+                return (
+                  <div
+                    data-event
+                    className="calendar-block"
+                    key={block.id}
+                    style={{
+                      top: ((startMinutes - startHour * 60) / 60) * hourHeight,
+                      height: Math.max(
+                        30,
+                        ((endMinutes - startMinutes) / 60) * hourHeight - 3,
+                      ),
+                    }}
+                    title={`${block.title} · ${formatTime(block.startsAt, timezone)}–${formatTime(block.endsAt, timezone)}`}
+                  >
+                    <time>{formatTime(block.startsAt, timezone)}</time>
+                    <strong>{block.title}</strong>
+                    <small>Blokada czasu</small>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        className="calendar-block-delete"
+                        aria-label={`Usuń blokadę: ${block.title}`}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onDeleteBlock(block.id);
+                        }}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
               {dayLessons.map((lesson) => {
                 const localHour = Number(
                   formatInTimeZone(lesson.startsAt, timezone, "H"),
@@ -640,12 +894,16 @@ function CalendarGrid({
                 const top =
                   ((localHour * 60 + localMinute - startHour * 60) / 60) *
                   hourHeight;
+                const group = lesson.groupId
+                  ? data.groups.find((item) => item.id === lesson.groupId)
+                  : undefined;
                 const names = lesson.participantIds
                   .map(
                     (id) =>
                       data.students.find((student) => student.id === id)?.name,
                   )
                   .filter(Boolean);
+                const label = group?.name ?? names.join(", ");
                 return (
                   <Link
                     data-event
@@ -658,7 +916,7 @@ function CalendarGrid({
                       lesson.status !== "cancelled"
                     }
                     onDragEnd={onDragEnd}
-                    title={`${names.join(", ")} · ${lesson.topic || "Temat do ustalenia"} · ${lesson.durationMinutes} min · ${copy.status[lesson.status]}`}
+                    title={`${label} · ${lesson.subject || lesson.topic || "Temat do ustalenia"} · ${lesson.durationMinutes} min · ${copy.status[lesson.status]}`}
                     onDragStart={(event) => {
                       event.dataTransfer.effectAllowed = "move";
                       onDrag(lesson);
@@ -704,13 +962,9 @@ function CalendarGrid({
                         <span> · {lesson.participantIds.length} os.</span>
                       )}
                     </time>
-                    <strong>
-                      {lesson.participantIds.length > 1
-                        ? `${names.join(", ")}`
-                        : names[0]}
-                    </strong>
+                    <strong>{label}</strong>
                     <small>
-                      {lesson.participantIds.length > 1 && (
+                      {(group || lesson.participantIds.length > 1) && (
                         <Users size={12} aria-hidden="true" />
                       )}{" "}
                       {lesson.status === "cancelled"
@@ -719,9 +973,13 @@ function CalendarGrid({
                           ? "Do uzupełnienia"
                           : lesson.status === "completed"
                             ? "Uzupełniona"
-                            : lesson.format === "online"
-                              ? "Online"
-                              : "Stacjonarnie"}
+                            : group
+                              ? `${lesson.participantIds.length} uczniów`
+                              : lesson.subject
+                                ? lesson.subject
+                                : lesson.format === "online"
+                                  ? "Online"
+                                  : "Stacjonarnie"}
                       {["failed", "deleted_in_google"].includes(
                         lesson.syncStatus,
                       )
@@ -756,11 +1014,13 @@ function AgendaView({
   data,
   timezone,
   openLessonComposer,
+  onDeleteBlock,
 }: {
   days: Date[];
   data: import("@/lib/domain").AppData;
   timezone: string;
   openLessonComposer: (preset?: { date?: string; time?: string }) => void;
+  onDeleteBlock: (blockId: string) => void;
 }) {
   return (
     <div className="calendar-agenda">
@@ -768,6 +1028,9 @@ function AgendaView({
         const key = localDateKey(day, timezone);
         const lessons = data.lessons.filter(
           (lesson) => localDateKey(lesson.startsAt, timezone) === key,
+        );
+        const blocks = data.calendarBlocks.filter(
+          (block) => localDateKey(block.startsAt, timezone) === key,
         );
         const unavailable = availabilityForDay(data, day, timezone);
         const allDayUnavailable = unavailable.some((rule) => rule.allDay);
@@ -787,9 +1050,7 @@ function AgendaView({
               </span>
               <button
                 className="icon-button icon-button--border"
-                disabled={
-                  data.teacher.subscription.readOnly || allDayUnavailable
-                }
+                disabled={data.teacher.subscription.readOnly}
                 aria-label={`Dodaj lekcję: ${formatInTimeZone(day, timezone, "d MMMM", { locale: pl })}`}
                 onClick={() => openLessonComposer({ date: key })}
               >
@@ -809,45 +1070,78 @@ function AgendaView({
                 <span>{rule.label || "Czas niedostępny"}</span>
               </p>
             ))}
+            {blocks.map((block) => (
+              <div
+                className="agenda-event-row agenda-event-row--block"
+                key={block.id}
+              >
+                <time>{formatTime(block.startsAt, timezone)}</time>
+                <span>
+                  <strong>{block.title}</strong>
+                  <small>
+                    Blokada czasu · {formatTime(block.startsAt, timezone)}–
+                    {formatTime(block.endsAt, timezone)}
+                  </small>
+                </span>
+                {!data.teacher.subscription.readOnly && (
+                  <button
+                    className="icon-button"
+                    aria-label={`Usuń blokadę: ${block.title}`}
+                    onClick={() => onDeleteBlock(block.id)}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                )}
+              </div>
+            ))}
             {lessons.length ? (
-              lessons.map((lesson) => (
-                <Link
-                  className="agenda-event-row"
-                  href={`/app/lekcje/${lesson.id}`}
-                  key={lesson.id}
-                >
-                  <time>{formatTime(lesson.startsAt, timezone)}</time>
-                  <span>
-                    <strong>
-                      {lesson.participantIds
-                        .map(
-                          (id) =>
-                            data.students.find((student) => student.id === id)
-                              ?.name,
-                        )
-                        .join(", ")}
-                    </strong>
-                    <small>
-                      {lesson.topic || "Temat do ustalenia"} ·{" "}
-                      {lesson.durationMinutes} min
-                    </small>
-                    {["failed", "deleted_in_google"].includes(
-                      lesson.syncStatus,
-                    ) && (
-                      <small className="agenda-sync-error">
-                        <AlertTriangle size={13} />
-                        {lesson.syncStatus === "deleted_in_google"
-                          ? "Usunięta w Google Calendar"
-                          : "Błąd synchronizacji"}
+              lessons.map((lesson) => {
+                const group = lesson.groupId
+                  ? data.groups.find((item) => item.id === lesson.groupId)
+                  : undefined;
+                return (
+                  <Link
+                    className="agenda-event-row"
+                    href={`/app/lekcje/${lesson.id}`}
+                    key={lesson.id}
+                  >
+                    <time>{formatTime(lesson.startsAt, timezone)}</time>
+                    <span>
+                      <strong>
+                        {group?.name ??
+                          lesson.participantIds
+                            .map(
+                              (id) =>
+                                data.students.find(
+                                  (student) => student.id === id,
+                                )?.name,
+                            )
+                            .join(", ")}
+                      </strong>
+                      <small>
+                        {lesson.subject || lesson.topic || "Temat do ustalenia"}{" "}
+                        · {lesson.durationMinutes} min
                       </small>
-                    )}
-                  </span>
-                  <LessonStatusBadge status={lesson.status} />
-                </Link>
-              ))
+                      {["failed", "deleted_in_google"].includes(
+                        lesson.syncStatus,
+                      ) && (
+                        <small className="agenda-sync-error">
+                          <AlertTriangle size={13} />
+                          {lesson.syncStatus === "deleted_in_google"
+                            ? "Usunięta w Google Calendar"
+                            : "Błąd synchronizacji"}
+                        </small>
+                      )}
+                    </span>
+                    <LessonStatusBadge status={lesson.status} />
+                  </Link>
+                );
+              })
             ) : (
               <p className="agenda-empty">
-                {unavailable.length ? "Brak lekcji" : "Wolny dzień"}
+                {unavailable.length || blocks.length
+                  ? "Brak lekcji"
+                  : "Wolny dzień"}
               </p>
             )}
           </section>

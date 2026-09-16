@@ -1,6 +1,5 @@
 import "server-only";
 
-import type { Lesson } from "@/lib/domain";
 import { decryptSecret, encryptSecret } from "./crypto";
 import { createSupabaseAdminClient } from "./supabase";
 
@@ -69,7 +68,17 @@ export async function validGoogleAccessToken(
   return { token: credentials.accessToken, credentials };
 }
 
-export function googleEvent(lesson: Lesson, studentNames: string[]) {
+interface CalendarLesson {
+  id: string;
+  startsAt: string;
+  durationMinutes: number;
+  location: string;
+  status:
+    "scheduled" | "needs_completion" | "completed" | "cancelled" | "no_show";
+  topic: string;
+}
+
+export function googleEvent(lesson: CalendarLesson, studentNames: string[]) {
   const end = new Date(
     new Date(lesson.startsAt).getTime() + lesson.durationMinutes * 60_000,
   ).toISOString();

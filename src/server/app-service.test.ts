@@ -2,20 +2,23 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { CreateLessonInput, Student } from "../lib/domain";
+import type { CreateLessonInput, StudentCreateInput } from "../lib/domain";
 
 let storage: typeof import("./store");
 let perform: typeof import("./app-service").performAction;
 let directory: string;
 let teacherId: string;
 let studentId: string;
-const student: Omit<Student, "id" | "createdAt"> = {
-  name: "Uczeń testowy",
-  contact: "",
+const student: StudentCreateInput = {
+  firstName: "Uczeń",
+  lastName: "testowy",
+  displayName: "Uczeń testowy",
+  email: "",
+  phone: "",
+  subject: "Angielski",
   level: "B1",
   goal: "",
   notes: "",
-  status: "active",
   defaultDurationMinutes: 60,
   defaultFormat: "online",
   defaultLocation: "https://example.test/lesson",
@@ -65,7 +68,13 @@ describe("refined user journeys preserve the existing domain rules", () => {
     const response = await perform(teacherId, {
       type: "updateStudent",
       studentId,
-      patch: { name: "Długie imię ucznia — test", defaultPrice: null },
+      patch: {
+        ...student,
+        firstName: "Długie imię",
+        lastName: "ucznia — test",
+        displayName: "Długie imię ucznia — test",
+        defaultPrice: null,
+      },
     });
     expect(response.data.students[0]).toMatchObject({
       id: studentId,
@@ -95,7 +104,12 @@ describe("refined user journeys preserve the existing domain rules", () => {
     const second = (
       await perform(teacherId, {
         type: "createStudent",
-        student: { ...student, name: "Drugi uczeń" },
+        student: {
+          ...student,
+          firstName: "Drugi",
+          lastName: "uczeń",
+          displayName: "Drugi uczeń",
+        },
       })
     ).result!.id!;
     const created = await perform(teacherId, {
@@ -274,6 +288,100 @@ describe("refined user journeys preserve the existing domain rules", () => {
       }),
     ).rejects.toThrow();
   });
+  it("warns about probable student duplicates without creating a record", async () => {
+    const current = await storage.getAppData(teacherId);
+    const before = current.students.length;
+    const existing = current.students.find((item) => item.id === studentId)!;
+    await expect(
+      perform(teacherId, {
+        type: "createStudent",
+        student: {
+          ...student,
+          firstName: existing.firstName,
+          lastName: existing.lastName,
+          displayName: existing.displayName,
+        },
+      }),
+    ).rejects.toThrow();
+    expect((await storage.getAppData(teacherId)).students).toHaveLength(before);
+  });
+  it("creates shared contacts and keeps relation flags per student", async () => {
+    const second = (await storage.getAppData(teacherId)).students.find(
+      (item) => item.id !== studentId,
+    )!;
+    const contact = {
+      firstName: "Anna",
+      lastName: "Testowa",
+      email: "anna.parent@example.test",
+      phone: "+48 600 111 222",
+      type: "parent" as const,
+      relationship: "Mama",
+      isPrimary: true,
+      isBillingContact: true,
+    };
+    await perform(teacherId, {
+      type: "createStudentContact",
+      studentId,
+      contact,
+    });
+    const response = await perform(teacherId, {
+      type: "createStudentContact",
+      studentId: second.id,
+      contact: { ...contact, relationship: "Opiekun", isBillingContact: false },
+    });
+    const links = response.data.contacts.filter(
+      (item) => item.email === contact.email,
+    );
+    expect(links).toHaveLength(2);
+    expect(new Set(links.map((item) => item.contactId)).size).toBe(1);
+    expect(
+      links.find((item) => item.studentId === studentId)?.isBillingContact,
+    ).toBe(true);
+  });
+  it("creates, archives and restores groups while preserving membership history", async () => {
+    const created = await perform(teacherId, {
+      type: "createGroup",
+      group: {
+        name: "Grupa testowa",
+        subject: "Angielski",
+        level: "B1",
+        defaultDurationMinutes: 60,
+        defaultPrice: { amount: 8000, currency: "PLN" },
+        notes: "",
+      },
+    });
+    const groupId = created.result!.id!;
+    await perform(teacherId, {
+      type: "addGroupMembers",
+      groupId,
+      studentIds: [studentId, studentId],
+    });
+    let group = (await storage.getAppData(teacherId)).groups.find(
+      (item) => item.id === groupId,
+    )!;
+    expect(
+      group.members.filter((member) => member.status === "active"),
+    ).toHaveLength(1);
+    await perform(teacherId, { type: "removeGroupMember", groupId, studentId });
+    group = (await storage.getAppData(teacherId)).groups.find(
+      (item) => item.id === groupId,
+    )!;
+    expect(group.members[0]).toMatchObject({ status: "suspended" });
+    expect(group.members[0].leftAt).toBeTruthy();
+    await perform(teacherId, {
+      type: "setGroupStatus",
+      groupId,
+      status: "archived",
+    });
+    const restored = await perform(teacherId, {
+      type: "setGroupStatus",
+      groupId,
+      status: "active",
+    });
+    expect(
+      restored.data.groups.find((item) => item.id === groupId)?.status,
+    ).toBe("active");
+  });
   it("does not allow another teacher to address tenant-owned IDs", async () => {
     const other = await storage.createTeacher({
       name: "Inny nauczyciel",
@@ -284,7 +392,12 @@ describe("refined user journeys preserve the existing domain rules", () => {
       perform(other.id, {
         type: "updateStudent",
         studentId,
-        patch: { name: "Przejęty" },
+        patch: {
+          ...student,
+          firstName: "Przejęty",
+          lastName: "",
+          displayName: "Przejęty",
+        },
       }),
     ).rejects.toThrow();
     expect(
@@ -302,7 +415,7 @@ describe("refined user journeys preserve the existing domain rules", () => {
       perform(teacherId, {
         type: "updateStudent",
         studentId,
-        patch: { name: "No" },
+        patch: { ...student, firstName: "No", lastName: "", displayName: "No" },
       }),
     ).rejects.toThrow();
     expect((await storage.getAppData(teacherId)).students.length).toBe(2);

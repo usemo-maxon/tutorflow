@@ -911,5 +911,7 @@ function attendanceLabel(status: AttendanceStatus) {
     ? "Obecny"
     : status === "absent"
       ? "Nieobecny"
-      : "Nieoznaczona";
+      : status === "late"
+        ? "Spóźniony"
+        : "Nieoznaczona";
 }

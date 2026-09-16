@@ -3,6 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { addDays, format, parseISO } from "date-fns";
 import { CalendarOff, Clock3, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
@@ -49,17 +50,23 @@ export function AvailabilitySettings() {
   } = useForm<Values>({
     resolver: zodResolver(schema),
     defaultValues: {
-      kind: "single",
+      kind: "recurring",
       date: localDateKey(new Date(), session.timezone),
       weekday: 1,
       startTime: "17:00",
       endTime: "20:00",
       allDay: false,
-      label: "Czas niedostępny",
+      label: "Dostępność",
     },
   });
   const kind = useWatch({ control, name: "kind" });
   const allDay = useWatch({ control, name: "allDay" });
+  const [exception, setException] = useState({
+    date: localDateKey(new Date(), session.timezone),
+    kind: "unavailable" as "available" | "unavailable",
+    startTime: "10:00",
+    endTime: "14:00",
+  });
   if (isPending || !data) return <PageLoading />;
   const submit = handleSubmit(async (values) => {
     const baseDate =
@@ -85,9 +92,10 @@ export function AvailabilitySettings() {
             data.teacher.timezone,
           ),
           weekday: values.kind === "recurring" ? values.weekday : undefined,
+          isAvailable: values.kind === "recurring",
         },
       });
-      showToast({ message: "Czas niedostępny dodany" });
+      showToast({ message: "Dostępność zapisana" });
       reset({ ...values });
     } catch (error) {
       showError(error);
@@ -101,20 +109,43 @@ export function AvailabilitySettings() {
       showError(error);
     }
   }
+  async function addException(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await mutation.mutateAsync({
+        type: "createAvailabilityException",
+        exception: {
+          date: exception.date,
+          kind: exception.kind,
+          startTime:
+            exception.kind === "available" ? exception.startTime : undefined,
+          endTime:
+            exception.kind === "available" ? exception.endTime : undefined,
+          timezone: data!.teacher.timezone,
+          reason:
+            exception.kind === "available"
+              ? "Wyjątkowa dostępność"
+              : "Niedostępny",
+        },
+      });
+      showToast({ message: "Wyjątek dostępności zapisany" });
+    } catch (error) {
+      showError(error);
+    }
+  }
   return (
     <section className="settings-panel settings-panel--availability">
       <div className="settings-copy">
-        <p className="eyebrow">Granice kalendarza</p>
-        <h2>Czas niedostępny</h2>
+        <p className="eyebrow">Twój rytm pracy</p>
+        <h2>Dostępność</h2>
         <p>
-          easy4tutor sprawdzi te reguły przed zapisaniem pojedynczej lekcji,
-          wielu terminów i serii.
+          Ustaw regularne godziny pracy. Terminy poza nimi wyświetlą
+          ostrzeżenie, ale nadal możesz świadomie utworzyć lekcję.
         </p>
         <div className="availability-list">
           {!data.availability.length && (
             <p className="inline-empty">
-              Nie masz ograniczeń dostępności. Dodaj czas wolny od lekcji w
-              formularzu.
+              Nie masz jeszcze regularnych godzin dostępności.
             </p>
           )}
           {data.availability.map((rule) => (
@@ -143,7 +174,7 @@ export function AvailabilitySettings() {
                         minute: "2-digit",
                         timeZone: data.teacher.timezone,
                       }).format(new Date(rule.end))}`}{" "}
-                  · {rule.label}
+                  · {rule.isAvailable ? "Dostępny" : rule.label}
                 </small>
               </span>
               <button
@@ -165,15 +196,15 @@ export function AvailabilitySettings() {
           className="field-group"
           disabled={data.teacher.subscription.readOnly}
         >
-          <legend>Nowa reguła</legend>
+          <legend>Nowy przedział</legend>
           <div className="segmented-control">
             <label>
               <input type="radio" value="single" {...register("kind")} />
-              <span>Jednorazowo</span>
+              <span>Jednorazowo niedostępny</span>
             </label>
             <label>
               <input type="radio" value="recurring" {...register("kind")} />
-              <span>Co tydzień</span>
+              <span>Co tydzień dostępny</span>
             </label>
           </div>
           {kind === "single" ? (
@@ -198,8 +229,8 @@ export function AvailabilitySettings() {
           <label className="check-row all-day-choice">
             <input type="checkbox" {...register("allDay")} />
             <span>
-              Cały dzień niedostępny
-              <small>Zablokuj wszystkie godziny tego dnia</small>
+              Cały dzień
+              <small>Dla jednorazowej niedostępności</small>
             </span>
           </label>
           <div className="form-row">
@@ -236,7 +267,134 @@ export function AvailabilitySettings() {
           disabled={isSubmitting || data.teacher.subscription.readOnly}
         >
           <Plus size={17} />
-          Dodaj czas niedostępny
+          Zapisz przedział
+        </button>
+      </form>
+      <div className="settings-copy availability-exceptions">
+        <p className="eyebrow">Zmiany jednorazowe</p>
+        <h3>Wyjątki</h3>
+        <div className="availability-list">
+          {data.availabilityExceptions.map((item) => (
+            <div key={item.id}>
+              <CalendarOff size={17} />
+              <span>
+                <strong>
+                  {new Intl.DateTimeFormat("pl-PL", {
+                    dateStyle: "medium",
+                  }).format(parseISO(item.date))}
+                </strong>
+                <small>
+                  {item.kind === "unavailable"
+                    ? "Niedostępny cały dzień"
+                    : `Dostępny ${item.startTime?.slice(0, 5)}–${item.endTime?.slice(0, 5)}`}
+                </small>
+              </span>
+              <button
+                className="icon-button"
+                aria-label="Usuń wyjątek"
+                onClick={() =>
+                  void mutation
+                    .mutateAsync({
+                      type: "deleteAvailabilityException",
+                      exceptionId: item.id,
+                    })
+                    .catch(showError)
+                }
+              >
+                <Trash2 size={17} />
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <form className="settings-form" onSubmit={addException}>
+        <fieldset
+          className="field-group"
+          disabled={data.teacher.subscription.readOnly}
+        >
+          <legend>Nowy wyjątek</legend>
+          <label className="field">
+            <span>Data</span>
+            <input
+              type="date"
+              required
+              value={exception.date}
+              onChange={(event) =>
+                setException((current) => ({
+                  ...current,
+                  date: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <div className="segmented-control">
+            <label>
+              <input
+                type="radio"
+                checked={exception.kind === "unavailable"}
+                onChange={() =>
+                  setException((current) => ({
+                    ...current,
+                    kind: "unavailable",
+                  }))
+                }
+              />
+              <span>Niedostępny</span>
+            </label>
+            <label>
+              <input
+                type="radio"
+                checked={exception.kind === "available"}
+                onChange={() =>
+                  setException((current) => ({ ...current, kind: "available" }))
+                }
+              />
+              <span>Dostępny w godzinach</span>
+            </label>
+          </div>
+          {exception.kind === "available" && (
+            <div className="form-row">
+              <label className="field">
+                <span>Od</span>
+                <input
+                  type="time"
+                  required
+                  value={exception.startTime}
+                  onChange={(event) =>
+                    setException((current) => ({
+                      ...current,
+                      startTime: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="field">
+                <span>Do</span>
+                <input
+                  type="time"
+                  required
+                  min={exception.startTime}
+                  value={exception.endTime}
+                  onChange={(event) =>
+                    setException((current) => ({
+                      ...current,
+                      endTime: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+            </div>
+          )}
+        </fieldset>
+        <button
+          className="button button--secondary"
+          disabled={
+            mutation.isPending ||
+            (exception.kind === "available" &&
+              exception.endTime <= exception.startTime)
+          }
+        >
+          <Plus size={17} /> Dodaj wyjątek
         </button>
       </form>
     </section>

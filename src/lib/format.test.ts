@@ -54,6 +54,15 @@ describe("timezone conversion", () => {
       "2026-03-29T08:00:00.000Z",
     ]);
   });
+
+  it("rejects nonexistent and ambiguous Warsaw wall-clock times", () => {
+    expect(() =>
+      localInputToUtc("2026-03-29", "02:30", "Europe/Warsaw"),
+    ).toThrow("NONEXISTENT_LOCAL_TIME");
+    expect(() =>
+      localInputToUtc("2026-10-25", "02:30", "Europe/Warsaw"),
+    ).toThrow("AMBIGUOUS_LOCAL_TIME");
+  });
 });
 
 describe("Polish lesson count", () => {

@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import type { AppAction, AppData } from "@/lib/domain";
 import { ClientApiError, fetchAppData, mutateApp } from "@/lib/api-client";
 
-export function useAppData(teacherId: string) {
+export function useAppData(
+  teacherId: string,
+  range?: { start: string; end: string },
+) {
   const router = useRouter();
   return useQuery({
-    queryKey: ["app", teacherId],
-    queryFn: ({ signal }) => fetchAppData(signal),
+    queryKey: ["app", teacherId, range?.start ?? "all", range?.end ?? "all"],
+    queryFn: ({ signal }) => fetchAppData(signal, range),
     refetchInterval: 60_000,
     retry(failureCount, error) {
       if (error instanceof ClientApiError && error.status < 500) return false;
@@ -29,7 +32,11 @@ export function useAppMutation(teacherId: string) {
   return useMutation({
     mutationFn: (action: AppAction) => mutateApp(action),
     onSuccess(response) {
-      queryClient.setQueryData<AppData>(["app", teacherId], response.data);
+      queryClient.setQueryData<AppData>(
+        ["app", teacherId, "all", "all"],
+        response.data,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
     },
   });
 }

@@ -46,7 +46,14 @@ export async function GET(request: Request) {
       calendarId: "primary",
     };
     const admin = createSupabaseAdminClient();
+    const { data: tutor } = await admin
+      .from("tutor_profiles")
+      .select("workspace_id")
+      .eq("user_id", auth.user.id)
+      .single();
+    if (!tutor) throw new Error("WORKSPACE_NOT_FOUND");
     const { error } = await admin.from("integration_connections").upsert({
+      workspace_id: tutor.workspace_id,
       teacher_id: auth.user.id,
       provider: "google",
       status: "connected",

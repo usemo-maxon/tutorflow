@@ -23,7 +23,7 @@ async function processReminders() {
   const now = new Date().toISOString();
   const { data: deliveries, error } = await supabase
     .from("reminder_deliveries")
-    .select("id,teacher_id,lesson_id,lead_minutes,attempts")
+    .select("id,workspace_id,teacher_id,lesson_id,lead_minutes,attempts")
     .in("status", ["pending", "failed"])
     .lte("scheduled_for", now)
     .lte("next_attempt_at", now)
@@ -49,7 +49,7 @@ async function processReminders() {
     processed += 1;
     if (delivery.attempts > 0) retried += 1;
     try {
-      const [{ data: connection }, { data: stateRow }, { data: profile }] =
+      const [{ data: connection }, { data: lesson }, { data: profile }] =
         await Promise.all([
           supabase
             .from("integration_connections")
@@ -59,9 +59,10 @@ async function processReminders() {
             .eq("status", "connected")
             .single(),
           supabase
-            .from("teacher_states")
-            .select("state")
-            .eq("teacher_id", delivery.teacher_id)
+            .from("lessons")
+            .select("id,starts_at,status")
+            .eq("workspace_id", delivery.workspace_id)
+            .eq("id", delivery.lesson_id)
             .single(),
           supabase
             .from("profiles")
@@ -69,20 +70,8 @@ async function processReminders() {
             .eq("id", delivery.teacher_id)
             .single(),
         ]);
-      if (!connection?.encrypted_credentials || !stateRow || !profile)
+      if (!connection?.encrypted_credentials || !lesson || !profile)
         throw new Error("TELEGRAM_NOT_CONNECTED");
-      const state = stateRow.state as {
-        lessons: Array<{
-          id: string;
-          startsAt: string;
-          status: string;
-          participantIds: string[];
-        }>;
-        students: Array<{ id: string; name: string }>;
-      };
-      const lesson = state.lessons.find(
-        (item) => item.id === delivery.lesson_id,
-      );
       if (!lesson || lesson.status !== "scheduled") {
         await supabase
           .from("reminder_deliveries")
@@ -95,15 +84,31 @@ async function processReminders() {
         skipped += 1;
         continue;
       }
-      const names = lesson.participantIds
-        .map((id) => state.students.find((student) => student.id === id)?.name)
+      const { data: participantRows } = await supabase
+        .from("lesson_participants")
+        .select("student_id")
+        .eq("workspace_id", delivery.workspace_id)
+        .eq("lesson_id", delivery.lesson_id);
+      const studentIds = (participantRows ?? []).map((row) => row.student_id);
+      const { data: studentRows } = studentIds.length
+        ? await supabase
+            .from("students")
+            .select("id,display_name")
+            .eq("workspace_id", delivery.workspace_id)
+            .in("id", studentIds)
+        : { data: [] };
+      const names = studentIds
+        .map(
+          (id) =>
+            studentRows?.find((student) => student.id === id)?.display_name,
+        )
         .filter(Boolean)
         .join(", ");
       const date = new Intl.DateTimeFormat("pl-PL", {
         dateStyle: "medium",
         timeStyle: "short",
         timeZone: profile.timezone,
-      }).format(new Date(lesson.startsAt));
+      }).format(new Date(lesson.starts_at));
       const lead = delivery.lead_minutes === 1440 ? "24 godziny" : "1 godzinę";
       const { chatId } = decryptSecret<{ chatId: number }>(
         connection.encrypted_credentials,

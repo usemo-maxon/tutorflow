@@ -9,9 +9,15 @@ export class ClientApiError extends Error {
   }
 }
 
-export async function fetchAppData(signal?: AbortSignal): Promise<AppData> {
+export async function fetchAppData(
+  signal?: AbortSignal,
+  range?: { start: string; end: string },
+): Promise<AppData> {
   const timeout = AbortSignal.timeout(20_000);
-  const response = await fetch("/api/app", {
+  const params = range
+    ? `?start=${encodeURIComponent(range.start)}&end=${encodeURIComponent(range.end)}`
+    : "";
+  const response = await fetch(`/api/app${params}`, {
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     cache: "no-store",
   });

@@ -38,7 +38,26 @@ export function localInputToUtc(
   time: string,
   timezone: string,
 ): string {
-  return fromZonedTime(`${date}T${time}:00`, timezone).toISOString();
+  const requested = `${date} ${time}`;
+  const result = fromZonedTime(`${date}T${time}:00`, timezone);
+  if (
+    Number.isNaN(result.getTime()) ||
+    formatInTimeZone(result, timezone, "yyyy-MM-dd HH:mm") !== requested
+  ) {
+    throw new RangeError("NONEXISTENT_LOCAL_TIME");
+  }
+  const ambiguous = [30, 60, 120].some((minutes) =>
+    [-1, 1].some(
+      (direction) =>
+        formatInTimeZone(
+          new Date(result.getTime() + direction * minutes * 60_000),
+          timezone,
+          "yyyy-MM-dd HH:mm",
+        ) === requested,
+    ),
+  );
+  if (ambiguous) throw new RangeError("AMBIGUOUS_LOCAL_TIME");
+  return result.toISOString();
 }
 
 export function recurrencePreview({

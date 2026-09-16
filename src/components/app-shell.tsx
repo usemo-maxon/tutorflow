@@ -74,6 +74,7 @@ function ShellBody({
   const {
     openLessonComposer,
     openStudentComposer,
+    studentComposerOpen,
     toast,
     dismissToast,
     showError,
@@ -314,7 +315,7 @@ function ShellBody({
       </nav>
 
       <LessonComposer />
-      <StudentComposer />
+      {studentComposerOpen && <StudentComposer />}
       {toast && (
         <div
           className={`toast toast--${toast.tone ?? "success"}`}

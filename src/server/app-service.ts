@@ -10,13 +10,33 @@ import type {
   Student,
 } from "@/lib/domain";
 import { ApiFailure } from "./errors";
-import { mutateStore } from "./repository";
+import {
+  cancelLesson as transitionToCancelled,
+  completeLesson as transitionToCompleted,
+  DomainRuleError,
+  markAttendance,
+} from "./domain/lesson";
+import {
+  isPeopleAction,
+  isSchedulingAction,
+  localAllowed,
+  mutatePeopleDomain,
+  mutateSchedulingDomain,
+  mutateStore,
+} from "./repository";
+import { findProbableDuplicateIds, studentDisplayName } from "./domain/student";
 import { appDataFromStore, type LessonRecord, type StoreShape } from "./store";
 
 export async function performAction(
   teacherId: string,
   action: AppAction,
 ): Promise<MutationResponse> {
+  if (!localAllowed() && isPeopleAction(action)) {
+    return mutatePeopleDomain(teacherId, action);
+  }
+  if (!localAllowed() && isSchedulingAction(action)) {
+    return mutateSchedulingDomain(teacherId, action);
+  }
   return mutateStore(teacherId, (store) => {
     const teacher = store.teachers.find(
       (candidate) => candidate.id === teacherId,
@@ -33,22 +53,67 @@ export async function performAction(
     let result: MutationResponse["result"];
     switch (action.type) {
       case "createStudent": {
-        validateStudent(action.student);
+        const displayName = studentDisplayName(action.student);
+        const duplicateIds = findProbableDuplicateIds(
+          action.student,
+          store.students
+            .filter((candidate) => candidate.teacherId === teacherId)
+            .map((candidate) => ({
+              id: candidate.id,
+              displayName: candidate.displayName || candidate.name,
+              email: candidate.email,
+              phone: candidate.phone,
+            })),
+        );
+        if (duplicateIds.length && !action.student.allowDuplicate) {
+          throw new ApiFailure(409, {
+            code: "POSSIBLE_DUPLICATE",
+            message: "Uczeń o podobnych danych już istnieje.",
+            details: { studentIds: duplicateIds },
+          });
+        }
         const student = {
-          ...action.student,
           id: randomUUID(),
           teacherId,
+          firstName: action.student.firstName.trim(),
+          lastName: action.student.lastName.trim(),
+          displayName,
+          name: displayName,
+          email: action.student.email.trim(),
+          phone: action.student.phone.trim(),
+          contact: action.student.email.trim() || action.student.phone.trim(),
+          subject: action.student.subject.trim(),
+          level: action.student.level.trim(),
+          goal: action.student.goal?.trim() ?? "",
+          notes: action.student.notes?.trim() ?? "",
+          status: "active" as const,
+          defaultDurationMinutes: action.student.defaultDurationMinutes ?? 60,
+          defaultFormat: action.student.defaultFormat ?? "online",
+          defaultLocation: action.student.defaultLocation?.trim() ?? "",
+          defaultPrice: action.student.defaultPrice ?? null,
+          timezone: action.student.timezone,
+          groupIds: [],
+          packageRemainingLessons: null,
+          balanceDue: { amount: 0, currency: "PLN" as const },
           createdAt: new Date().toISOString(),
         };
+        validateStudent(student);
         store.students.push(student);
         result = { id: student.id };
         break;
       }
       case "updateStudent": {
         const student = ownedStudent(store, teacherId, action.studentId);
+        const displayName = studentDisplayName(action.patch);
         const allowedPatch: Partial<Student> = {
-          name: action.patch.name,
-          contact: action.patch.contact,
+          firstName: action.patch.firstName,
+          lastName: action.patch.lastName,
+          displayName,
+          name: displayName,
+          email: action.patch.email,
+          phone: action.patch.phone,
+          contact: action.patch.email || action.patch.phone,
+          subject: action.patch.subject,
           level: action.patch.level,
           goal: action.patch.goal,
           notes: action.patch.notes,
@@ -56,6 +121,7 @@ export async function performAction(
           defaultFormat: action.patch.defaultFormat,
           defaultLocation: action.patch.defaultLocation,
           defaultPrice: action.patch.defaultPrice,
+          timezone: action.patch.timezone,
         };
         Object.entries(allowedPatch).forEach(([key, value]) => {
           if (value !== undefined) Object.assign(student, { [key]: value });
@@ -68,15 +134,198 @@ export async function performAction(
         student.status = action.status;
         break;
       }
+      case "createStudentContact": {
+        ownedStudent(store, teacherId, action.studentId);
+        store.contacts ??= [];
+        if (action.contact.isPrimary) {
+          store.contacts
+            .filter((item) => item.studentId === action.studentId)
+            .forEach((item) => (item.isPrimary = false));
+        }
+        if (action.contact.isBillingContact) {
+          store.contacts
+            .filter((item) => item.studentId === action.studentId)
+            .forEach((item) => (item.isBillingContact = false));
+        }
+        const contactId =
+          store.contacts.find(
+            (item) =>
+              item.teacherId === teacherId &&
+              ((action.contact.email &&
+                item.email.toLocaleLowerCase("pl") ===
+                  action.contact.email.toLocaleLowerCase("pl")) ||
+                (action.contact.phone && item.phone === action.contact.phone)),
+          )?.contactId ?? randomUUID();
+        const contact = {
+          ...action.contact,
+          id: randomUUID(),
+          contactId,
+          studentId: action.studentId,
+          teacherId,
+          displayName: [
+            action.contact.firstName.trim(),
+            action.contact.lastName.trim(),
+          ]
+            .filter(Boolean)
+            .join(" "),
+          createdAt: new Date().toISOString(),
+        };
+        store.contacts.push(contact);
+        result = { id: contactId };
+        break;
+      }
+      case "updateStudentContact": {
+        store.contacts ??= [];
+        const relation = store.contacts.find(
+          (item) =>
+            item.id === action.relationId && item.teacherId === teacherId,
+        );
+        if (!relation) unauthorized();
+        if (action.contact.isPrimary) {
+          store.contacts
+            .filter(
+              (item) =>
+                item.studentId === relation.studentId &&
+                item.id !== relation.id,
+            )
+            .forEach((item) => (item.isPrimary = false));
+        }
+        if (action.contact.isBillingContact) {
+          store.contacts
+            .filter(
+              (item) =>
+                item.studentId === relation.studentId &&
+                item.id !== relation.id,
+            )
+            .forEach((item) => (item.isBillingContact = false));
+        }
+        const displayName = [
+          action.contact.firstName.trim(),
+          action.contact.lastName.trim(),
+        ]
+          .filter(Boolean)
+          .join(" ");
+        store.contacts
+          .filter((item) => item.contactId === relation.contactId)
+          .forEach((item) =>
+            Object.assign(item, {
+              firstName: action.contact.firstName,
+              lastName: action.contact.lastName,
+              displayName,
+              email: action.contact.email,
+              phone: action.contact.phone,
+              type: action.contact.type,
+            }),
+          );
+        Object.assign(relation, {
+          relationship: action.contact.relationship,
+          isPrimary: action.contact.isPrimary,
+          isBillingContact: action.contact.isBillingContact,
+        });
+        break;
+      }
+      case "removeStudentContact": {
+        store.contacts ??= [];
+        const before = store.contacts.length;
+        store.contacts = store.contacts.filter(
+          (item) =>
+            item.teacherId !== teacherId || item.id !== action.relationId,
+        );
+        if (store.contacts.length === before) unauthorized();
+        break;
+      }
+      case "createGroup": {
+        store.groups ??= [];
+        const group = {
+          ...action.group,
+          id: randomUUID(),
+          teacherId,
+          status: "active" as const,
+          members: [],
+          createdAt: new Date().toISOString(),
+        };
+        store.groups.push(group);
+        result = { id: group.id };
+        break;
+      }
+      case "updateGroup": {
+        const group = ownedGroup(store, teacherId, action.groupId);
+        Object.assign(group, action.patch);
+        break;
+      }
+      case "setGroupStatus": {
+        const group = ownedGroup(store, teacherId, action.groupId);
+        group.status = action.status;
+        break;
+      }
+      case "addGroupMembers": {
+        const group = ownedGroup(store, teacherId, action.groupId);
+        const ids = [...new Set(action.studentIds)];
+        ids.forEach((studentId) => {
+          const student = ownedStudent(store, teacherId, studentId);
+          if (student.status !== "active") {
+            validation(
+              "studentIds",
+              "Archiwalnego ucznia nie można dodać do grupy.",
+            );
+          }
+          const existing = group.members.find(
+            (member) => member.studentId === studentId,
+          );
+          if (existing) {
+            existing.status = "active";
+            existing.leftAt = undefined;
+          } else {
+            group.members.push({
+              id: randomUUID(),
+              studentId,
+              status: "active",
+              joinedAt: new Date().toISOString(),
+            });
+          }
+          student.groupIds = [
+            ...new Set([...(student.groupIds ?? []), group.id]),
+          ];
+        });
+        result = { ids };
+        break;
+      }
+      case "removeGroupMember": {
+        const group = ownedGroup(store, teacherId, action.groupId);
+        const member = group.members.find(
+          (candidate) =>
+            candidate.studentId === action.studentId &&
+            candidate.status === "active",
+        );
+        if (!member) unauthorized();
+        member.status = "suspended";
+        member.leftAt = new Date().toISOString();
+        const student = ownedStudent(store, teacherId, action.studentId);
+        student.groupIds = (student.groupIds ?? []).filter(
+          (groupId) => groupId !== group.id,
+        );
+        break;
+      }
       case "createLesson": {
         const input = action.lesson;
-        if (!input.participantIds.length) {
+        const group =
+          input.target?.type === "group"
+            ? ownedGroup(store, teacherId, input.target.id)
+            : undefined;
+        const requestedParticipantIds = group
+          ? group.members
+              .filter((member) => member.status === "active")
+              .map((member) => member.studentId)
+          : input.target?.type === "student"
+            ? [input.target.id]
+            : (input.participantIds ?? []);
+        if (!requestedParticipantIds.length) {
           validation(
             "participantIds",
             "Wybierz co najmniej jednego aktywnego ucznia.",
           );
         }
-        const uniqueIds = [...new Set(input.participantIds)];
+        const uniqueIds = [...new Set(requestedParticipantIds)];
         const participants = uniqueIds.map((id) =>
           ownedStudent(store, teacherId, id),
         );
@@ -120,14 +369,28 @@ export async function performAction(
             occurrence.durationMinutes,
           ),
         );
-        if (conflicts.length || unavailable.length) {
+        const blockConflict = input.occurrences.some((occurrence) =>
+          hasCalendarBlockConflict(
+            store,
+            teacherId,
+            occurrence.startsAt,
+            occurrence.durationMinutes,
+          ),
+        );
+        if (
+          conflicts.length ||
+          blockConflict ||
+          (unavailable.length && !input.allowOutsideAvailability)
+        ) {
           throw new ApiFailure(409, {
-            code: conflicts.length
-              ? "LESSON_CONFLICT"
-              : "AVAILABILITY_CONFLICT",
-            message: conflicts.length
-              ? "Wybrany termin jest już zajęty. Wybierz inny termin lub potwierdź lekcję grupową."
-              : "Wybrany termin pokrywa się z czasem niedostępnym.",
+            code:
+              conflicts.length || blockConflict
+                ? "LESSON_CONFLICT"
+                : "OUTSIDE_AVAILABILITY",
+            message:
+              conflicts.length || blockConflict
+                ? "Wybrany termin jest już zajęty. Wybierz inny termin lub potwierdź lekcję grupową."
+                : "Ten termin jest poza Twoją regularną dostępnością.",
             details: {
               conflicts: conflicts.map((lesson) => ({
                 lessonId: lesson.id,
@@ -154,6 +417,7 @@ export async function performAction(
           const lesson: LessonRecord = {
             id: randomUUID(),
             teacherId,
+            groupId: group?.id,
             participantIds: uniqueIds,
             startsAt: occurrence.startsAt,
             durationMinutes: occurrence.durationMinutes,
@@ -165,6 +429,15 @@ export async function performAction(
                 : { amount: Math.round(input.priceAmount), currency: "PLN" },
             mode: input.mode,
             seriesId,
+            recurrenceOriginalStartsAt: seriesId
+              ? occurrence.startsAt
+              : undefined,
+            subject:
+              input.subject?.trim() ||
+              group?.subject ||
+              participants[0]?.subject ||
+              "",
+            timezone: input.recurrence?.timezone ?? teacher.timezone,
             status: "scheduled",
             syncStatus:
               teacher.google.status === "connected" ? "pending" : "disabled",
@@ -176,6 +449,7 @@ export async function performAction(
               emptyParticipant(studentId, planItems),
             ),
             createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           };
           store.lessons.push(lesson);
           return lesson.id;
@@ -221,6 +495,11 @@ export async function performAction(
         const participantIds = new Set(lesson.participantIds);
         action.participants.forEach((participant) => {
           if (!participantIds.has(participant.studentId)) unauthorized();
+          markAttendance(
+            lesson.participantIds,
+            participant.studentId,
+            participant.attendanceStatus,
+          );
           participant.results.forEach((item) => {
             if (
               item.score !== undefined &&
@@ -246,7 +525,13 @@ export async function performAction(
         lesson.homework = action.homework.trim();
         lesson.generalNotes = action.generalNotes.trim();
         lesson.participants = action.participants;
-        if (action.complete) lesson.status = "completed";
+        if (action.complete) {
+          try {
+            lesson.status = transitionToCompleted(lesson.status);
+          } catch (error) {
+            domainConflict(error);
+          }
+        }
         lesson.syncStatus =
           teacher.google.status === "connected" ? "pending" : "disabled";
         break;
@@ -263,16 +548,22 @@ export async function performAction(
       case "cancelLesson": {
         const lesson = ownedLesson(store, teacherId, action.lessonId);
         const targets =
-          action.scope === "future" && lesson.seriesId
+          action.scope !== "single" && lesson.seriesId
             ? store.lessons.filter(
                 (candidate) =>
                   candidate.teacherId === teacherId &&
                   candidate.seriesId === lesson.seriesId &&
-                  candidate.startsAt >= lesson.startsAt,
+                  candidate.status !== "completed" &&
+                  (action.scope === "series" ||
+                    candidate.startsAt >= lesson.startsAt),
               )
             : [lesson];
         targets.forEach((target) => {
-          target.status = "cancelled";
+          try {
+            target.status = transitionToCancelled(target.status);
+          } catch (error) {
+            domainConflict(error);
+          }
           target.syncStatus =
             teacher.google.status === "connected" ? "pending" : "disabled";
         });
@@ -282,18 +573,20 @@ export async function performAction(
         const lesson = ownedLesson(store, teacherId, action.lessonId);
         validateOccurrence({
           startsAt: action.startsAt,
-          durationMinutes: lesson.durationMinutes,
+          durationMinutes: action.durationMinutes ?? lesson.durationMinutes,
         });
         const delta =
           new Date(action.startsAt).getTime() -
           new Date(lesson.startsAt).getTime();
         const targets =
-          action.scope === "future" && lesson.seriesId
+          action.scope !== "single" && lesson.seriesId
             ? store.lessons.filter(
                 (candidate) =>
                   candidate.teacherId === teacherId &&
                   candidate.seriesId === lesson.seriesId &&
-                  candidate.startsAt >= lesson.startsAt,
+                  candidate.status !== "completed" &&
+                  (action.scope === "series" ||
+                    candidate.startsAt >= lesson.startsAt),
               )
             : [lesson];
         const targetIds = new Set(targets.map((target) => target.id));
@@ -308,11 +601,19 @@ export async function performAction(
             store,
             teacherId,
             startsAt,
-            target.durationMinutes,
+            action.durationMinutes ?? target.durationMinutes,
             target.id,
           ).filter((candidate) => !targetIds.has(candidate.id)),
         );
-        if (conflicts.length) {
+        const blockConflict = proposed.some(({ target, startsAt }) =>
+          hasCalendarBlockConflict(
+            store,
+            teacherId,
+            startsAt,
+            action.durationMinutes ?? target.durationMinutes,
+          ),
+        );
+        if (conflicts.length || blockConflict) {
           throw new ApiFailure(409, {
             code: "LESSON_CONFLICT",
             message: "Nowy termin jest już zajęty. Wybierz inny czas.",
@@ -321,8 +622,25 @@ export async function performAction(
             },
           });
         }
+        const outsideAvailability = proposed.some(
+          ({ target, startsAt }) =>
+            findAvailabilityConflicts(
+              store,
+              teacherId,
+              startsAt,
+              action.durationMinutes ?? target.durationMinutes,
+            ).length > 0,
+        );
+        if (outsideAvailability && !action.allowOutsideAvailability) {
+          throw new ApiFailure(409, {
+            code: "OUTSIDE_AVAILABILITY",
+            message: "Ten termin jest poza Twoją regularną dostępnością.",
+          });
+        }
         proposed.forEach(({ target, startsAt }) => {
           target.startsAt = startsAt;
+          target.durationMinutes =
+            action.durationMinutes ?? target.durationMinutes;
           target.syncStatus =
             teacher.google.status === "connected" ? "pending" : "disabled";
         });
@@ -391,6 +709,112 @@ export async function performAction(
         );
         break;
       }
+      case "createAvailabilityException": {
+        store.availabilityExceptions ??= [];
+        const item = {
+          ...action.exception,
+          id: randomUUID(),
+          teacherId,
+        };
+        store.availabilityExceptions.push(item);
+        result = { id: item.id };
+        break;
+      }
+      case "deleteAvailabilityException": {
+        store.availabilityExceptions ??= [];
+        const before = store.availabilityExceptions.length;
+        store.availabilityExceptions = store.availabilityExceptions.filter(
+          (item) =>
+            item.teacherId !== teacherId || item.id !== action.exceptionId,
+        );
+        if (store.availabilityExceptions.length === before) unauthorized();
+        break;
+      }
+      case "createCalendarBlock": {
+        store.calendarBlocks ??= [];
+        const start = new Date(action.block.startsAt);
+        const end = new Date(action.block.endsAt);
+        if (!(start < end))
+          validation(
+            "endsAt",
+            "Zakończenie musi być późniejsze niż rozpoczęcie.",
+          );
+        const blockDuration = Math.round(
+          (end.getTime() - start.getTime()) / 60_000,
+        );
+        if (
+          findConflicts(store, teacherId, action.block.startsAt, blockDuration)
+            .length ||
+          hasCalendarBlockConflict(
+            store,
+            teacherId,
+            action.block.startsAt,
+            blockDuration,
+          )
+        ) {
+          throw new ApiFailure(409, {
+            code: "LESSON_CONFLICT",
+            message: "Ten termin koliduje z lekcją lub inną blokadą.",
+          });
+        }
+        const now = new Date().toISOString();
+        const block = {
+          ...action.block,
+          id: randomUUID(),
+          teacherId,
+          createdAt: now,
+          updatedAt: now,
+        };
+        store.calendarBlocks.push(block);
+        result = { id: block.id };
+        break;
+      }
+      case "updateCalendarBlock": {
+        store.calendarBlocks ??= [];
+        const block = store.calendarBlocks.find(
+          (item) => item.id === action.blockId && item.teacherId === teacherId,
+        );
+        if (!block) unauthorized();
+        const start = new Date(action.block.startsAt);
+        const end = new Date(action.block.endsAt);
+        const blockDuration = Math.round(
+          (end.getTime() - start.getTime()) / 60_000,
+        );
+        if (!(start < end))
+          validation(
+            "endsAt",
+            "Zakończenie musi być późniejsze niż rozpoczęcie.",
+          );
+        if (
+          findConflicts(store, teacherId, action.block.startsAt, blockDuration)
+            .length ||
+          hasCalendarBlockConflict(
+            store,
+            teacherId,
+            action.block.startsAt,
+            blockDuration,
+            block.id,
+          )
+        ) {
+          throw new ApiFailure(409, {
+            code: "LESSON_CONFLICT",
+            message: "Ten termin koliduje z lekcją lub inną blokadą.",
+          });
+        }
+        Object.assign(block, action.block, {
+          updatedAt: new Date().toISOString(),
+        });
+        break;
+      }
+      case "deleteCalendarBlock": {
+        store.calendarBlocks ??= [];
+        const before = store.calendarBlocks.length;
+        store.calendarBlocks = store.calendarBlocks.filter(
+          (item) => item.teacherId !== teacherId || item.id !== action.blockId,
+        );
+        if (store.calendarBlocks.length === before) unauthorized();
+        break;
+      }
       case "importStudentStats": {
         ownedStudent(store, teacherId, action.studentId);
         store.studentStatImports ??= [];
@@ -454,23 +878,16 @@ function validateStudent(
   student: Omit<Student, "id" | "createdAt"> | Student,
 ): void {
   const errors: Record<string, string> = {};
-  if (!student.name.trim()) errors.name = "Podaj imię i nazwisko ucznia.";
+  if (!student.firstName.trim()) errors.firstName = "Podaj imię ucznia.";
   if (
     student.defaultDurationMinutes < 15 ||
-    student.defaultDurationMinutes > 360
+    student.defaultDurationMinutes > 480
   ) {
     errors.defaultDurationMinutes =
-      "Czas lekcji musi mieścić się między 15 a 360 minut.";
+      "Czas lekcji musi mieścić się między 15 a 480 minut.";
   }
   if (student.defaultPrice && student.defaultPrice.amount < 0) {
     errors.defaultPrice = "Cena nie może być ujemna.";
-  }
-  if (
-    student.defaultFormat === "online" &&
-    !isValidMeetingLocation(student.defaultLocation)
-  ) {
-    errors.defaultLocation =
-      "Dodaj poprawny link lub sposób połączenia online.";
   }
   if (Object.keys(errors).length) {
     throw new ApiFailure(422, {
@@ -519,6 +936,23 @@ function findConflicts(
   });
 }
 
+function hasCalendarBlockConflict(
+  store: StoreShape,
+  teacherId: string,
+  startsAt: string,
+  durationMinutes: number,
+  excludedId?: string,
+): boolean {
+  const start = new Date(startsAt).getTime();
+  const end = start + durationMinutes * 60_000;
+  return (store.calendarBlocks ?? []).some((block) => {
+    if (block.teacherId !== teacherId || block.id === excludedId) return false;
+    const blockStart = new Date(block.startsAt).getTime();
+    const blockEnd = new Date(block.endsAt).getTime();
+    return start < blockEnd && end > blockStart;
+  });
+}
+
 function findAvailabilityConflicts(
   store: StoreShape,
   teacherId: string,
@@ -530,30 +964,91 @@ function findAvailabilityConflicts(
   const timezone =
     store.teachers.find((teacher) => teacher.id === teacherId)?.timezone ??
     "Europe/Warsaw";
-  return store.availability.filter((rule) => {
-    if (rule.teacherId !== teacherId) return false;
-    if (rule.kind === "recurring") {
-      const weekday = Number(formatInTimeZone(startsAt, timezone, "i"));
-      if (weekday !== rule.weekday) return false;
-      if (rule.allDay) return true;
-      const occurrenceStart =
-        Number(formatInTimeZone(startsAt, timezone, "H")) * 60 +
-        Number(formatInTimeZone(startsAt, timezone, "m"));
-      const occurrenceEnd = occurrenceStart + durationMinutes;
-      const ruleStartMinutes =
-        Number(formatInTimeZone(rule.start, timezone, "H")) * 60 +
-        Number(formatInTimeZone(rule.start, timezone, "m"));
-      const ruleEndMinutes =
-        Number(formatInTimeZone(rule.end, timezone, "H")) * 60 +
-        Number(formatInTimeZone(rule.end, timezone, "m"));
+  const date = formatInTimeZone(startsAt, timezone, "yyyy-MM-dd");
+  const weekday = Number(formatInTimeZone(startsAt, timezone, "i"));
+  const occurrenceStart =
+    Number(formatInTimeZone(startsAt, timezone, "H")) * 60 +
+    Number(formatInTimeZone(startsAt, timezone, "m"));
+  const occurrenceEnd = occurrenceStart + durationMinutes;
+  const minute = (value?: string) => {
+    const [hours = 0, minutes = 0] = (value ?? "00:00").split(":").map(Number);
+    return hours * 60 + minutes;
+  };
+  const exceptions = (store.availabilityExceptions ?? []).filter(
+    (item) => item.teacherId === teacherId && item.date === date,
+  );
+  const unavailableException = exceptions.find(
+    (item) =>
+      item.kind === "unavailable" &&
+      (!item.startTime ||
+        (occurrenceStart < minute(item.endTime) &&
+          occurrenceEnd > minute(item.startTime))),
+  );
+  if (unavailableException) {
+    return [
+      {
+        id: unavailableException.id,
+        label: unavailableException.reason || "Niedostępny",
+      },
+    ];
+  }
+  const availableExceptions = exceptions.filter(
+    (item) => item.kind === "available",
+  );
+  if (
+    availableExceptions.length &&
+    !availableExceptions.some(
+      (item) =>
+        !item.startTime ||
+        (occurrenceStart >= minute(item.startTime) &&
+          occurrenceEnd <= minute(item.endTime)),
+    )
+  ) {
+    return [
+      { id: availableExceptions[0].id, label: "Poza wyjątkową dostępnością" },
+    ];
+  }
+  const rules = store.availability.filter(
+    (rule) => rule.teacherId === teacherId,
+  );
+  const unavailable = rules.filter((rule) => {
+    if (rule.isAvailable) return false;
+    if (rule.kind === "single") {
       return (
-        occurrenceStart < ruleEndMinutes && occurrenceEnd > ruleStartMinutes
+        start < new Date(rule.end).getTime() &&
+        end > new Date(rule.start).getTime()
       );
     }
-    const ruleStart = new Date(rule.start).getTime();
-    const ruleEnd = new Date(rule.end).getTime();
-    return start < ruleEnd && end > ruleStart;
+    if (weekday !== rule.weekday) return false;
+    if (rule.allDay) return true;
+    const ruleStart =
+      Number(formatInTimeZone(rule.start, timezone, "H")) * 60 +
+      Number(formatInTimeZone(rule.start, timezone, "m"));
+    const ruleEnd =
+      Number(formatInTimeZone(rule.end, timezone, "H")) * 60 +
+      Number(formatInTimeZone(rule.end, timezone, "m"));
+    return occurrenceStart < ruleEnd && occurrenceEnd > ruleStart;
   });
+  if (unavailable.length) return unavailable;
+  const weeklyAvailable = rules.filter(
+    (rule) => rule.isAvailable && rule.kind === "recurring",
+  );
+  if (
+    weeklyAvailable.length &&
+    !weeklyAvailable.some((rule) => {
+      if (weekday !== rule.weekday || rule.allDay) return false;
+      const ruleStart =
+        Number(formatInTimeZone(rule.start, timezone, "H")) * 60 +
+        Number(formatInTimeZone(rule.start, timezone, "m"));
+      const ruleEnd =
+        Number(formatInTimeZone(rule.end, timezone, "H")) * 60 +
+        Number(formatInTimeZone(rule.end, timezone, "m"));
+      return occurrenceStart >= ruleStart && occurrenceEnd <= ruleEnd;
+    })
+  ) {
+    return [{ id: "regular-hours", label: "Poza regularną dostępnością" }];
+  }
+  return [];
 }
 
 function emptyParticipant(
@@ -579,6 +1074,15 @@ function ownedStudent(store: StoreShape, teacherId: string, studentId: string) {
   );
   if (!student) unauthorized();
   return student;
+}
+
+function ownedGroup(store: StoreShape, teacherId: string, groupId: string) {
+  const group = (store.groups ?? []).find(
+    (candidate) =>
+      candidate.id === groupId && candidate.teacherId === teacherId,
+  );
+  if (!group) unauthorized();
+  return group;
 }
 
 function ownedLesson(store: StoreShape, teacherId: string, lessonId: string) {
@@ -615,4 +1119,14 @@ function unauthorized(): never {
     code: "NOT_FOUND",
     message: "Nie znaleziono wskazanego elementu.",
   });
+}
+
+function domainConflict(error: unknown): never {
+  if (error instanceof DomainRuleError) {
+    throw new ApiFailure(409, {
+      code: error.message,
+      message: "Nie można wykonać tej zmiany dla aktualnego stanu lekcji.",
+    });
+  }
+  throw error;
 }

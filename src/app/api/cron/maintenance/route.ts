@@ -3,7 +3,6 @@ import {
   schedulerFailureResponse,
   schedulerUnauthorizedResponse,
 } from "@/server/cron";
-import { updateStateAsAdmin } from "@/server/admin-state";
 import { createSupabaseAdminClient } from "@/server/supabase";
 
 export const runtime = "nodejs";
@@ -42,46 +41,14 @@ async function runMaintenance() {
     .lt("renews_at", now.toISOString());
   if (renewalError) throw renewalError;
 
-  const { data: states, error: statesError } = await supabase
-    .from("teacher_states")
-    .select("teacher_id,state");
-  if (statesError) throw statesError;
-  let transitioned = 0;
-  for (const row of states ?? []) {
-    const lessons =
-      (
-        row.state as {
-          lessons?: Array<{
-            status: string;
-            startsAt: string;
-            durationMinutes: number;
-          }>;
-        }
-      ).lessons ?? [];
-    if (
-      !lessons.some(
-        (lesson) =>
-          lesson.status === "scheduled" &&
-          new Date(lesson.startsAt).getTime() +
-            lesson.durationMinutes * 60_000 <
-            now.getTime(),
-      )
-    )
-      continue;
-    await updateStateAsAdmin(row.teacher_id, (state) => {
-      state.lessons.forEach((lesson) => {
-        if (
-          lesson.status === "scheduled" &&
-          new Date(lesson.startsAt).getTime() +
-            lesson.durationMinutes * 60_000 <
-            now.getTime()
-        ) {
-          lesson.status = "needs_completion";
-          transitioned += 1;
-        }
-      });
-    });
-  }
+  const { data: transitionedRows, error: lessonsError } = await supabase
+    .from("lessons")
+    .update({ status: "needs_completion", updated_at: now.toISOString() })
+    .eq("status", "scheduled")
+    .lt("ends_at", now.toISOString())
+    .select("id");
+  if (lessonsError) throw lessonsError;
+  const transitioned = transitionedRows?.length ?? 0;
 
   const { data: expired, error: expiredError } = await supabase
     .from("attachments")
@@ -106,7 +73,7 @@ async function runMaintenance() {
   }
   return Response.json({
     ok: true,
-    processed: (states?.length ?? 0) + (expired?.length ?? 0),
+    processed: transitioned + (expired?.length ?? 0),
     lessonsTransitioned: transitioned,
     attachmentsRemoved: paths.length,
     failed: 0,

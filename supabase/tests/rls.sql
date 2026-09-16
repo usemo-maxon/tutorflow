@@ -17,7 +17,14 @@ select lives_ok($$update public.teacher_states set state = state where teacher_i
 select is((select version::integer from public.teacher_states where teacher_id = '10000000-0000-0000-0000-000000000002'), null, 'teacher cannot read another teacher state');
 
 set local request.jwt.claims = '{"sub":"10000000-0000-0000-0000-000000000003","role":"authenticated"}';
-select is((select count(*)::integer from public.profiles), 3, 'admin can list account profiles');
+select is((
+  select count(*)::integer from public.profiles
+  where id in (
+    '10000000-0000-0000-0000-000000000001',
+    '10000000-0000-0000-0000-000000000002',
+    '10000000-0000-0000-0000-000000000003'
+  )
+), 3, 'admin can list account profiles');
 select is((select count(*)::integer from public.teacher_states), 1, 'admin cannot read teachers private content (only own empty state)');
 
 select * from finish();

@@ -7,16 +7,24 @@ import {
   CalendarDays,
   Mail,
   Pencil,
+  Phone,
+  Plus,
   RotateCcw,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useState } from "react";
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
+import type { StudentContact } from "@/lib/domain";
 import { copy } from "@/lib/copy";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
+import { ContactComposer } from "../contact-composer";
 import { ProgressThread } from "../progress-thread";
+import { StudentGroupDialog } from "../student-group-dialog";
+import { ConfirmDialog } from "../ui/confirm-dialog";
 import { EmptyState } from "../ui/empty-state";
 import { PageLoading } from "../ui/loading";
 import { LessonStatusBadge, PaymentBadge } from "../ui/status-badge";
@@ -37,6 +45,14 @@ export function StudentDetailPage() {
   const { openStudentComposer, showToast, showError } = useAppUi();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [contactEditor, setContactEditor] = useState<
+    StudentContact | null | undefined
+  >(undefined);
+  const [removeContact, setRemoveContact] = useState<StudentContact | null>(
+    null,
+  );
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   if (isPending || !data) return <PageLoading />;
   const student = data.students.find((candidate) => candidate.id === studentId);
   if (!student)
@@ -62,13 +78,6 @@ export function StudentDetailPage() {
     : "overview";
   async function toggleArchive() {
     const next = safeStudent.status === "active" ? "archived" : "active";
-    if (
-      next === "archived" &&
-      !window.confirm(
-        "Archiwizacja ukryje ucznia podczas planowania nowych lekcji, ale zachowa całą historię. Kontynuować?",
-      )
-    )
-      return;
     try {
       await mutation.mutateAsync({
         type: "setStudentStatus",
@@ -81,6 +90,20 @@ export function StudentDetailPage() {
             ? copy.toasts.studentArchived
             : copy.toasts.studentRestored,
       });
+      setArchiveOpen(false);
+    } catch (error) {
+      showError(error);
+    }
+  }
+  async function removeContactRelation() {
+    if (!removeContact) return;
+    try {
+      await mutation.mutateAsync({
+        type: "removeStudentContact",
+        relationId: removeContact.id,
+      });
+      setRemoveContact(null);
+      showToast({ message: "Kontakt został odłączony od ucznia." });
     } catch (error) {
       showError(error);
     }
@@ -115,8 +138,8 @@ export function StudentDetailPage() {
             </span>
             <h1>{student.name}</h1>
             <p>
-              {student.level || "Poziom nieustalony"} ·{" "}
-              {student.goal || "Cel do uzupełnienia"}
+              {[student.subject, student.level].filter(Boolean).join(" · ") ||
+                "Profil do uzupełnienia"}
             </p>
           </div>
         </div>
@@ -148,7 +171,10 @@ export function StudentDetailPage() {
               disabled={
                 mutation.isPending || data.teacher.subscription.readOnly
               }
-              onClick={toggleArchive}
+              onClick={(event) => {
+                event.currentTarget.closest("details")?.removeAttribute("open");
+                setArchiveOpen(true);
+              }}
             >
               {student.status === "active" ? (
                 <Archive size={18} />
@@ -162,6 +188,35 @@ export function StudentDetailPage() {
           </details>
         </div>
       </header>
+      <section
+        className="profile-summary-strip"
+        aria-label="Najważniejsze informacje"
+      >
+        <div>
+          <span>Następna lekcja</span>
+          <strong>
+            {upcoming[0]
+              ? formatDateTime(upcoming[0].startsAt, data.teacher.timezone)
+              : "Nie zaplanowano"}
+          </strong>
+        </div>
+        <div>
+          <span>Pakiet</span>
+          <strong>
+            {student.packageRemainingLessons === null
+              ? "Brak pakietu"
+              : `${student.packageRemainingLessons} lekcji`}
+          </strong>
+        </div>
+        <div>
+          <span>Rozliczenie</span>
+          <strong>
+            {student.balanceDue.amount > 0
+              ? `${formatMoney(student.balanceDue)} do zapłaty`
+              : "Rozliczone"}
+          </strong>
+        </div>
+      </section>
       <nav className="tabs" aria-label="Sekcje karty ucznia">
         {tabs.map(([key, label]) => (
           <button
@@ -190,11 +245,22 @@ export function StudentDetailPage() {
             <p className="eyebrow">Profil lekcji</p>
             <dl>
               <div>
-                <dt>Kontakt</dt>
+                <dt>E-mail</dt>
                 <dd>
                   <Mail size={16} aria-hidden="true" />
-                  {student.contact || "Nie podano"}
+                  {student.email || "Nie podano"}
                 </dd>
+              </div>
+              <div>
+                <dt>Telefon</dt>
+                <dd>
+                  <Phone size={16} aria-hidden="true" />
+                  {student.phone || "Nie podano"}
+                </dd>
+              </div>
+              <div>
+                <dt>Przedmiot</dt>
+                <dd>{student.subject || "Nie podano"}</dd>
               </div>
               <div>
                 <dt>Standardowy czas</dt>
@@ -226,6 +292,117 @@ export function StudentDetailPage() {
               </div>
             )}
           </aside>
+          <section className="overview-wide panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Rodzice i opiekunowie</p>
+                <h2>Kontakty</h2>
+              </div>
+              <button
+                className="button button--secondary"
+                disabled={data.teacher.subscription.readOnly}
+                onClick={() => setContactEditor(null)}
+              >
+                <Plus size={17} /> Dodaj kontakt
+              </button>
+            </div>
+            {data.contacts.filter((item) => item.studentId === student.id)
+              .length ? (
+              <div className="contact-list">
+                {data.contacts
+                  .filter((item) => item.studentId === student.id)
+                  .map((contact) => (
+                    <article key={contact.id}>
+                      <div>
+                        <strong>{contact.displayName}</strong>
+                        <small>
+                          {contact.relationship || "Kontakt"}
+                          {contact.isPrimary ? " · Główny" : ""}
+                          {contact.isBillingContact ? " · Rozliczenia" : ""}
+                        </small>
+                        <span>
+                          {[contact.email, contact.phone]
+                            .filter(Boolean)
+                            .join(" · ") || "Brak danych kontaktowych"}
+                        </span>
+                      </div>
+                      <div className="inline-actions">
+                        <button
+                          className="text-link"
+                          disabled={data.teacher.subscription.readOnly}
+                          onClick={() => setContactEditor(contact)}
+                        >
+                          Edytuj
+                        </button>
+                        <button
+                          className="text-link text-link--danger"
+                          disabled={data.teacher.subscription.readOnly}
+                          onClick={() => setRemoveContact(contact)}
+                        >
+                          Odłącz
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="Nie dodano jeszcze rodzica, opiekuna ani kontaktu do rozliczeń."
+                action={
+                  <button
+                    className="button button--secondary"
+                    disabled={data.teacher.subscription.readOnly}
+                    onClick={() => setContactEditor(null)}
+                  >
+                    Dodaj kontakt
+                  </button>
+                }
+              />
+            )}
+          </section>
+          <section className="overview-wide panel">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">Stały skład</p>
+                <h2>Grupy</h2>
+              </div>
+              {student.status === "active" ? (
+                <button
+                  className="button button--secondary"
+                  disabled={data.teacher.subscription.readOnly}
+                  onClick={() => setGroupDialogOpen(true)}
+                >
+                  <Plus size={17} /> Dodaj do grupy
+                </button>
+              ) : (
+                <Users size={21} aria-hidden="true" />
+              )}
+            </div>
+            {student.groupIds.length ? (
+              <div className="membership-links">
+                {data.groups
+                  .filter((group) => student.groupIds.includes(group.id))
+                  .map((group) => (
+                    <Link
+                      href={`/app/uczniowie/grupy/${group.id}`}
+                      key={group.id}
+                    >
+                      <span>
+                        <strong>{group.name}</strong>
+                        <small>
+                          {[group.subject, group.level]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </small>
+                      </span>
+                      <span aria-hidden="true">›</span>
+                    </Link>
+                  ))}
+              </div>
+            ) : (
+              <EmptyState title="Uczeń nie należy do żadnej aktywnej grupy." />
+            )}
+          </section>
           <section className="upcoming-panel">
             <div className="section-heading">
               <h2>Najbliższe lekcje</h2>
@@ -370,6 +547,46 @@ export function StudentDetailPage() {
           />
         </section>
       )}
+      <ContactComposer
+        studentId={student.id}
+        contact={contactEditor ?? null}
+        open={contactEditor !== undefined}
+        onOpenChange={(open) => !open && setContactEditor(undefined)}
+      />
+      <StudentGroupDialog
+        studentId={student.id}
+        open={groupDialogOpen}
+        onOpenChange={setGroupDialogOpen}
+      />
+      <ConfirmDialog
+        open={archiveOpen}
+        onOpenChange={setArchiveOpen}
+        title={
+          student.status === "active"
+            ? `Archiwizować ${student.name}?`
+            : `Przywrócić ${student.name}?`
+        }
+        description={
+          student.status === "active"
+            ? "Uczeń zniknie z aktywnych list i selektorów. Historia lekcji, płatności i pakietów zostanie zachowana."
+            : "Uczeń wróci do aktywnych list i będzie można planować kolejne lekcje."
+        }
+        confirmLabel={
+          student.status === "active" ? "Archiwizuj ucznia" : "Przywróć ucznia"
+        }
+        tone={student.status === "active" ? "danger" : "primary"}
+        pending={mutation.isPending}
+        onConfirm={toggleArchive}
+      />
+      <ConfirmDialog
+        open={Boolean(removeContact)}
+        onOpenChange={(open) => !open && setRemoveContact(null)}
+        title={`Odłączyć kontakt ${removeContact?.displayName ?? ""}?`}
+        description="Kontakt przestanie być widoczny w tym profilu. Dane ucznia i historia lekcji pozostaną bez zmian."
+        confirmLabel="Odłącz kontakt"
+        pending={mutation.isPending}
+        onConfirm={removeContactRelation}
+      />
     </div>
   );
 }

@@ -20,11 +20,15 @@ import {
 import { fromZonedTime, toZonedTime } from "date-fns-tz";
 import type {
   AppData,
+  AvailabilityException,
   AvailabilityRule,
+  CalendarBlock,
   Lesson,
   LessonParticipant,
   PlanItem,
   Student,
+  StudentContact,
+  StudentGroup,
   StudentStatImport,
   Teacher,
 } from "@/lib/domain";
@@ -41,11 +45,27 @@ export interface StudentRecord extends Student {
   teacherId: string;
 }
 
+export interface StudentContactRecord extends StudentContact {
+  teacherId: string;
+}
+
+export interface StudentGroupRecord extends StudentGroup {
+  teacherId: string;
+}
+
 export interface LessonRecord extends Lesson {
   teacherId: string;
 }
 
 export interface AvailabilityRecord extends AvailabilityRule {
+  teacherId: string;
+}
+
+export interface AvailabilityExceptionRecord extends AvailabilityException {
+  teacherId: string;
+}
+
+export interface CalendarBlockRecord extends CalendarBlock {
   teacherId: string;
 }
 
@@ -63,9 +83,13 @@ export interface StoreShape {
   version: 1;
   teachers: TeacherRecord[];
   students: StudentRecord[];
+  contacts: StudentContactRecord[];
+  groups: StudentGroupRecord[];
   lessons: LessonRecord[];
   studentStatImports: StudentStatImportRecord[];
   availability: AvailabilityRecord[];
+  availabilityExceptions?: AvailabilityExceptionRecord[];
+  calendarBlocks?: CalendarBlockRecord[];
   sessions: SessionRecord[];
 }
 
@@ -85,9 +109,13 @@ async function ensureStore(): Promise<void> {
       version: 1,
       teachers: [],
       students: [],
+      contacts: [],
+      groups: [],
       lessons: [],
       studentStatImports: [],
       availability: [],
+      availabilityExceptions: [],
+      calendarBlocks: [],
       sessions: [],
     });
   }
@@ -289,6 +317,9 @@ export function appDataFromStore(
     .filter((lesson) => lesson.teacherId === teacherId)
     .map((record) => ({
       ...withoutTenant(record),
+      subject: record.subject ?? "",
+      timezone: record.timezone ?? teacher.timezone,
+      updatedAt: record.updatedAt ?? record.createdAt,
       status:
         record.status === "scheduled" &&
         new Date(record.startsAt).getTime() + record.durationMinutes * 60_000 <
@@ -357,6 +388,13 @@ export function appDataFromStore(
     teacher: publicTeacher(teacher),
     students: store.students
       .filter((student) => student.teacherId === teacherId)
+      .map((student) => normalizeStudent(withoutTenant(student)))
+      .sort((a, b) => a.name.localeCompare(b.name, "pl")),
+    contacts: (store.contacts ?? [])
+      .filter((contact) => contact.teacherId === teacherId)
+      .map(withoutTenant),
+    groups: (store.groups ?? [])
+      .filter((group) => group.teacherId === teacherId)
       .map(withoutTenant)
       .sort((a, b) => a.name.localeCompare(b.name, "pl")),
     lessons,
@@ -367,6 +405,13 @@ export function appDataFromStore(
     availability: store.availability
       .filter((rule) => rule.teacherId === teacherId)
       .map(withoutTenant),
+    availabilityExceptions: (store.availabilityExceptions ?? [])
+      .filter((item) => item.teacherId === teacherId)
+      .map(withoutTenant),
+    calendarBlocks: (store.calendarBlocks ?? [])
+      .filter((item) => item.teacherId === teacherId)
+      .map(withoutTenant)
+      .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
     integrations: {
       google: teacher.google,
       telegram: teacher.telegram,
@@ -386,6 +431,31 @@ function withoutTenant<T extends { teacherId: string }>(
   const result = { ...record };
   delete (result as Partial<T>).teacherId;
   return result;
+}
+
+function normalizeStudent(student: Omit<StudentRecord, "teacherId">): Student {
+  const legacy = student as Student & Partial<Student>;
+  const name = legacy.displayName || legacy.name || "";
+  const parts = name.trim().split(/\s+/);
+  const email =
+    legacy.email ?? (legacy.contact?.includes("@") ? legacy.contact : "");
+  const phone =
+    legacy.phone ??
+    (!legacy.contact?.includes("@") ? (legacy.contact ?? "") : "");
+  return {
+    ...legacy,
+    firstName: legacy.firstName ?? parts[0] ?? "",
+    lastName: legacy.lastName ?? parts.slice(1).join(" "),
+    displayName: name,
+    name,
+    email,
+    phone,
+    contact: legacy.contact || email || phone,
+    subject: legacy.subject ?? "",
+    groupIds: legacy.groupIds ?? [],
+    packageRemainingLessons: legacy.packageRemainingLessons ?? null,
+    balanceDue: legacy.balanceDue ?? { amount: 0, currency: "PLN" },
+  };
 }
 
 function publicTeacher(teacher: TeacherRecord): Teacher {
@@ -409,11 +479,20 @@ function seedDemo(store: StoreShape, teacherId: string, now: Date): void {
   ): StudentRecord => ({
     id: randomUUID(),
     teacherId,
+    firstName: name.split(" ")[0] ?? name,
+    lastName: name.split(" ").slice(1).join(" "),
+    displayName: name,
     name,
+    email:
+      format === "online"
+        ? `${name.split(" ")[0].toLowerCase()}@example.test`
+        : "",
+    phone: format === "offline" ? "+48 600 000 000" : "",
     contact:
       format === "online"
         ? `${name.split(" ")[0].toLowerCase()}@example.test`
         : "+48 600 000 000",
+    subject: "Angielski",
     level,
     goal,
     notes:
@@ -426,6 +505,10 @@ function seedDemo(store: StoreShape, teacherId: string, now: Date): void {
         ? "https://meet.google.com/example"
         : "ul. Długa 12, Warszawa",
     defaultPrice: { amount: price, currency: "PLN" },
+    timezone: "Europe/Warsaw",
+    groupIds: [],
+    packageRemainingLessons: null,
+    balanceDue: { amount: 0, currency: "PLN" },
     createdAt: addDays(now, -120).toISOString(),
   });
 
@@ -459,6 +542,47 @@ function seedDemo(store: StoreShape, teacherId: string, now: Date): void {
     "archived",
   );
   store.students.push(anna, marta, jan, lena, piotr, archived);
+  store.contacts ??= [];
+  store.groups ??= [];
+  const groupId = randomUUID();
+  anna.groupIds = [groupId];
+  piotr.groupIds = [groupId];
+  anna.packageRemainingLessons = 7;
+  anna.balanceDue = { amount: 8000, currency: "PLN" };
+  store.groups.push({
+    id: groupId,
+    teacherId,
+    name: "Konwersacje B1",
+    subject: "Angielski",
+    level: "B1",
+    status: "active",
+    defaultDurationMinutes: 60,
+    defaultPrice: { amount: 8000, currency: "PLN" },
+    notes: "",
+    members: [anna, piotr].map((member) => ({
+      id: randomUUID(),
+      studentId: member.id,
+      status: "active" as const,
+      joinedAt: addDays(now, -90).toISOString(),
+    })),
+    createdAt: addDays(now, -90).toISOString(),
+  });
+  store.contacts.push({
+    id: randomUUID(),
+    teacherId,
+    studentId: marta.id,
+    contactId: randomUUID(),
+    firstName: "Joanna",
+    lastName: "Kowalska",
+    displayName: "Joanna Kowalska",
+    email: "joanna.kowalska@example.test",
+    phone: "+48 600 100 200",
+    type: "parent",
+    relationship: "Mama",
+    isPrimary: true,
+    isBillingContact: true,
+    createdAt: addDays(now, -110).toISOString(),
+  });
 
   const makePlan = (texts: string[]): PlanItem[] =>
     texts.map((text, position) => ({ id: randomUUID(), position, text }));

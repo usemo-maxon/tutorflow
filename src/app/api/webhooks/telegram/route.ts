@@ -37,10 +37,17 @@ export async function POST(request: Request) {
       .gt("expires_at", new Date().toISOString())
       .maybeSingle();
     if (link) {
+      const { data: tutor } = await supabase
+        .from("tutor_profiles")
+        .select("workspace_id")
+        .eq("user_id", link.teacher_id)
+        .single();
+      if (!tutor) return Response.json({ ok: true });
       const label = update.message.chat.username
         ? `@${update.message.chat.username}`
         : (update.message.chat.first_name ?? "Telegram");
       await supabase.from("integration_connections").upsert({
+        workspace_id: tutor.workspace_id,
         teacher_id: link.teacher_id,
         provider: "telegram",
         status: "connected",

@@ -1,4 +1,4 @@
-import type { AppAction } from "@/lib/domain";
+import { AppActionSchema, fieldErrors } from "@/lib/validation";
 import { currentTeacher } from "@/server/auth";
 import { performAction } from "@/server/app-service";
 import { ApiFailure, errorResponse } from "@/server/errors";
@@ -6,29 +6,26 @@ import { getAppData } from "@/server/repository";
 
 export const runtime = "nodejs";
 
-const actionTypes = new Set<AppAction["type"]>([
-  "createStudent",
-  "updateStudent",
-  "setStudentStatus",
-  "createLesson",
-  "mergeLesson",
-  "saveLesson",
-  "setPayment",
-  "cancelLesson",
-  "rescheduleLesson",
-  "retrySync",
-  "disableSync",
-  "updateProfile",
-  "createAvailability",
-  "deleteAvailability",
-  "importStudentStats",
-]);
-
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const teacher = await currentTeacher();
     if (!teacher) throw unauthenticated();
-    return Response.json(await getAppData(teacher.id));
+    const url = new URL(request.url);
+    const start = url.searchParams.get("start");
+    const end = url.searchParams.get("end");
+    const range = start && end ? { start, end } : undefined;
+    if (
+      range &&
+      (!Number.isFinite(Date.parse(range.start)) ||
+        !Number.isFinite(Date.parse(range.end)) ||
+        range.end <= range.start)
+    ) {
+      throw new ApiFailure(422, {
+        code: "INVALID_CALENDAR_RANGE",
+        message: "Nieprawidłowy zakres kalendarza.",
+      });
+    }
+    return Response.json(await getAppData(teacher.id, range));
   } catch (error) {
     return errorResponse(error);
   }
@@ -39,14 +36,15 @@ export async function POST(request: Request) {
     assertSameOrigin(request);
     const teacher = await currentTeacher();
     if (!teacher) throw unauthenticated();
-    const body = (await request.json()) as { type?: string };
-    if (!body.type || !actionTypes.has(body.type as AppAction["type"])) {
-      throw new ApiFailure(400, {
-        code: "INVALID_ACTION",
-        message: "Nie udało się rozpoznać działania.",
+    const parsed = AppActionSchema.safeParse(await request.json());
+    if (!parsed.success) {
+      throw new ApiFailure(422, {
+        code: "VALIDATION_ERROR",
+        message: "Popraw oznaczone pola.",
+        fieldErrors: fieldErrors(parsed.error),
       });
     }
-    return Response.json(await performAction(teacher.id, body as AppAction));
+    return Response.json(await performAction(teacher.id, parsed.data));
   } catch (error) {
     return errorResponse(error);
   }

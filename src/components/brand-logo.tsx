@@ -11,6 +11,7 @@ export function BrandLogo() {
         height={404}
         alt=""
         aria-hidden="true"
+        loading="eager"
         unoptimized
       />
       <Image
@@ -19,6 +20,7 @@ export function BrandLogo() {
         width={906}
         height={190}
         alt="easy4tutor"
+        loading="eager"
         unoptimized
       />
       <span className="brand-compact-label sr-only">easy4tutor</span>

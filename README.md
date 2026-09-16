@@ -34,7 +34,9 @@ npx supabase db push
 npx supabase migration list
 ```
 
-The required migrations are `supabase/migrations/20260912121318_production_foundation.sql` and `supabase/migrations/20260912181500_fix_payu_plan_ambiguity.sql`. They create profiles, subscriptions, tenant aggregates, durable sync/reminder/payment queues, webhook idempotency records, private attachment metadata, RLS, the private `attachments` bucket, and the production PayU confirmation function.
+The required migrations are `supabase/migrations/20260912121318_production_foundation.sql`, `supabase/migrations/20260912181500_fix_payu_plan_ambiguity.sql`, `supabase/migrations/20260915173036_stage_0_domain_foundation.sql`, `supabase/migrations/20260915203035_stage_1a_students_groups.sql`, and `supabase/migrations/20260915212030_stage_1b_calendar.sql`. They create profiles, subscriptions, workspace-scoped normalized teaching and finance entities, the temporary compatibility aggregate, durable sync/reminder/payment queues, webhook idempotency records, private attachment metadata, RLS, the private `attachments` bucket, transactional PayU/package functions, tenant-safe contact/group mutations, and relational scheduling/recurrence/calendar-block commands.
+
+Architecture and migration decisions are documented in `docs/ARCHITECTURE.md`, `docs/STAGE_0_FOUNDATION_REPORT.md`, `docs/STAGE_1A_STUDENTS_GROUPS_REPORT.md`, and `docs/STAGE_1B_CALENDAR_REPORT.md`.
 
 3. Run database policy tests against a local Supabase stack before production changes:
 

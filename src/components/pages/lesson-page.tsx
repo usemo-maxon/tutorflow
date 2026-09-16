@@ -25,6 +25,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
 import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
+import { ClientApiError } from "@/lib/api-client";
 import { copy } from "@/lib/copy";
 import type { LessonParticipant, PlanItem } from "@/lib/domain";
 import { formatDateTime, formatMoney, localInputToUtc } from "@/lib/format";
@@ -43,7 +44,13 @@ const schema = z.object({
   participants: z.array(
     z.object({
       studentId: z.string(),
-      attendanceStatus: z.enum(["unknown", "present", "absent", "cancelled"]),
+      attendanceStatus: z.enum([
+        "unknown",
+        "present",
+        "absent",
+        "late",
+        "cancelled",
+      ]),
       paymentStatus: z.enum(["unpaid", "paid", "cancelled"]),
       results: z.array(
         z.object({
@@ -72,7 +79,10 @@ export function LessonPage() {
   const [rescheduleOpen, setRescheduleOpen] = useState(false);
   const [newDate, setNewDate] = useState("");
   const [newTime, setNewTime] = useState("");
-  const [seriesScope, setSeriesScope] = useState<"single" | "future">("single");
+  const [newDuration, setNewDuration] = useState(60);
+  const [seriesScope, setSeriesScope] = useState<
+    "single" | "future" | "series"
+  >("single");
   const {
     control,
     register,
@@ -232,25 +242,41 @@ export function LessonPage() {
       showError(error);
     }
   }
-  async function reschedule() {
+  async function reschedule(allowOutsideAvailability = false) {
     try {
       await mutation.mutateAsync({
         type: "rescheduleLesson",
         lessonId: safeLesson.id,
         startsAt: localInputToUtc(newDate, newTime, safeData.teacher.timezone),
+        durationMinutes: newDuration,
         scope: safeLesson.seriesId ? seriesScope : "single",
+        expectedUpdatedAt: safeLesson.updatedAt,
+        allowOutsideAvailability,
       });
       setRescheduleOpen(false);
       showToast({ message: copy.toasts.dateChanged });
     } catch (error) {
+      if (
+        !allowOutsideAvailability &&
+        error instanceof ClientApiError &&
+        error.data.code === "OUTSIDE_AVAILABILITY" &&
+        window.confirm(
+          "Ten termin jest poza Twoją regularną dostępnością. Przełożyć zajęcia mimo to?",
+        )
+      ) {
+        await reschedule(true);
+        return;
+      }
       showError(error);
     }
   }
   async function cancelLesson() {
     if (
       !window.confirm(
-        safeLesson.seriesId && seriesScope === "future"
-          ? "Anulować tę i wszystkie kolejne lekcje serii? Statusy płatności pozostaną bez zmian."
+        safeLesson.seriesId && seriesScope !== "single"
+          ? seriesScope === "series"
+            ? "Anulować wszystkie przyszłe lekcje tej serii? Zrealizowana historia pozostanie bez zmian."
+            : "Anulować tę i wszystkie kolejne lekcje serii? Statusy płatności pozostaną bez zmian."
           : "Anulować tylko tę lekcję? Statusy płatności pozostaną bez zmian.",
       )
     )
@@ -260,6 +286,7 @@ export function LessonPage() {
         type: "cancelLesson",
         lessonId: safeLesson.id,
         scope: safeLesson.seriesId ? seriesScope : "single",
+        expectedUpdatedAt: safeLesson.updatedAt,
       });
       showToast({ message: "Lekcja anulowana" });
     } catch (error) {
@@ -277,6 +304,7 @@ export function LessonPage() {
     setNewTime(
       formatInTimeZone(safeLesson.startsAt, safeData.teacher.timezone, "HH:mm"),
     );
+    setNewDuration(safeLesson.durationMinutes);
     setSeriesScope("single");
     setRescheduleOpen((open) => !open);
   }
@@ -294,7 +322,11 @@ export function LessonPage() {
             {lesson.participantIds.length > 1 && (
               <span className="group-label">
                 <Users size={15} />
-                Grupa · {lesson.participantIds.length}
+                {lesson.groupId
+                  ? data.groups.find((group) => group.id === lesson.groupId)
+                      ?.name
+                  : "Grupa"}{" "}
+                · {lesson.participantIds.length}
               </span>
             )}
           </div>
@@ -641,6 +673,14 @@ export function LessonPage() {
                   />
                   Ta i kolejne lekcje
                 </label>
+                <label>
+                  <input
+                    type="radio"
+                    checked={seriesScope === "series"}
+                    onChange={() => setSeriesScope("series")}
+                  />
+                  Wszystkie lekcje w serii
+                </label>
               </fieldset>
             )}
             <button
@@ -664,6 +704,21 @@ export function LessonPage() {
                     />
                   </label>
                   <label className="field">
+                    <span>Czas</span>
+                    <select
+                      value={newDuration}
+                      onChange={(event) =>
+                        setNewDuration(Number(event.target.value))
+                      }
+                    >
+                      {[30, 45, 60, 90, 120].map((minutes) => (
+                        <option key={minutes} value={minutes}>
+                          {minutes} min
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
                     <span>Godzina</span>
                     <input
                       type="time"
@@ -676,7 +731,7 @@ export function LessonPage() {
                   type="button"
                   className="button button--primary button--full"
                   disabled={busy || readOnly || !newDate || !newTime}
-                  onClick={reschedule}
+                  onClick={() => void reschedule()}
                 >
                   Zmień termin
                 </button>

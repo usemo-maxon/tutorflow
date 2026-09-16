@@ -25,7 +25,6 @@ import {
   formatTime,
   localDateKey,
   localInputToUtc,
-  recurrencePreview,
 } from "@/lib/format";
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
 import { useSessionTeacher } from "./app-shell";
@@ -39,18 +38,19 @@ const occurrenceSchema = z.object({
 });
 const schema = z
   .object({
-    participantIds: z
-      .array(z.string())
-      .min(1, "Wybierz co najmniej jednego ucznia."),
+    targetKey: z.string().min(1, "Wybierz ucznia lub grupę."),
     mode: z.enum(["single", "multiple", "recurring"]),
     occurrences: z.array(occurrenceSchema).min(1),
-    frequency: z.enum(["weekly", "biweekly"]),
+    intervalWeeks: z.number().min(1).max(12),
+    daysOfWeek: z.array(z.enum(["1", "2", "3", "4", "5", "6", "7"])).min(1),
+    endDate: z.string(),
     count: z.number().min(2).max(52),
     format: z.enum(["online", "offline"]),
     location: z.string(),
     atTeacherPlace: z.boolean(),
     priceZloty: z.number().min(0),
     trial: z.boolean(),
+    subject: z.string(),
     topic: z.string(),
     plan: z.string(),
   })
@@ -69,6 +69,7 @@ interface ConflictState {
   message: string;
   conflictingLessonId?: string;
   canMerge: boolean;
+  canOverrideAvailability?: boolean;
 }
 
 export function LessonComposer() {
@@ -82,13 +83,13 @@ export function LessonComposer() {
     restoreComposerFocus,
     openStudentComposer,
     showToast,
-    showError,
   } = useAppUi();
   const [pickerExpanded, setPickerExpanded] = useState(true);
   const [search, setSearch] = useState("");
   const [saveError, setSaveError] = useState("");
   const initialized = useRef<LessonComposerPreset | null>(null);
-  const previousStudent = useRef("");
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
+  const previousTarget = useRef("");
   const [conflict, setConflict] = useState<ConflictState | null>(null);
   const {
     control,
@@ -128,12 +129,22 @@ export function LessonComposer() {
   const formatValue = useWatch({ control, name: "format" });
   const atTeacherPlace = useWatch({ control, name: "atTeacherPlace" });
   const mode = useWatch({ control, name: "mode" });
-  const selectedIds = useWatch({ control, name: "participantIds" });
-  const frequency = useWatch({ control, name: "frequency" });
+  const targetKey = useWatch({ control, name: "targetKey" });
+  const intervalWeeks = useWatch({ control, name: "intervalWeeks" });
+  const daysOfWeek = useWatch({ control, name: "daysOfWeek" });
+  const endDate = useWatch({ control, name: "endDate" });
   const count = useWatch({ control, name: "count" });
   const firstOccurrence = useWatch({ control, name: "occurrences.0" });
   const activeStudents =
     data?.students.filter((student) => student.status === "active") ?? [];
+  const activeGroups =
+    data?.groups.filter((group) => group.status === "active") ?? [];
+  const selectedTargetName = targetKey
+    ? targetKey.startsWith("group:")
+      ? activeGroups.find((group) => group.id === targetKey.split(":")[1])?.name
+      : activeStudents.find((student) => student.id === targetKey.split(":")[1])
+          ?.name
+    : "";
 
   useEffect(() => {
     if (!lessonComposer) {
@@ -142,7 +153,9 @@ export function LessonComposer() {
     }
     if (initialized.current !== lessonComposer && data) {
       initialized.current = lessonComposer;
-      previousStudent.current = lessonComposer.studentIds?.[0] ?? "";
+      previousTarget.current = lessonComposer.studentIds?.[0]
+        ? `student:${lessonComposer.studentIds[0]}`
+        : "";
       setSearch("");
       setPickerExpanded(!lessonComposer.studentIds?.length);
       setSaveError("");
@@ -160,25 +173,33 @@ export function LessonComposer() {
     data,
     reset,
     data?.students,
+    data?.groups,
     data?.teacher.timezone,
     teacher.timezone,
   ]);
 
   useUnsavedChanges(Boolean(lessonComposer) && isDirty);
   useEffect(() => {
-    const id = selectedIds?.[0] ?? "";
-    if (!id || id === previousStudent.current) return;
-    previousStudent.current = id;
-    const student = data?.students.find((s) => s.id === id);
-    if (!student) return;
+    if (!targetKey || targetKey === previousTarget.current) return;
+    previousTarget.current = targetKey;
+    const [type, id] = targetKey.split(":");
+    const student =
+      type === "student" ? data?.students.find((s) => s.id === id) : undefined;
+    const group =
+      type === "group"
+        ? data?.groups.find((item) => item.id === id)
+        : undefined;
+    if (!student && !group) return;
     const defaults = {
-      format: student.defaultFormat,
-      location: student.defaultLocation,
+      format: student?.defaultFormat ?? ("online" as const),
+      location: student?.defaultLocation ?? "",
       atTeacherPlace:
-        student.defaultFormat === "offline" &&
+        student?.defaultFormat === "offline" &&
         student.defaultLocation === "W domu / w biurze",
-      priceZloty: (student.defaultPrice?.amount ?? 0) / 100,
-      trial: student.defaultPrice === null,
+      priceZloty:
+        ((student?.defaultPrice ?? group?.defaultPrice)?.amount ?? 0) / 100,
+      trial: (student?.defaultPrice ?? group?.defaultPrice) === null,
+      subject: student?.subject ?? group?.subject ?? "",
     };
     for (const key of [
       "format",
@@ -190,8 +211,13 @@ export function LessonComposer() {
       if (!getFieldState(key).isDirty) setValue(key, defaults[key]);
     }
     if (!getFieldState("occurrences.0.durationMinutes").isDirty)
-      setValue("occurrences.0.durationMinutes", student.defaultDurationMinutes);
-  }, [selectedIds, data?.students, getFieldState, setValue]);
+      setValue(
+        "occurrences.0.durationMinutes",
+        (student ?? group)!.defaultDurationMinutes,
+      );
+    if (!getFieldState("subject").isDirty)
+      setValue("subject", defaults.subject);
+  }, [targetKey, data?.students, data?.groups, getFieldState, setValue]);
 
   useEffect(() => {
     if (formatValue === "online" && atTeacherPlace) {
@@ -203,12 +229,14 @@ export function LessonComposer() {
     if (mode !== "recurring" || !firstOccurrence?.date || !firstOccurrence.time)
       return [];
     try {
-      return recurrencePreview({
+      return buildRecurringDates({
         date: firstOccurrence.date,
         time: firstOccurrence.time,
         timezone: data?.teacher.timezone ?? teacher.timezone,
-        frequency,
+        intervalWeeks: Number(intervalWeeks) || 1,
+        daysOfWeek: daysOfWeek.map(Number),
         count: Math.min(52, Math.max(2, Number(count) || 2)),
+        endDate,
       });
     } catch {
       return [];
@@ -232,19 +260,21 @@ export function LessonComposer() {
     closeLessonComposer();
   }
 
-  const submit = handleSubmit(async (values) => {
+  async function save(values: Values, allowOutsideAvailability = false) {
     setConflict(null);
     setSaveError("");
     const timezone = data?.teacher.timezone ?? teacher.timezone;
     try {
       const inputOccurrences =
         values.mode === "recurring"
-          ? recurrencePreview({
+          ? buildRecurringDates({
               date: values.occurrences[0].date,
               time: values.occurrences[0].time,
               timezone,
-              frequency: values.frequency,
+              intervalWeeks: values.intervalWeeks,
+              daysOfWeek: values.daysOfWeek.map(Number),
               count: values.count,
+              endDate: values.endDate,
             }).map((startsAt) => ({
               startsAt,
               durationMinutes: values.occurrences[0].durationMinutes,
@@ -259,7 +289,10 @@ export function LessonComposer() {
       const response = await mutation.mutateAsync({
         type: "createLesson",
         lesson: {
-          participantIds: values.participantIds,
+          target: {
+            type: values.targetKey.startsWith("group:") ? "group" : "student",
+            id: values.targetKey.split(":")[1],
+          },
           mode: values.mode,
           occurrences: inputOccurrences,
           format: values.format,
@@ -271,16 +304,29 @@ export function LessonComposer() {
             ? null
             : Math.round(values.priceZloty * 100),
           topic: values.topic,
+          subject: values.subject,
+          allowOutsideAvailability,
+          requestId,
           plan: values.plan
             .split("\n")
             .map((line) => line.trim())
             .filter(Boolean),
           recurrence:
             values.mode === "recurring"
-              ? { frequency: values.frequency, count: values.count, timezone }
+              ? {
+                  frequency: values.intervalWeeks === 2 ? "biweekly" : "weekly",
+                  count: values.count,
+                  timezone,
+                  startDate: values.occurrences[0].date,
+                  startTime: values.occurrences[0].time,
+                  intervalWeeks: values.intervalWeeks,
+                  daysOfWeek: values.daysOfWeek.map(Number),
+                  endDate: values.endDate || undefined,
+                }
               : undefined,
         },
       });
+      setRequestId(crypto.randomUUID());
       closeLessonComposer();
       showToast({
         message:
@@ -293,7 +339,8 @@ export function LessonComposer() {
       if (
         error instanceof ClientApiError &&
         (error.data.code === "LESSON_CONFLICT" ||
-          error.data.code === "AVAILABILITY_CONFLICT")
+          error.data.code === "AVAILABILITY_CONFLICT" ||
+          error.data.code === "OUTSIDE_AVAILABILITY")
       ) {
         const details = error.data.details as
           { conflicts?: { lessonId: string }[] } | undefined;
@@ -303,6 +350,7 @@ export function LessonComposer() {
           canMerge:
             values.mode === "single" &&
             Boolean(details?.conflicts?.length === 1),
+          canOverrideAvailability: error.data.code === "OUTSIDE_AVAILABILITY",
         });
       } else {
         const fieldErrors =
@@ -317,25 +365,8 @@ export function LessonComposer() {
         );
       }
     }
-  });
-
-  async function mergeAsGroup() {
-    if (!conflict?.conflictingLessonId || !selectedIds.length) return;
-    try {
-      const response = await mutation.mutateAsync({
-        type: "mergeLesson",
-        conflictingLessonId: conflict.conflictingLessonId,
-        participantIds: selectedIds,
-      });
-      closeLessonComposer();
-      showToast({ message: "Utworzono lekcję grupową" });
-      router.push(
-        `/app/lekcje/${response.result?.id ?? conflict.conflictingLessonId}`,
-      );
-    } catch (error) {
-      showError(error);
-    }
   }
+  const submit = handleSubmit((values) => save(values));
 
   function addOccurrence() {
     const previous = getValues("occurrences").at(-1);
@@ -395,35 +426,36 @@ export function LessonComposer() {
           >
             <fieldset className="field-group">
               <legend>Uczeń lub grupa</legend>
-              {selectedIds.length > 0 && (
+              {targetKey && (
                 <div className="selected-participants">
-                  <strong>
-                    {selectedIds
-                      .map(
-                        (id) => activeStudents.find((s) => s.id === id)?.name,
-                      )
-                      .join(", ")}
-                  </strong>
+                  <strong>{selectedTargetName}</strong>
                   <button
                     type="button"
                     className="text-link"
                     aria-expanded={pickerExpanded}
                     onClick={() => setPickerExpanded(!pickerExpanded)}
                   >
-                    {pickerExpanded ? "Gotowe" : "Zmień / dodaj do grupy"}
+                    {pickerExpanded ? "Gotowe" : "Zmień"}
                   </button>
                 </div>
               )}
-              <div hidden={!pickerExpanded && selectedIds.length > 0}>
+              <div hidden={!pickerExpanded && Boolean(targetKey)}>
                 <label className="field">
                   <span className="sr-only">Szukaj uczestnika</span>
                   <input
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
-                    placeholder="Szukaj ucznia"
+                    placeholder="Szukaj ucznia lub grupy"
                   />
                 </label>
                 <div className="student-picker">
+                  {activeStudents.some((student) =>
+                    student.name
+                      .toLocaleLowerCase("pl")
+                      .includes(search.toLocaleLowerCase("pl")),
+                  ) && (
+                    <small className="picker-section-label">Uczniowie</small>
+                  )}
                   {activeStudents
                     .filter((s) =>
                       s.name
@@ -433,15 +465,12 @@ export function LessonComposer() {
                     .map((student) => (
                       <label key={student.id} className="student-option">
                         <input
-                          type="checkbox"
-                          value={student.id}
-                          aria-invalid={Boolean(errors.participantIds)}
+                          type="radio"
+                          value={`student:${student.id}`}
                           aria-describedby={
-                            errors.participantIds
-                              ? "participants-error"
-                              : undefined
+                            errors.targetKey ? "participants-error" : undefined
                           }
-                          {...register("participantIds")}
+                          {...register("targetKey")}
                         />
                         <span
                           className="avatar avatar--small"
@@ -462,14 +491,55 @@ export function LessonComposer() {
                         </span>
                       </label>
                     ))}
+                  {activeGroups.some((group) =>
+                    group.name
+                      .toLocaleLowerCase("pl")
+                      .includes(search.toLocaleLowerCase("pl")),
+                  ) && <small className="picker-section-label">Grupy</small>}
+                  {activeGroups
+                    .filter((group) =>
+                      group.name
+                        .toLocaleLowerCase("pl")
+                        .includes(search.toLocaleLowerCase("pl")),
+                    )
+                    .map((group) => (
+                      <label key={group.id} className="student-option">
+                        <input
+                          type="radio"
+                          value={`group:${group.id}`}
+                          aria-describedby={
+                            errors.targetKey ? "participants-error" : undefined
+                          }
+                          {...register("targetKey")}
+                        />
+                        <span
+                          className="avatar avatar--small"
+                          aria-hidden="true"
+                        >
+                          <Users size={15} />
+                        </span>
+                        <span>
+                          <strong>{group.name}</strong>
+                          <small>
+                            {group.subject || "Grupa"} ·{" "}
+                            {
+                              group.members.filter(
+                                (member) => member.status === "active",
+                              ).length
+                            }{" "}
+                            uczniów
+                          </small>
+                        </span>
+                      </label>
+                    ))}
                 </div>
               </div>
-              {errors.participantIds && (
+              {errors.targetKey && (
                 <small id="participants-error" className="field-error">
-                  {errors.participantIds.message}
+                  {errors.targetKey.message}
                 </small>
               )}
-              {!activeStudents.length && (
+              {!activeStudents.length && !activeGroups.length && (
                 <div className="inline-empty inline-empty--action">
                   <span>Najpierw dodaj aktywnego ucznia.</span>
                   <button
@@ -643,9 +713,13 @@ export function LessonComposer() {
                   <div className="form-row">
                     <label className="field">
                       <span>Powtarzanie</span>
-                      <select {...register("frequency")}>
-                        <option value="weekly">Co tydzień</option>
-                        <option value="biweekly">Co 2 tygodnie</option>
+                      <select
+                        {...register("intervalWeeks", { valueAsNumber: true })}
+                      >
+                        <option value="1">Co tydzień</option>
+                        <option value="2">Co 2 tygodnie</option>
+                        <option value="3">Co 3 tygodnie</option>
+                        <option value="4">Co 4 tygodnie</option>
                       </select>
                     </label>
                     <label className="field">
@@ -667,6 +741,38 @@ export function LessonComposer() {
                       )}
                     </label>
                   </div>
+                  <fieldset className="field-group recurrence-weekdays">
+                    <legend>Dni tygodnia</legend>
+                    <div className="weekday-picker">
+                      {["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Niedz"].map(
+                        (label, index) => (
+                          <label key={label}>
+                            <input
+                              type="checkbox"
+                              value={index + 1}
+                              {...register("daysOfWeek")}
+                            />
+                            <span>{label}</span>
+                          </label>
+                        ),
+                      )}
+                    </div>
+                    {errors.daysOfWeek && (
+                      <small className="field-error">
+                        Wybierz co najmniej jeden dzień.
+                      </small>
+                    )}
+                  </fieldset>
+                  <label className="field">
+                    <span>
+                      Koniec serii <small>opcjonalnie</small>
+                    </span>
+                    <input
+                      type="date"
+                      min={firstOccurrence?.date}
+                      {...register("endDate")}
+                    />
+                  </label>
                   <div className="recurrence-preview">
                     <CalendarPlus size={18} aria-hidden="true" />
                     <div>
@@ -816,6 +922,12 @@ export function LessonComposer() {
                   </small>
                 )}
               </label>
+              <label className="field">
+                <span>
+                  Przedmiot <small>opcjonalnie</small>
+                </span>
+                <input placeholder="np. angielski" {...register("subject")} />
+              </label>
               <details className="optional-plan">
                 <summary>
                   Temat i wstępny plan <small>opcjonalnie</small>
@@ -856,15 +968,14 @@ export function LessonComposer() {
                 <div>
                   <strong>Ten termin wymaga decyzji</strong>
                   <p>{conflict.message}</p>
-                  {conflict.canMerge && (
+                  {conflict.canOverrideAvailability && (
                     <button
                       type="button"
-                      className="button button--danger-soft"
+                      className="button button--primary"
                       disabled={mutation.isPending}
-                      onClick={mergeAsGroup}
+                      onClick={() => void save(getValues(), true)}
                     >
-                      <Users size={17} aria-hidden="true" />
-                      Utwórz lekcję grupową
+                      Utwórz mimo to
                     </button>
                   )}
                 </div>
@@ -885,7 +996,7 @@ export function LessonComposer() {
               disabled={
                 isSubmitting ||
                 mutation.isPending ||
-                !activeStudents.length ||
+                (!activeStudents.length && !activeGroups.length) ||
                 data?.teacher.subscription.readOnly
               }
             >
@@ -918,7 +1029,7 @@ function getDefaults(
   const nextHour = addHours(new Date(), 1);
   nextHour.setMinutes(0, 0, 0);
   return {
-    participantIds: preset.studentIds ?? [],
+    targetKey: selected ? `student:${selected.id}` : "",
     mode: "single",
     occurrences: [
       {
@@ -928,7 +1039,15 @@ function getDefaults(
         durationMinutes: selected?.defaultDurationMinutes ?? 60,
       },
     ],
-    frequency: "weekly",
+    intervalWeeks: 1,
+    daysOfWeek: [
+      String(
+        new Date(
+          `${preset.date ?? formatInTimeZone(nextHour, timezone, "yyyy-MM-dd")}T00:00:00Z`,
+        ).getUTCDay() || 7,
+      ) as "1" | "2" | "3" | "4" | "5" | "6" | "7",
+    ],
+    endDate: "",
     count: 4,
     format: selected?.defaultFormat ?? "online",
     location: selected?.defaultLocation ?? "",
@@ -937,7 +1056,51 @@ function getDefaults(
       selected?.defaultLocation === "W domu / w biurze",
     priceZloty: (selected?.defaultPrice?.amount ?? 0) / 100,
     trial: selected?.defaultPrice === null,
+    subject: "",
     topic: "",
     plan: "",
   };
+}
+
+function buildRecurringDates(input: {
+  date: string;
+  time: string;
+  timezone: string;
+  intervalWeeks: number;
+  daysOfWeek: number[];
+  count: number;
+  endDate?: string;
+}) {
+  const result: string[] = [];
+  const start = new Date(`${input.date}T00:00:00Z`);
+  const limit = input.endDate
+    ? new Date(`${input.endDate}T00:00:00Z`)
+    : new Date(
+        start.getTime() +
+          Math.max(370, input.count * input.intervalWeeks * 7) * 86_400_000,
+      );
+  for (
+    let day = start;
+    day <= limit && result.length < input.count;
+    day = new Date(day.getTime() + 86_400_000)
+  ) {
+    const elapsedDays = Math.round(
+      (day.getTime() - start.getTime()) / 86_400_000,
+    );
+    const week = Math.floor(elapsedDays / 7);
+    const weekday = day.getUTCDay() || 7;
+    if (
+      week % input.intervalWeeks === 0 &&
+      input.daysOfWeek.includes(weekday)
+    ) {
+      result.push(
+        localInputToUtc(
+          day.toISOString().slice(0, 10),
+          input.time,
+          input.timezone,
+        ),
+      );
+    }
+  }
+  return result;
 }
