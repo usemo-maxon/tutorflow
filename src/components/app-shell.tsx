@@ -3,6 +3,7 @@
 import { BrandLogo } from "@/components/brand-logo";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import dynamic from "next/dynamic";
 import {
   BarChart3,
   CalendarDays,
@@ -30,8 +31,13 @@ import { authRequest } from "@/lib/api-client";
 import type { Teacher } from "@/lib/domain";
 import { copy } from "@/lib/copy";
 import { AppUiProvider, useAppUi } from "./app-ui-context";
-import { LessonComposer } from "./lesson-composer";
-import { StudentComposer } from "./student-composer";
+
+const LessonComposer = dynamic(() =>
+  import("./lesson-composer").then((module) => module.LessonComposer),
+);
+const StudentComposer = dynamic(() =>
+  import("./student-composer").then((module) => module.StudentComposer),
+);
 
 const SessionContext = createContext<Teacher | null>(null);
 

@@ -1,30 +1,53 @@
 import "server-only";
 
+import { cache } from "react";
 import { cookies } from "next/headers";
 import type { Teacher } from "@/lib/domain";
 import { isSupabaseConfigured } from "./env";
-import { getAppData } from "./repository";
 import { getTeacherBySession } from "./store";
 import { createSupabaseServerClient } from "./supabase";
 
 export const SESSION_COOKIE = "tutorflow_session";
 
-export async function currentTeacher(): Promise<Teacher | null> {
+export const currentTeacher = cache(async (): Promise<Teacher | null> => {
   if (process.env.NODE_ENV === "production" || isSupabaseConfigured()) {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) return null;
-    try {
-      return (await getAppData(data.user.id)).teacher;
-    } catch {
-      return null;
-    }
+    const [profileResult, subscriptionResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("email,full_name,timezone")
+        .eq("id", data.user.id)
+        .single(),
+      supabase
+        .from("subscriptions")
+        .select("status,plan,read_only,trial_ends_at,renews_at")
+        .eq("teacher_id", data.user.id)
+        .single(),
+    ]);
+    if (profileResult.error || subscriptionResult.error) return null;
+    const profile = profileResult.data;
+    const subscription = subscriptionResult.data;
+    return {
+      id: data.user.id,
+      name: profile.full_name,
+      email: profile.email,
+      timezone: profile.timezone,
+      subscription: {
+        status: subscription.status as Teacher["subscription"]["status"],
+        plan: subscription.plan as Teacher["subscription"]["plan"],
+        readOnly: subscription.read_only,
+        trialEndsAt: subscription.trial_ends_at ?? undefined,
+        renewsAt: subscription.renews_at ?? undefined,
+      },
+    };
   }
   const cookieStore = await cookies();
   return getTeacherBySession(cookieStore.get(SESSION_COOKIE)?.value);
-}
+});
 
-export async function currentTeacherId(): Promise<string | null> {
+export const currentTeacherId = cache(async (): Promise<string | null> => {
   if (process.env.NODE_ENV === "production" || isSupabaseConfigured()) {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.auth.getUser();
@@ -35,7 +58,7 @@ export async function currentTeacherId(): Promise<string | null> {
     (await getTeacherBySession(cookieStore.get(SESSION_COOKIE)?.value))?.id ??
     null
   );
-}
+});
 
 export function safeReturnTo(value: unknown): string {
   return typeof value === "string" &&

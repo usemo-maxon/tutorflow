@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { AppShell } from "@/components/app-shell";
+import { Providers } from "@/components/providers";
 import { currentTeacher } from "@/server/auth";
 
 export default async function TeacherLayout({
@@ -10,5 +11,9 @@ export default async function TeacherLayout({
 }) {
   const teacher = await currentTeacher();
   if (!teacher) redirect("/logowanie");
-  return <AppShell teacher={teacher}>{children}</AppShell>;
+  return (
+    <Providers>
+      <AppShell teacher={teacher}>{children}</AppShell>
+    </Providers>
+  );
 }

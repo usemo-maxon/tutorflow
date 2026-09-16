@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
-import { Providers } from "@/components/providers";
 import "./globals.css";
 
 const manrope = localFont({
@@ -36,9 +35,7 @@ export default function RootLayout({
       data-scroll-behavior="smooth"
       className={`${manrope.variable} ${literata.variable}`}
     >
-      <body>
-        <Providers>{children}</Providers>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

@@ -1,5 +1,5 @@
 import { AppActionSchema, fieldErrors } from "@/lib/validation";
-import { currentTeacher } from "@/server/auth";
+import { currentTeacherId } from "@/server/auth";
 import { performAction } from "@/server/app-service";
 import { ApiFailure, errorResponse } from "@/server/errors";
 import { getAppData } from "@/server/repository";
@@ -8,8 +8,8 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
-    const teacher = await currentTeacher();
-    if (!teacher) throw unauthenticated();
+    const teacherId = await currentTeacherId();
+    if (!teacherId) throw unauthenticated();
     const url = new URL(request.url);
     const start = url.searchParams.get("start");
     const end = url.searchParams.get("end");
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
         message: "Nieprawidłowy zakres kalendarza.",
       });
     }
-    return Response.json(await getAppData(teacher.id, range));
+    return Response.json(await getAppData(teacherId, range));
   } catch (error) {
     return errorResponse(error);
   }
@@ -34,8 +34,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    const teacher = await currentTeacher();
-    if (!teacher) throw unauthenticated();
+    const teacherId = await currentTeacherId();
+    if (!teacherId) throw unauthenticated();
     const parsed = AppActionSchema.safeParse(await request.json());
     if (!parsed.success) {
       throw new ApiFailure(422, {
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
         fieldErrors: fieldErrors(parsed.error),
       });
     }
-    return Response.json(await performAction(teacher.id, parsed.data));
+    return Response.json(await performAction(teacherId, parsed.data));
   } catch (error) {
     return errorResponse(error);
   }

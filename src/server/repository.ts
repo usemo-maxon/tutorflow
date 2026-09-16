@@ -387,6 +387,19 @@ async function loadTenantStore(
     (packagesResult.data ?? []).map((row) => row.id as string),
   );
   const visibleGroupIds = new Set(groupRows.map((row) => row.id));
+  const groupIdsByStudent = new Map<string, string[]>();
+  const membersByGroup = new Map<string, GroupMemberRow[]>();
+  for (const member of groupMemberRows) {
+    const groupMembers = membersByGroup.get(member.group_id) ?? [];
+    groupMembers.push(member);
+    membersByGroup.set(member.group_id, groupMembers);
+    if (member.status !== "active" || !visibleGroupIds.has(member.group_id)) {
+      continue;
+    }
+    const studentGroups = groupIdsByStudent.get(member.student_id) ?? [];
+    studentGroups.push(member.group_id);
+    groupIdsByStudent.set(member.student_id, studentGroups);
+  }
   const packageRemainingByStudent = new Map<string, number>();
   for (const row of packageBalancesResult.data ?? []) {
     if (!activePackageIds.has(row.package_id as string)) continue;
@@ -420,32 +433,58 @@ async function loadTenantStore(
         ? null
         : { amount: Number(row.default_lesson_price_grosz), currency: "PLN" },
     timezone: row.timezone ?? undefined,
-    groupIds: groupMemberRows
-      .filter(
-        (member) =>
-          member.student_id === row.id &&
-          member.status === "active" &&
-          visibleGroupIds.has(member.group_id),
-      )
-      .map((member) => member.group_id),
+    groupIds: groupIdsByStudent.get(row.id) ?? [],
     packageRemainingLessons: packageRemainingByStudent.has(row.id)
       ? packageRemainingByStudent.get(row.id)!
       : null,
     balanceDue: { amount: 0, currency: "PLN" },
     createdAt: row.created_at,
   }));
+  const participantsByLesson = groupBy(
+    participantRows,
+    (participant) => participant.lesson_id,
+  );
+  const planItemsByLesson = groupBy(planItemRows, (item) => item.lesson_id);
+  const planResultsByParticipant = groupBy(
+    planResultRows,
+    (result) => result.lesson_participant_id,
+  );
+  const attendanceByLessonAndStudent = new Map(
+    attendanceRows.map((attendance) => [
+      `${attendance.lesson_id}:${attendance.student_id}`,
+      attendance.status,
+    ]),
+  );
+  const homeworkByLesson = new Map(
+    homeworkRows.map((homework) => [homework.lesson_id, homework.description]),
+  );
+  const noteByLesson = new Map(
+    noteRows.map((note) => [note.lesson_id, note.content]),
+  );
+  const balanceDueByStudent = new Map<string, number>();
   const lessons: StoreShape["lessons"] = lessonRows.map((row) => {
-    const lessonParticipants = participantRows.filter(
-      (participant) => participant.lesson_id === row.id,
-    );
-    const planItems = planItemRows
-      .filter((item) => item.lesson_id === row.id)
+    const lessonParticipants = participantsByLesson.get(row.id) ?? [];
+    const planItems = (planItemsByLesson.get(row.id) ?? [])
       .sort((a, b) => a.position - b.position)
       .map((item) => ({
         id: item.id,
         position: item.position,
         text: item.content,
       }));
+    const priceAmount =
+      row.price_grosz === null ? null : Number(row.price_grosz);
+    if (
+      priceAmount !== null &&
+      ["completed", "needs_completion"].includes(row.status)
+    ) {
+      for (const participant of lessonParticipants) {
+        if (participant.payment_status !== "unpaid") continue;
+        balanceDueByStudent.set(
+          participant.student_id,
+          (balanceDueByStudent.get(participant.student_id) ?? 0) + priceAmount,
+        );
+      }
+    }
     return {
       id: row.id,
       teacherId,
@@ -464,9 +503,7 @@ async function loadTenantStore(
           ? (row.meeting_url ?? "")
           : (row.location ?? ""),
       price:
-        row.price_grosz === null
-          ? null
-          : { amount: Number(row.price_grosz), currency: "PLN" },
+        priceAmount === null ? null : { amount: priceAmount, currency: "PLN" },
       mode: row.creation_mode,
       seriesId: row.recurring_series_id ?? undefined,
       recurrenceOriginalStartsAt:
@@ -478,51 +515,35 @@ async function loadTenantStore(
       syncMessage: row.sync_message ?? undefined,
       topic: row.title,
       planItems,
-      homework:
-        homeworkRows.find((homework) => homework.lesson_id === row.id)
-          ?.description ?? "",
-      generalNotes:
-        noteRows.find((note) => note.lesson_id === row.id)?.content ?? "",
+      homework: homeworkByLesson.get(row.id) ?? "",
+      generalNotes: noteByLesson.get(row.id) ?? "",
       participants: lessonParticipants.map((participant) => ({
         studentId: participant.student_id,
         attendanceStatus:
-          attendanceRows.find(
-            (attendance) =>
-              attendance.lesson_id === row.id &&
-              attendance.student_id === participant.student_id,
-          )?.status ?? "unknown",
+          attendanceByLessonAndStudent.get(
+            `${row.id}:${participant.student_id}`,
+          ) ?? "unknown",
         paymentStatus: participant.payment_status,
-        results: planResultRows
-          .filter((result) => result.lesson_participant_id === participant.id)
-          .map((result) => ({
+        results: (planResultsByParticipant.get(participant.id) ?? []).map(
+          (result) => ({
             planItemId: result.plan_item_id,
             completed: result.completed,
             score: result.score ?? undefined,
             note: result.note ?? "",
-          })),
+          }),
+        ),
       })),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
   });
   for (const student of students) {
-    student.balanceDue.amount = lessons.reduce((total, lesson) => {
-      if (!lesson.participantIds.includes(student.id)) return total;
-      const participant = lesson.participants.find(
-        (entry) => entry.studentId === student.id,
-      );
-      if (
-        participant?.paymentStatus !== "unpaid" ||
-        !["completed", "needs_completion"].includes(lesson.status)
-      ) {
-        return total;
-      }
-      return total + (lesson.price?.amount ?? 0);
-    }, 0);
+    student.balanceDue.amount = balanceDueByStudent.get(student.id) ?? 0;
   }
+  const contactsById = new Map(contactRows.map((row) => [row.id, row]));
   const contacts: StoreShape["contacts"] = studentContactRows.flatMap(
     (relation) => {
-      const contact = contactRows.find((row) => row.id === relation.contact_id);
+      const contact = contactsById.get(relation.contact_id);
       if (!contact) return [];
       return [
         {
@@ -559,15 +580,13 @@ async function loadTenantStore(
         ? null
         : { amount: Number(row.default_price_grosz), currency: "PLN" },
     notes: row.notes ?? "",
-    members: groupMemberRows
-      .filter((member) => member.group_id === row.id)
-      .map((member) => ({
-        id: member.id,
-        studentId: member.student_id,
-        status: member.status === "active" ? "active" : "suspended",
-        joinedAt: member.joined_at,
-        leftAt: member.left_at ?? undefined,
-      })),
+    members: (membersByGroup.get(row.id) ?? []).map((member) => ({
+      id: member.id,
+      studentId: member.student_id,
+      status: member.status === "active" ? "active" : "suspended",
+      joinedAt: member.joined_at,
+      leftAt: member.left_at ?? undefined,
+    })),
     createdAt: row.created_at,
   }));
   const availability = (availabilityResult.data ?? []) as Array<{
@@ -664,6 +683,17 @@ async function loadTenantStore(
       sessions: [],
     } satisfies StoreShape,
   };
+}
+
+function groupBy<T>(rows: T[], keyOf: (row: T) => string): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = keyOf(row);
+    const values = grouped.get(key) ?? [];
+    values.push(row);
+    grouped.set(key, values);
+  }
+  return grouped;
 }
 
 export async function queryStore<T>(
