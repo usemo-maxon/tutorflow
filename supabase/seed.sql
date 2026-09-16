@@ -1,4 +1,4 @@
--- Deterministic, synthetic Stage 1A demo data. Safe to run repeatedly.
+-- Deterministic, synthetic Stage 2 demo data. Safe to run repeatedly.
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
   raw_app_meta_data, raw_user_meta_data, created_at, updated_at
@@ -132,7 +132,12 @@ insert into public.lessons (
   ('94000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000002', null, 'At the restaurant', 'English', '2026-09-18T14:00:00Z', '2026-09-18T15:00:00Z', 'Europe/Warsaw', 'scheduled', 'online', null, 7500, 'PLN', 'per_lesson', 'https://meet.example.test/hania', 'single', null, null, 'disabled', '2026-09-01T08:00:00Z', null, null),
   ('94000000-0000-4000-8000-000000000003', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', null, '92000000-0000-4000-8000-000000000001', 'English B1 — speaking', 'English', '2026-09-22T15:00:00Z', '2026-09-22T16:00:00Z', 'Europe/Warsaw', 'scheduled', 'online', null, 6000, 'PLN', 'per_student', 'https://meet.example.test/group', 'recurring', '93000000-0000-4000-8000-000000000001', '2026-09-22T15:00:00Z', 'disabled', '2026-09-01T08:00:00Z', null, null),
   ('94000000-0000-4000-8000-000000000004', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', null, '92000000-0000-4000-8000-000000000001', 'English B1 — speaking', 'English', '2026-09-29T15:00:00Z', '2026-09-29T16:00:00Z', 'Europe/Warsaw', 'scheduled', 'online', null, 6000, 'PLN', 'per_student', 'https://meet.example.test/group', 'recurring', '93000000-0000-4000-8000-000000000001', '2026-09-29T15:00:00Z', 'disabled', '2026-09-01T08:00:00Z', null, null),
-  ('94000000-0000-4000-8000-000000000005', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000003', null, 'Conditionals review', 'English', '2026-09-12T10:00:00Z', '2026-09-12T11:00:00Z', 'Europe/Warsaw', 'cancelled', 'online', null, 9000, 'PLN', 'per_lesson', 'https://meet.example.test/adam', 'single', null, null, 'disabled', '2026-09-01T08:00:00Z', null, '2026-09-11T12:00:00Z')
+  ('94000000-0000-4000-8000-000000000005', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000003', null, 'Conditionals review', 'English', '2026-09-12T10:00:00Z', '2026-09-12T11:00:00Z', 'Europe/Warsaw', 'cancelled', 'online', null, 9000, 'PLN', 'per_lesson', 'https://meet.example.test/adam', 'single', null, null, 'disabled', '2026-09-01T08:00:00Z', null, '2026-09-11T12:00:00Z'),
+  ('94000000-0000-4000-8000-000000000006', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000001', null, 'Present Perfect — experiences', 'English', '2026-09-16T12:00:00Z', '2026-09-16T13:00:00Z', 'Europe/Warsaw', 'scheduled', 'online', null, 8000, 'PLN', 'package', 'https://meet.example.test/zosia', 'single', null, null, 'disabled', '2026-09-01T08:00:00Z', null, null),
+  ('94000000-0000-4000-8000-000000000007', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000002', null, 'Travel vocabulary', 'English', '2026-09-16T13:30:00Z', '2026-09-16T14:30:00Z', 'Europe/Warsaw', 'scheduled', 'online', null, 7500, 'PLN', 'per_lesson', 'https://meet.example.test/hania', 'single', null, null, 'disabled', '2026-09-01T08:00:00Z', null, null),
+  ('94000000-0000-4000-8000-000000000008', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', null, '92000000-0000-4000-8000-000000000001', 'English B1 — speaking', 'English', '2026-09-16T16:00:00Z', '2026-09-16T17:00:00Z', 'Europe/Warsaw', 'scheduled', 'online', null, 6000, 'PLN', 'per_student', 'https://meet.example.test/group', 'single', null, null, 'disabled', '2026-09-01T08:00:00Z', null, null),
+  ('94000000-0000-4000-8000-000000000009', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000003', null, 'Conditionals — practice', 'English', '2026-09-17T15:00:00Z', '2026-09-17T16:00:00Z', 'Europe/Warsaw', 'scheduled', 'online', null, 9000, 'PLN', 'per_lesson', 'https://meet.example.test/adam', 'single', null, null, 'disabled', '2026-09-01T08:00:00Z', null, null),
+  ('94000000-0000-4000-8000-000000000010', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', '91000000-0000-4000-8000-000000000002', null, 'Daily routines', 'English', '2026-09-15T14:00:00Z', '2026-09-15T15:00:00Z', 'Europe/Warsaw', 'needs_completion', 'online', null, 7500, 'PLN', 'per_lesson', 'https://meet.example.test/hania', 'single', null, null, 'disabled', '2026-09-01T08:00:00Z', null, null)
 on conflict (id) do update set title = excluded.title, starts_at = excluded.starts_at,
   ends_at = excluded.ends_at, status = excluded.status,
   completed_at = excluded.completed_at, cancelled_at = excluded.cancelled_at,
@@ -148,7 +153,14 @@ values
   ('95000000-0000-4000-8000-000000000006', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000004', '91000000-0000-4000-8000-000000000001', 'unpaid'),
   ('95000000-0000-4000-8000-000000000007', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000004', '91000000-0000-4000-8000-000000000002', 'unpaid'),
   ('95000000-0000-4000-8000-000000000008', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000004', '91000000-0000-4000-8000-000000000003', 'unpaid'),
-  ('95000000-0000-4000-8000-000000000009', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000005', '91000000-0000-4000-8000-000000000003', 'cancelled')
+  ('95000000-0000-4000-8000-000000000009', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000005', '91000000-0000-4000-8000-000000000003', 'cancelled'),
+  ('95000000-0000-4000-8000-000000000010', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000006', '91000000-0000-4000-8000-000000000001', 'unpaid'),
+  ('95000000-0000-4000-8000-000000000011', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000007', '91000000-0000-4000-8000-000000000002', 'unpaid'),
+  ('95000000-0000-4000-8000-000000000012', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000008', '91000000-0000-4000-8000-000000000001', 'unpaid'),
+  ('95000000-0000-4000-8000-000000000013', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000008', '91000000-0000-4000-8000-000000000002', 'unpaid'),
+  ('95000000-0000-4000-8000-000000000014', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000008', '91000000-0000-4000-8000-000000000003', 'unpaid'),
+  ('95000000-0000-4000-8000-000000000015', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000009', '91000000-0000-4000-8000-000000000003', 'unpaid'),
+  ('95000000-0000-4000-8000-000000000016', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000010', '91000000-0000-4000-8000-000000000002', 'unpaid')
 on conflict (lesson_id, student_id) do update set payment_status = excluded.payment_status;
 
 insert into public.attendances (id, workspace_id, lesson_id, student_id, status, marked_at)
@@ -168,6 +180,27 @@ values (
   'Zosia dobrze opanowała końcówki -ed.', 'private', 'general'
 ) on conflict (lesson_id, author_user_id, note_type) do update set content = excluded.content;
 
+insert into public.lesson_notes (id, workspace_id, lesson_id, author_user_id, content, visibility, note_type)
+values
+  ('96000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000006', '90000000-0000-4000-8000-000000000001', 'Rozróżnić Present Perfect i Past Simple oraz użyć obu czasów w rozmowie.', 'private', 'objectives'),
+  ('96000000-0000-4000-8000-000000000003', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000001', 'Przećwiczyliśmy opowiadanie o przeszłości. Warto powtórzyć czasowniki nieregularne.', 'student_visible', 'student_summary')
+on conflict (lesson_id, author_user_id, note_type) do update set content = excluded.content, visibility = excluded.visibility;
+
+insert into public.lesson_plan_items (id, workspace_id, lesson_id, position, content)
+values
+  ('96200000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000006', 0, 'Rozgrzewka: ostatnie doświadczenia'),
+  ('96200000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000006', 1, 'Porównanie obu czasów na przykładach'),
+  ('96200000-0000-4000-8000-000000000003', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000006', 2, 'Ćwiczenie w rozmowie')
+on conflict (id) do update set position = excluded.position, content = excluded.content;
+
+insert into public.materials (id, workspace_id, owner_user_id, title, description, type, external_url)
+values ('96300000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000001', 'Present Perfect — ćwiczenia', 'Interaktywna powtórka przed rozmową.', 'link', 'https://example.test/materials/present-perfect')
+on conflict (id) do update set title = excluded.title, description = excluded.description, external_url = excluded.external_url;
+
+insert into public.lesson_materials (id, workspace_id, lesson_id, material_id)
+values ('96400000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000002', '94000000-0000-4000-8000-000000000006', '96300000-0000-4000-8000-000000000001')
+on conflict (lesson_id, material_id) do nothing;
+
 insert into public.homeworks (id, workspace_id, lesson_id, student_id, title, description, status, due_at)
 values (
   '96100000-0000-4000-8000-000000000001',
@@ -182,7 +215,7 @@ insert into public.payments (
   id, workspace_id, student_id, amount_grosz, currency, status,
   payment_method, provider, provider_transaction_id, paid_at, created_at
 ) values
-  ('97000000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000001', 64000, 'PLN', 'paid', 'bank_transfer', null, null, '2026-09-01T09:00:00Z', '2026-09-01T09:00:00Z'),
+  ('97000000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000001', 16000, 'PLN', 'paid', 'bank_transfer', null, null, '2026-09-01T09:00:00Z', '2026-09-01T09:00:00Z'),
   ('97000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000002', 7500, 'PLN', 'pending', 'cash', null, null, null, '2026-09-15T09:00:00Z')
 on conflict (id) do update set status = excluded.status, paid_at = excluded.paid_at;
 
@@ -193,9 +226,9 @@ insert into public.packages (
   '98000000-0000-4000-8000-000000000001',
   '90000000-0000-4000-8000-000000000002',
   '91000000-0000-4000-8000-000000000001',
-  'Pakiet 8 lekcji', 8, 64000, 'PLN', 'active',
+  'Pakiet 2 lekcji', 2, 16000, 'PLN', 'active',
   '2026-09-01T09:00:00Z', '2027-03-01T09:00:00Z'
-) on conflict (id) do update set total_lessons = 8, price_grosz = 64000, status = 'active';
+) on conflict (id) do update set total_lessons = 2, price_grosz = 16000, status = 'active';
 
 insert into public.payment_allocations (
   id, workspace_id, payment_id, package_id, amount_grosz
@@ -203,7 +236,7 @@ insert into public.payment_allocations (
   '98100000-0000-4000-8000-000000000001',
   '90000000-0000-4000-8000-000000000002',
   '97000000-0000-4000-8000-000000000001',
-  '98000000-0000-4000-8000-000000000001', 64000
+  '98000000-0000-4000-8000-000000000001', 16000
 ) on conflict (id) do update set amount_grosz = excluded.amount_grosz;
 
 insert into public.package_usages (

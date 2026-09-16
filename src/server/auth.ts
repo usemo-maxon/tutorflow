@@ -24,6 +24,19 @@ export async function currentTeacher(): Promise<Teacher | null> {
   return getTeacherBySession(cookieStore.get(SESSION_COOKIE)?.value);
 }
 
+export async function currentTeacherId(): Promise<string | null> {
+  if (process.env.NODE_ENV === "production" || isSupabaseConfigured()) {
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase.auth.getUser();
+    return error ? null : (data.user?.id ?? null);
+  }
+  const cookieStore = await cookies();
+  return (
+    (await getTeacherBySession(cookieStore.get(SESSION_COOKIE)?.value))?.id ??
+    null
+  );
+}
+
 export function safeReturnTo(value: unknown): string {
   return typeof value === "string" &&
     value.startsWith("/app/") &&

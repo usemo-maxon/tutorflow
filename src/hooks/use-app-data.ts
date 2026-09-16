@@ -3,7 +3,76 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import type { AppAction, AppData } from "@/lib/domain";
-import { ClientApiError, fetchAppData, mutateApp } from "@/lib/api-client";
+import type {
+  LessonWorkspaceAction,
+  LessonWorkspaceData,
+} from "@/lib/lesson-workspace";
+import {
+  ClientApiError,
+  fetchAppData,
+  fetchDashboardData,
+  fetchLessonWorkspace,
+  mutateApp,
+  mutateLessonWorkspace,
+} from "@/lib/api-client";
+
+export function useDashboardData(teacherId: string) {
+  const router = useRouter();
+  return useQuery({
+    queryKey: ["dashboard", teacherId],
+    queryFn: ({ signal }) => fetchDashboardData(signal),
+    refetchInterval: 60_000,
+    retry(failureCount, error) {
+      if (error instanceof ClientApiError && error.status < 500) return false;
+      return failureCount < 2;
+    },
+    throwOnError(error) {
+      if (error instanceof ClientApiError && error.status === 401) {
+        router.push("/logowanie");
+      }
+      return false;
+    },
+  });
+}
+
+export function useLessonWorkspace(teacherId: string, lessonId: string) {
+  const router = useRouter();
+  return useQuery({
+    queryKey: ["lesson-workspace", teacherId, lessonId],
+    queryFn: ({ signal }) => fetchLessonWorkspace(lessonId, signal),
+    retry(failureCount, error) {
+      if (error instanceof ClientApiError && error.status < 500) return false;
+      return failureCount < 2;
+    },
+    throwOnError(error) {
+      if (error instanceof ClientApiError && error.status === 401) {
+        router.push("/logowanie");
+      }
+      return false;
+    },
+  });
+}
+
+export function useLessonWorkspaceMutation(
+  teacherId: string,
+  lessonId: string,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (action: LessonWorkspaceAction) =>
+      mutateLessonWorkspace(lessonId, action),
+    onSuccess(data) {
+      queryClient.setQueryData<LessonWorkspaceData>(
+        ["lesson-workspace", teacherId, lessonId],
+        data,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["dashboard", teacherId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
+    },
+  });
+}
 
 export function useAppData(
   teacherId: string,
@@ -37,6 +106,9 @@ export function useAppMutation(teacherId: string) {
         response.data,
       );
       void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["dashboard", teacherId],
+      });
     },
   });
 }

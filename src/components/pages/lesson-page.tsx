@@ -1,795 +1,1059 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { formatInTimeZone } from "date-fns-tz";
+import { pl } from "date-fns/locale";
 import {
   AlertTriangle,
   ArrowLeft,
-  CalendarClock,
+  BookOpen,
+  CalendarDays,
+  Check,
   CheckCircle2,
-  ChevronDown,
-  ChevronUp,
+  ChevronRight,
+  CircleUserRound,
   ExternalLink,
-  GripVertical,
+  FileText,
+  Link2,
   LoaderCircle,
-  MapPin,
+  NotebookPen,
+  Paperclip,
   Plus,
-  RotateCw,
   Trash2,
   Users,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useForm, useWatch } from "react-hook-form";
-import { z } from "zod";
-import { useAppData, useAppMutation } from "@/hooks/use-app-data";
+import { useParams } from "next/navigation";
+import { useState, type ReactNode } from "react";
+import {
+  useLessonWorkspace,
+  useLessonWorkspaceMutation,
+} from "@/hooks/use-app-data";
 import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
+import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { ClientApiError } from "@/lib/api-client";
-import { copy } from "@/lib/copy";
-import type { LessonParticipant, PlanItem } from "@/lib/domain";
-import { formatDateTime, formatMoney, localInputToUtc } from "@/lib/format";
+import type {
+  LessonWorkspaceAction,
+  LessonWorkspaceData,
+} from "@/lib/lesson-workspace";
+import { localInputToUtc } from "@/lib/format";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
 import { PageLoading } from "../ui/loading";
 import { LessonStatusBadge } from "../ui/status-badge";
 
-const schema = z.object({
-  topic: z.string(),
-  homework: z.string(),
-  generalNotes: z.string(),
-  planItems: z.array(
-    z.object({ id: z.string(), position: z.number(), text: z.string() }),
-  ),
-  participants: z.array(
-    z.object({
-      studentId: z.string(),
-      attendanceStatus: z.enum([
-        "unknown",
-        "present",
-        "absent",
-        "late",
-        "cancelled",
-      ]),
-      paymentStatus: z.enum(["unpaid", "paid", "cancelled"]),
-      results: z.array(
-        z.object({
-          planItemId: z.string(),
-          completed: z.boolean(),
-          score: z.number().int().min(1).max(10).optional(),
-          note: z.string().optional(),
-        }),
-      ),
-    }),
-  ),
-});
-type Values = z.infer<typeof schema>;
+type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function LessonPage() {
   const { lessonId } = useParams<{ lessonId: string }>();
   const session = useSessionTeacher();
-  const router = useRouter();
-  const { data, isPending } = useAppData(session.id);
-  const mutation = useAppMutation(session.id);
-  const { showToast, showError } = useAppUi();
-  const lesson = data?.lessons.find((candidate) => candidate.id === lessonId);
-  const draftLessonId = useRef<string | null>(null);
-  const [saveError, setSaveError] = useState("");
-  const [activeStudentId, setActiveStudentId] = useState("");
-  const [rescheduleOpen, setRescheduleOpen] = useState(false);
-  const [newDate, setNewDate] = useState("");
-  const [newTime, setNewTime] = useState("");
-  const [newDuration, setNewDuration] = useState(60);
-  const [seriesScope, setSeriesScope] = useState<
-    "single" | "future" | "series"
-  >("single");
-  const {
-    control,
-    register,
-    handleSubmit,
-    reset,
-    setValue,
-    formState: { isDirty, isSubmitting },
-  } = useForm<Values>({
-    resolver: zodResolver(schema),
-    defaultValues: lesson ? lessonValues(lesson) : undefined,
-  });
-  const values = useWatch({ control }) as Values;
+  const query = useLessonWorkspace(session.id, lessonId);
+  const data = query.data;
 
-  useEffect(() => {
-    if (lesson && (draftLessonId.current !== lesson.id || !isDirty)) {
-      draftLessonId.current = lesson.id;
-      reset(lessonValues(lesson));
-    }
-  }, [lesson, reset, isDirty]);
-  useUnsavedChanges(isDirty);
-
-  const participantIndex = useMemo(() => {
-    const found =
-      values.participants?.findIndex(
-        (participant) => participant?.studentId === activeStudentId,
-      ) ?? -1;
-    return found >= 0 ? found : 0;
-  }, [values.participants, activeStudentId]);
-  if (isPending || !data) return <PageLoading />;
-  if (!lesson)
+  if (query.isPending) return <PageLoading />;
+  if (!data || query.error) {
     return (
       <div className="not-found">
-        <h1>Nie znaleziono lekcji</h1>
-        <p>Lekcja mogła zostać usunięta albo nie należy do tego konta.</p>
+        <h1>Nie znaleziono zajęć</h1>
+        <p>
+          Zajęcia mogły zostać usunięte albo nie należą do tego obszaru
+          roboczego.
+        </p>
         <Link className="button button--secondary" href="/app/kalendarz">
           Wróć do kalendarza
         </Link>
       </div>
     );
-  const readOnly = data.teacher.subscription.readOnly;
-  const busy = isSubmitting || mutation.isPending;
-  const safeLesson = lesson;
-  const safeData = data;
-  const students = lesson.participantIds
-    .map((id) => data.students.find((student) => student.id === id))
-    .filter(Boolean) as import("@/lib/domain").Student[];
-  const activeStudent =
-    students.find((student) => student.id === activeStudentId) ?? students[0];
-  const activeParticipant = values.participants?.[participantIndex];
-
-  const save = (complete: boolean) =>
-    handleSubmit(async (formValues) => {
-      if (readOnly || mutation.isPending) return;
-      setSaveError("");
-      try {
-        const response = await mutation.mutateAsync({
-          type: "saveLesson",
-          lessonId: lesson.id,
-          ...formValues,
-          complete,
-        });
-        const saved = response.data.lessons.find((l) => l.id === lesson.id);
-        if (saved) reset(lessonValues(saved));
-        showToast({
-          message: complete
-            ? copy.toasts.lessonCompleted
-            : copy.toasts.changesSaved,
-        });
-        if (complete && activeStudent)
-          router.push(`/app/uczniowie/${activeStudent.id}?tab=progress`);
-      } catch (error) {
-        setSaveError(
-          "Nie udało się zapisać lekcji. Twoje zmiany pozostają na ekranie. Spróbuj ponownie.",
-        );
-        showError(error);
-      }
-    });
-
-  function addPlanItem() {
-    const item: PlanItem = {
-      id: crypto.randomUUID(),
-      position: values.planItems?.length ?? 0,
-      text: "",
-    };
-    setValue("planItems", [...(values.planItems ?? []), item], {
-      shouldDirty: true,
-    });
-    setValue(
-      "participants",
-      (values.participants ?? []).map((participant) => ({
-        ...participant!,
-        results: [
-          ...(participant?.results ?? []),
-          { planItemId: item.id, completed: false, note: "" },
-        ],
-      })) as LessonParticipant[],
-      { shouldDirty: true },
-    );
-  }
-  function removePlanItem(index: number) {
-    const item = values.planItems?.[index];
-    if (!item) return;
-    if (
-      (item.text ||
-        values.participants?.some((p) =>
-          p.results.some(
-            (r) =>
-              r.planItemId === item.id && (r.completed || r.score || r.note),
-          ),
-        )) &&
-      !window.confirm(
-        "Usunąć ten punkt i wyniki uczestników? Zmiana zostanie zapisana razem z lekcją.",
-      )
-    )
-      return;
-    setValue(
-      "planItems",
-      (values.planItems ?? [])
-        .filter((_, candidate) => candidate !== index)
-        .map((entry, position) => ({ ...entry!, position })) as PlanItem[],
-      { shouldDirty: true },
-    );
-    setValue(
-      "participants",
-      (values.participants ?? []).map((participant) => ({
-        ...participant!,
-        results: (participant?.results ?? []).filter(
-          (result) => result?.planItemId !== item.id,
-        ),
-      })) as LessonParticipant[],
-      { shouldDirty: true },
-    );
-  }
-  function movePlanItem(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    const list = [...(values.planItems ?? [])];
-    if (target < 0 || target >= list.length) return;
-    [list[index], list[target]] = [list[target], list[index]];
-    setValue(
-      "planItems",
-      list.map((entry, position) => ({ ...entry!, position })) as PlanItem[],
-      { shouldDirty: true },
-    );
-  }
-  async function retrySync(disable = false) {
-    try {
-      await mutation.mutateAsync({
-        type: disable ? "disableSync" : "retrySync",
-        lessonId: safeLesson.id,
-      });
-      showToast({
-        message: disable
-          ? "Synchronizacja wyłączona dla tej lekcji"
-          : "Ponowiono synchronizację",
-      });
-    } catch (error) {
-      showError(error);
-    }
-  }
-  async function reschedule(allowOutsideAvailability = false) {
-    try {
-      await mutation.mutateAsync({
-        type: "rescheduleLesson",
-        lessonId: safeLesson.id,
-        startsAt: localInputToUtc(newDate, newTime, safeData.teacher.timezone),
-        durationMinutes: newDuration,
-        scope: safeLesson.seriesId ? seriesScope : "single",
-        expectedUpdatedAt: safeLesson.updatedAt,
-        allowOutsideAvailability,
-      });
-      setRescheduleOpen(false);
-      showToast({ message: copy.toasts.dateChanged });
-    } catch (error) {
-      if (
-        !allowOutsideAvailability &&
-        error instanceof ClientApiError &&
-        error.data.code === "OUTSIDE_AVAILABILITY" &&
-        window.confirm(
-          "Ten termin jest poza Twoją regularną dostępnością. Przełożyć zajęcia mimo to?",
-        )
-      ) {
-        await reschedule(true);
-        return;
-      }
-      showError(error);
-    }
-  }
-  async function cancelLesson() {
-    if (
-      !window.confirm(
-        safeLesson.seriesId && seriesScope !== "single"
-          ? seriesScope === "series"
-            ? "Anulować wszystkie przyszłe lekcje tej serii? Zrealizowana historia pozostanie bez zmian."
-            : "Anulować tę i wszystkie kolejne lekcje serii? Statusy płatności pozostaną bez zmian."
-          : "Anulować tylko tę lekcję? Statusy płatności pozostaną bez zmian.",
-      )
-    )
-      return;
-    try {
-      await mutation.mutateAsync({
-        type: "cancelLesson",
-        lessonId: safeLesson.id,
-        scope: safeLesson.seriesId ? seriesScope : "single",
-        expectedUpdatedAt: safeLesson.updatedAt,
-      });
-      showToast({ message: "Lekcja anulowana" });
-    } catch (error) {
-      showError(error);
-    }
-  }
-  function openReschedule() {
-    setNewDate(
-      formatInTimeZone(
-        safeLesson.startsAt,
-        safeData.teacher.timezone,
-        "yyyy-MM-dd",
-      ),
-    );
-    setNewTime(
-      formatInTimeZone(safeLesson.startsAt, safeData.teacher.timezone, "HH:mm"),
-    );
-    setNewDuration(safeLesson.durationMinutes);
-    setSeriesScope("single");
-    setRescheduleOpen((open) => !open);
   }
 
   return (
-    <div className="lesson-page page-enter">
-      <Link className="back-link" href="/app/kalendarz">
-        <ArrowLeft size={17} />
-        Wróć do kalendarza
-      </Link>
-      <header className="lesson-header">
-        <div>
+    <LessonWorkspaceView
+      key={data.lesson.id}
+      data={data}
+      lessonId={lessonId}
+      teacherId={session.id}
+    />
+  );
+}
+
+function LessonWorkspaceView({
+  data,
+  lessonId,
+  teacherId,
+}: {
+  data: LessonWorkspaceData;
+  lessonId: string;
+  teacherId: string;
+}) {
+  const mutation = useLessonWorkspaceMutation(teacherId, lessonId);
+  const { showToast } = useAppUi();
+  const now = useMinuteClock();
+  const [topic, setTopic] = useState(data.lesson.topic);
+  const [objectives, setObjectives] = useState(data.lesson.objectives);
+  const [agenda, setAgenda] = useState(
+    data.lesson.planItems.map((item) => item.text).join("\n"),
+  );
+  const [privateNote, setPrivateNote] = useState(data.lesson.privateNote);
+  const [summary, setSummary] = useState(data.lesson.summary);
+  const [homeworkTitle, setHomeworkTitle] = useState(
+    data.homework?.title ?? "",
+  );
+  const [homeworkDescription, setHomeworkDescription] = useState(
+    data.homework?.description ?? "",
+  );
+  const [homeworkDue, setHomeworkDue] = useState(
+    data.homework?.dueAt?.slice(0, 10) ?? "",
+  );
+  const [materialTitle, setMaterialTitle] = useState("");
+  const [materialUrl, setMaterialUrl] = useState("");
+  const [selectedMaterial, setSelectedMaterial] = useState("");
+  const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
+  const [error, setError] = useState("");
+  const dirty =
+    topic !== data.lesson.topic ||
+    objectives !== data.lesson.objectives ||
+    agenda !== data.lesson.planItems.map((item) => item.text).join("\n") ||
+    privateNote !== data.lesson.privateNote ||
+    summary !== data.lesson.summary ||
+    homeworkTitle !== (data.homework?.title ?? "") ||
+    homeworkDescription !== (data.homework?.description ?? "") ||
+    homeworkDue !== (data.homework?.dueAt?.slice(0, 10) ?? "");
+  useUnsavedChanges(dirty);
+
+  const lesson = data.lesson;
+  const locked = lesson.status === "cancelled" || lesson.status === "no_show";
+  const attendanceLocked =
+    locked || lesson.status === "completed" || data.teacher.readOnly;
+  const beforeStart = now.getTime() < Date.parse(lesson.startsAt);
+  const unresolved = data.participants.filter(
+    (participant) => participant.attendanceStatus === "unknown",
+  ).length;
+
+  async function run(
+    key: string,
+    action: LessonWorkspaceAction,
+    success: string,
+  ) {
+    setError("");
+    setSaveStates((current) => ({ ...current, [key]: "saving" }));
+    try {
+      const result = await mutation.mutateAsync(action);
+      setSaveStates((current) => ({ ...current, [key]: "saved" }));
+      showToast({ message: success });
+      window.setTimeout(
+        () => setSaveStates((current) => ({ ...current, [key]: "idle" })),
+        1800,
+      );
+      return result;
+    } catch (caught) {
+      setSaveStates((current) => ({ ...current, [key]: "error" }));
+      setError(
+        caught instanceof ClientApiError
+          ? caught.data.message
+          : "Nie udało się zapisać zmian. Spróbuj ponownie.",
+      );
+      return undefined;
+    }
+  }
+
+  async function savePlan() {
+    const lines = agenda
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const result = await run(
+      "plan",
+      {
+        type: "updatePlan",
+        topic,
+        objectives,
+        items: lines.map((text, position) => ({
+          id: lesson.planItems[position]?.id ?? crypto.randomUUID(),
+          position,
+          text,
+        })),
+        expectedUpdatedAt: lesson.updatedAt,
+      },
+      "Plan zajęć zapisany",
+    );
+    if (result) {
+      setTopic(result.lesson.topic);
+      setObjectives(result.lesson.objectives);
+      setAgenda(result.lesson.planItems.map((item) => item.text).join("\n"));
+    }
+  }
+
+  async function saveNote(kind: "private" | "summary") {
+    const result = await run(
+      kind,
+      {
+        type: "saveNote",
+        noteType: kind,
+        content: kind === "private" ? privateNote : summary,
+        expectedUpdatedAt:
+          kind === "private"
+            ? lesson.privateNoteUpdatedAt
+            : lesson.summaryUpdatedAt,
+      },
+      kind === "private" ? "Notatka zapisana" : "Podsumowanie zapisane",
+    );
+    if (result) {
+      setPrivateNote(result.lesson.privateNote);
+      setSummary(result.lesson.summary);
+    }
+  }
+
+  async function saveHomework() {
+    if (!homeworkTitle.trim()) {
+      setError("Podaj tytuł pracy domowej.");
+      return;
+    }
+    const result = await run(
+      "homework",
+      {
+        type: "upsertHomework",
+        title: homeworkTitle,
+        description: homeworkDescription,
+        dueAt: homeworkDue
+          ? localInputToUtc(homeworkDue, "23:59", data!.teacher.timezone)
+          : null,
+      },
+      "Praca domowa zapisana",
+    );
+    if (result?.homework) {
+      setHomeworkTitle(result.homework.title);
+      setHomeworkDescription(result.homework.description);
+      setHomeworkDue(result.homework.dueAt?.slice(0, 10) ?? "");
+    }
+  }
+
+  async function createMaterial() {
+    if (!materialTitle.trim() || !materialUrl.trim()) {
+      setError("Podaj nazwę i poprawny adres materiału.");
+      return;
+    }
+    const result = await run(
+      "material",
+      {
+        type: "createAndAttachMaterial",
+        title: materialTitle,
+        url: materialUrl,
+      },
+      "Materiał dodany do zajęć",
+    );
+    if (result) {
+      setMaterialTitle("");
+      setMaterialUrl("");
+    }
+  }
+
+  return (
+    <main className="lesson-page lesson-workspace-page page-enter">
+      <nav className="lesson-breadcrumbs" aria-label="Nawigacja zajęć">
+        <Link href="/app/dzisiaj">
+          <ArrowLeft size={16} aria-hidden="true" /> Dzisiaj
+        </Link>
+        <span aria-hidden="true">/</span>
+        <Link href="/app/kalendarz">Kalendarz</Link>
+      </nav>
+
+      <header className="lesson-hero">
+        <div className="lesson-hero__identity">
           <div className="lesson-header-status">
             <LessonStatusBadge status={lesson.status} />
-            {lesson.participantIds.length > 1 && (
+            {data.participants.length > 1 && (
               <span className="group-label">
-                <Users size={15} />
-                {lesson.groupId
-                  ? data.groups.find((group) => group.id === lesson.groupId)
-                      ?.name
-                  : "Grupa"}{" "}
-                · {lesson.participantIds.length}
+                <Users size={15} aria-hidden="true" />
+                {data.participants.length} uczestników
               </span>
             )}
           </div>
-          <h1>{lesson.topic || "Lekcja bez tematu"}</h1>
-          {students.length > 3 ? (
-            <details className="lesson-roster">
-              <summary>{students.length} uczestników · pokaż listę</summary>
-              <ul>
-                {students.map((student) => (
-                  <li key={student.id}>{student.name}</li>
-                ))}
-              </ul>
-            </details>
-          ) : (
-            <p>{students.map((student) => student.name).join(", ")}</p>
-          )}
+          <h1>{lesson.participantLabel}</h1>
+          <p>
+            {[lesson.subject, lesson.level].filter(Boolean).join(" · ") ||
+              "Zajęcia"}
+          </p>
         </div>
-        <div className="lesson-header-facts">
-          <span>
-            <CalendarClock size={18} />
-            {formatDateTime(lesson.startsAt, data.teacher.timezone)} ·{" "}
-            {lesson.durationMinutes} min
-          </span>
-          <span>
-            {lesson.format === "online" ? (
-              <ExternalLink size={18} />
-            ) : (
-              <MapPin size={18} />
+        <div className="lesson-hero__when">
+          <strong>
+            {formatInTimeZone(
+              lesson.startsAt,
+              data.teacher.timezone,
+              "EEEE, d MMMM",
+              { locale: pl },
             )}
-            {lesson.format === "online" &&
-            /^https?:\/\//i.test(lesson.location) ? (
-              <a
-                className="text-link"
-                href={lesson.location}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Dołącz do spotkania <ExternalLink size={14} />
-              </a>
-            ) : (
-              lesson.location
-            )}
+          </strong>
+          <span>
+            {formatInTimeZone(lesson.startsAt, data.teacher.timezone, "HH:mm")}–
+            {formatInTimeZone(lesson.endsAt, data.teacher.timezone, "HH:mm")}
+            <small>{lesson.durationMinutes} min</small>
           </span>
-          <span>{formatMoney(lesson.price)}</span>
+        </div>
+        <div className="lesson-hero__actions">
+          {lesson.meetingUrl && (
+            <a
+              className="button button--primary"
+              href={lesson.meetingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Dołącz do zajęć <ExternalLink size={16} aria-hidden="true" />
+            </a>
+          )}
+          <Link className="button button--secondary" href="/app/kalendarz">
+            <CalendarDays size={16} aria-hidden="true" /> Kalendarz
+          </Link>
         </div>
       </header>
-      {(lesson.syncStatus === "failed" ||
-        lesson.syncStatus === "deleted_in_google") && (
-        <div className="sync-alert" role="alert">
-          <AlertTriangle size={21} />
-          <div>
-            <strong>
-              {lesson.syncStatus === "deleted_in_google"
-                ? copy.status.deletedGoogle
-                : "Nie udało się zsynchronizować wydarzenia z Google Calendar."}
-            </strong>
-            <p>Lekcja jest bezpiecznie zapisana w easy4tutor.</p>
-          </div>
-          <div>
-            <button
-              className="button button--secondary"
-              disabled={busy || readOnly}
-              onClick={() => retrySync()}
-            >
-              <RotateCw size={16} />
-              {lesson.syncStatus === "deleted_in_google"
-                ? "Przywróć w Google"
-                : copy.actions.retry}
-            </button>
-            <button
-              className="button button--quiet"
-              disabled={busy || readOnly}
-              onClick={() => retrySync(true)}
-            >
-              Pozostaw bez synchronizacji
-            </button>
-          </div>
+
+      <LessonStateBanner data={data} />
+      {error && (
+        <div className="lesson-inline-error" role="alert">
+          <AlertTriangle size={18} aria-hidden="true" /> {error}
+          <button type="button" onClick={() => setError("")}>
+            Zamknij
+          </button>
         </div>
       )}
-      <form
-        className="lesson-workspace"
-        onSubmit={(event) => event.preventDefault()}
-      >
-        <div className="lesson-context-bar">
-          <span>Wyniki ucznia</span>{" "}
-          {students.length > 3 ? (
-            <label className="participant-select">
-              <span className="sr-only">Wyniki ucznia</span>
-              <select
-                value={activeStudent?.id ?? ""}
-                onChange={(event) => setActiveStudentId(event.target.value)}
-              >
-                {students.map((student) => (
-                  <option key={student.id} value={student.id}>
-                    {student.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <div
-              className="participant-tabs"
-              role="group"
-              aria-label="Uczestnicy lekcji"
-            >
-              {students.map((student) => (
-                <button
-                  key={student.id}
-                  type="button"
 
-                  aria-pressed={activeStudent?.id === student.id}
-                  className={activeStudent?.id === student.id ? "active" : ""}
-                  onClick={() => setActiveStudentId(student.id)}
-                >
-                  {student.name}
-                </button>
-              ))}
+      <div className="lesson-flow-layout">
+        <div className="lesson-teaching-thread">
+          <WorkspaceSection
+            icon={<BookOpen size={19} />}
+            step="Przygotowanie"
+            title="Plan zajęć"
+            description="Temat, cele i prosty przebieg pod ręką podczas lekcji."
+            saveState={saveStates.plan}
+            actionLabel="Zapisz plan"
+            onAction={() => void savePlan()}
+            disabled={
+              locked || lesson.status === "completed" || data.teacher.readOnly
+            }
+          >
+            <label className="field">
+              <span>Temat</span>
+              <input
+                value={topic}
+                onChange={(event) => setTopic(event.target.value)}
+                placeholder="Np. Present Perfect vs Past Simple"
+              />
+            </label>
+            <label className="field">
+              <span>Cele</span>
+              <textarea
+                rows={3}
+                value={objectives}
+                onChange={(event) => setObjectives(event.target.value)}
+                placeholder="Co uczeń powinien umieć po zajęciach?"
+              />
+            </label>
+            <label className="field">
+              <span>Przebieg</span>
+              <textarea
+                rows={6}
+                value={agenda}
+                onChange={(event) => setAgenda(event.target.value)}
+                placeholder={
+                  "Rozgrzewka językowa\nPowtórka reguły\nĆwiczenie w rozmowie"
+                }
+              />
+              <small>Każda linia stanie się osobnym punktem planu.</small>
+            </label>
+          </WorkspaceSection>
+
+          <WorkspaceSection
+            icon={<NotebookPen size={19} />}
+            step="Podczas zajęć"
+            title="Notatki tutora"
+            description="Prywatne informacje widoczne wyłącznie dla Ciebie."
+            saveState={saveStates.private}
+            actionLabel="Zapisz notatkę"
+            onAction={() => void saveNote("private")}
+            disabled={locked || data.teacher.readOnly}
+            privacy="Prywatne"
+          >
+            <label className="field">
+              <span className="sr-only">Prywatna notatka tutora</span>
+              <textarea
+                rows={6}
+                value={privateNote}
+                onChange={(event) => setPrivateNote(event.target.value)}
+                placeholder="Co warto zapamiętać przed kolejnymi zajęciami?"
+              />
+            </label>
+          </WorkspaceSection>
+
+          <WorkspaceSection
+            icon={<FileText size={19} />}
+            step="Po zajęciach"
+            title="Podsumowanie dla ucznia"
+            description="Oddzielone od prywatnej notatki i gotowe na przyszły portal ucznia."
+            saveState={saveStates.summary}
+            actionLabel="Zapisz podsumowanie"
+            onAction={() => void saveNote("summary")}
+            disabled={locked || data.teacher.readOnly}
+            privacy="Dla ucznia"
+          >
+            <label className="field">
+              <span className="sr-only">Podsumowanie zajęć</span>
+              <textarea
+                rows={4}
+                value={summary}
+                onChange={(event) => setSummary(event.target.value)}
+                placeholder="Dziś przećwiczyliśmy…"
+              />
+            </label>
+          </WorkspaceSection>
+
+          <WorkspaceSection
+            icon={<BookOpen size={19} />}
+            step="Następny krok"
+            title="Praca domowa"
+            description="Jedno wspólne zadanie dla ucznia lub całej grupy."
+            saveState={saveStates.homework}
+            actionLabel={data.homework ? "Zapisz zmiany" : "Dodaj pracę domową"}
+            onAction={() => void saveHomework()}
+            disabled={locked || data.teacher.readOnly}
+            secondaryAction={
+              data.homework
+                ? {
+                    label: "Usuń",
+                    onClick: () => {
+                      if (!window.confirm("Usunąć pracę domową z tych zajęć?"))
+                        return;
+                      void run(
+                        "homework",
+                        { type: "deleteHomework" },
+                        "Praca domowa usunięta",
+                      ).then((result) => {
+                        if (!result) return;
+                        setHomeworkTitle("");
+                        setHomeworkDescription("");
+                        setHomeworkDue("");
+                      });
+                    },
+                  }
+                : undefined
+            }
+          >
+            <div className="lesson-form-grid">
+              <label className="field">
+                <span>Tytuł</span>
+                <input
+                  value={homeworkTitle}
+                  onChange={(event) => setHomeworkTitle(event.target.value)}
+                  placeholder="Np. Ćwiczenia 4–6"
+                />
+              </label>
+              <label className="field">
+                <span>Termin (opcjonalnie)</span>
+                <input
+                  type="date"
+                  value={homeworkDue}
+                  onChange={(event) => setHomeworkDue(event.target.value)}
+                />
+              </label>
             </div>
-          )}
-          <small>
-            {activeParticipant?.results.filter((r) => r.completed).length ?? 0}/
-            {values.planItems?.length ?? 0} punktów zrealizowano
-          </small>
-        </div>
-        <fieldset
-          className="lesson-content"
-          disabled={readOnly || isSubmitting}
-        >
-          <legend className="sr-only">Plan i wyniki lekcji</legend>
-          <label className="field field--topic">
-            <span>Temat lekcji</span>
-            <textarea rows={2} {...register("topic")} />
-          </label>
-          <div className="plan-heading">
-            <div>
-              <p className="eyebrow">Wspólny plan</p>
-              <h2>Przebieg lekcji</h2>
-            </div>
-            <button
-              type="button"
-              className="button button--secondary"
-              onClick={addPlanItem}
-            >
-              <Plus size={17} />
-              Dodaj punkt
-            </button>
-          </div>
-          <div className="plan-list">
-            {(values.planItems ?? []).map((item, index) => {
-              const resultIndex =
-                activeParticipant?.results?.findIndex(
-                  (result) => result?.planItemId === item?.id,
-                ) ?? -1;
-              const score =
-                resultIndex >= 0
-                  ? activeParticipant?.results?.[resultIndex]?.score
-                  : undefined;
-              const updateScore = (value: string) => {
-                if (resultIndex >= 0)
-                  setValue(
-                    `participants.${participantIndex}.results.${resultIndex}.score`,
-                    Number(value),
-                    { shouldDirty: true },
-                  );
-              };
-              return (
-                <article
-                  className={`plan-item${resultIndex >= 0 && activeParticipant?.results?.[resultIndex]?.completed ? " plan-item--done" : ""}`}
-                  key={item?.id}
-                >
-                  <div className="plan-reorder">
-                    <GripVertical size={17} aria-hidden="true" />
-                    <button
-                      type="button"
-                      onClick={() => movePlanItem(index, -1)}
-                      disabled={index === 0}
-                      aria-label="Przesuń punkt wyżej"
-                    >
-                      <ChevronUp size={15} />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => movePlanItem(index, 1)}
-                      disabled={index === (values.planItems?.length ?? 0) - 1}
-                      aria-label="Przesuń punkt niżej"
-                    >
-                      <ChevronDown size={15} />
-                    </button>
-                  </div>
-                  <div className="plan-main">
-                    <label className="check-row">
-                      <input
-                        key={`completed-${activeStudent?.id}-${item?.id}`}
-                        type="checkbox"
-                        disabled={resultIndex < 0}
-                        {...(resultIndex >= 0
-                          ? register(
-                              `participants.${participantIndex}.results.${resultIndex}.completed`,
-                            )
-                          : {})}
-                      />
-                      <span>Zrealizowano</span>
-                    </label>
-                    <label className="field">
-                      <span className="sr-only">Treść punktu {index + 1}</span>
-                      <textarea
-                        rows={2}
-                        className="plan-text-input"
-                        {...register(`planItems.${index}.text`)}
-                        placeholder="Np. ćwiczenie rozmowy"
-                      />
-                    </label>
-                    <div className="score-control">
-                      <label htmlFor={`score-${item?.id}`}>
-                        Ocena <strong>{score ?? "—"}</strong>
-                      </label>
-                      <input
-                        id={`score-${item?.id}`}
-                        type="range"
-                        min="1"
-                        max="10"
-                        value={score ?? 1}
-                        aria-valuetext={score ? `${score} z 10` : "Brak oceny"}
-                        disabled={resultIndex < 0}
-                        onInput={(event) =>
-                          updateScore(event.currentTarget.value)
-                        }
-                        onChange={(event) =>
-                          updateScore(event.currentTarget.value)
-                        }
-                      />
-                    </div>
-                    {resultIndex >= 0 && (
-                      <details className="plan-note">
-                        <summary>
-                          Notatka · {activeStudent?.name.split(" ")[0]}
-                        </summary>
-                        <textarea
-                          key={`note-${activeStudent?.id}-${item?.id}`}
-                          rows={2}
-                          aria-label={`Notatka dla ${activeStudent?.name ?? "ucznia"} do punktu ${index + 1}`}
-                          {...register(
-                            `participants.${participantIndex}.results.${resultIndex}.note`,
-                          )}
-                        />
-                      </details>
+            <label className="field">
+              <span>Opis</span>
+              <textarea
+                rows={4}
+                value={homeworkDescription}
+                onChange={(event) => setHomeworkDescription(event.target.value)}
+                placeholder="Instrukcja dla ucznia lub grupy"
+              />
+            </label>
+          </WorkspaceSection>
+
+          <section
+            className="lesson-flow-section"
+            aria-labelledby="section-Materiały"
+          >
+            <SectionHeading
+              icon={<Paperclip size={19} />}
+              step="Wsparcie"
+              title="Materiały"
+              description="Dołącz istniejący materiał lub szybko dodaj link."
+            />
+            <div className="lesson-material-list">
+              {data.materials.map((material) => (
+                <div className="lesson-material-row" key={material.id}>
+                  <Link2 size={17} aria-hidden="true" />
+                  <div>
+                    <strong>{material.title}</strong>
+                    {material.description && (
+                      <small>{material.description}</small>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    className="icon-button plan-delete"
-                    onClick={() => removePlanItem(index)}
-                    aria-label={`Usuń punkt ${index + 1}`}
-                  >
-                    <Trash2 size={17} />
-                  </button>
-                </article>
-              );
-            })}
-            {!values.planItems?.length && (
-              <div className="inline-empty">
-                Plan jest pusty. Możesz zapisać lekcję teraz i uzupełnić plan
-                później.
-              </div>
-            )}
-          </div>
-          <label className="field lesson-textarea">
-            <span>Praca domowa</span>
-            <textarea rows={4} {...register("homework")} />
-          </label>
-          <label className="field lesson-textarea">
-            <span>Notatka ogólna</span>
-            <textarea rows={4} {...register("generalNotes")} />
-          </label>
-        </fieldset>
-        <aside className="lesson-sidebar">
-          {activeParticipant && (
-            <fieldset
-              key={activeStudent.id}
-              className="participant-panel"
-              disabled={readOnly || isSubmitting}
-            >
-              <legend className="sr-only">
-                Obecność i płatność uczestnika
-              </legend>
-              <div className="participant-title">
-                <span className="avatar">
-                  {activeStudent.name
-                    .split(" ")
-                    .map((part) => part[0])
-                    .slice(0, 2)
-                    .join("")}
-                </span>
-                <div>
-                  <h2>{activeStudent.name}</h2>
-                  <p>{activeStudent.level} · wynik indywidualny</p>
-                </div>
-              </div>
-              <label className="field">
-                <span>Obecność</span>
-                <select
-                  {...register(
-                    `participants.${participantIndex}.attendanceStatus`,
+                  {material.url && (
+                    <a
+                      className="text-link"
+                      href={material.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Otwórz <ExternalLink size={13} />
+                    </a>
                   )}
-                >
-                  <option value="unknown">Nie oznaczono</option>
-                  <option value="present">Obecny/a</option>
-                  <option value="absent">Nieobecny/a</option>
-                  <option value="cancelled">Odwołana</option>
-                </select>
-              </label>
-              <label className="field">
-                <span>Płatność</span>
-                <select
-                  {...register(
-                    `participants.${participantIndex}.paymentStatus`,
-                  )}
-                >
-                  <option value="unpaid">Nieopłacona</option>
-                  <option value="paid">Opłacona</option>
-                  <option value="cancelled">Anulowana</option>
-                </select>
-              </label>
-            </fieldset>
-          )}
-          <div className="lesson-side-actions">
-            {" "}
-            {lesson.seriesId && (
-              <fieldset className="scope-choice">
-                <legend>Zakres zmiany</legend>
-                <label>
-                  <input
-                    type="radio"
-                    checked={seriesScope === "single"}
-                    onChange={() => setSeriesScope("single")}
-                  />
-                  Tylko ta lekcja
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    checked={seriesScope === "future"}
-                    onChange={() => setSeriesScope("future")}
-                  />
-                  Ta i kolejne lekcje
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    checked={seriesScope === "series"}
-                    onChange={() => setSeriesScope("series")}
-                  />
-                  Wszystkie lekcje w serii
-                </label>
-              </fieldset>
-            )}
-            <button
-              type="button"
-              className="button button--secondary button--full"
-              disabled={busy || readOnly}
-              aria-expanded={rescheduleOpen}
-              onClick={openReschedule}
-            >
-              {copy.actions.changeDate}
-            </button>
-            {rescheduleOpen && (
-              <div className="reschedule-box">
-                <div className="form-row">
-                  <label className="field">
-                    <span>Data</span>
-                    <input
-                      type="date"
-                      value={newDate}
-                      onChange={(event) => setNewDate(event.target.value)}
-                    />
-                  </label>
-                  <label className="field">
-                    <span>Czas</span>
-                    <select
-                      value={newDuration}
-                      onChange={(event) =>
-                        setNewDuration(Number(event.target.value))
+                  {!locked && !data.teacher.readOnly && (
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={`Odłącz ${material.title}`}
+                      onClick={() =>
+                        void run(
+                          "material",
+                          {
+                            type: "detachMaterial",
+                            materialId: material.id,
+                          },
+                          "Materiał odłączony",
+                        )
                       }
                     >
-                      {[30, 45, 60, 90, 120].map((minutes) => (
-                        <option key={minutes} value={minutes}>
-                          {minutes} min
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>Godzina</span>
-                    <input
-                      type="time"
-                      value={newTime}
-                      onChange={(event) => setNewTime(event.target.value)}
-                    />
-                  </label>
+                      <Trash2 size={16} />
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  className="button button--primary button--full"
-                  disabled={busy || readOnly || !newDate || !newTime}
-                  onClick={() => void reschedule()}
+              ))}
+              {!data.materials.length && (
+                <p className="lesson-quiet-empty">
+                  Brak materiałów dołączonych do zajęć.
+                </p>
+              )}
+            </div>
+            {!locked && !data.teacher.readOnly && (
+              <div className="lesson-material-actions">
+                {data.materialLibrary.length > 0 && (
+                  <div className="lesson-attach-existing">
+                    <label className="field">
+                      <span>Biblioteka</span>
+                      <select
+                        value={selectedMaterial}
+                        onChange={(event) =>
+                          setSelectedMaterial(event.target.value)
+                        }
+                      >
+                        <option value="">Wybierz materiał</option>
+                        {data.materialLibrary.map((material) => (
+                          <option value={material.id} key={material.id}>
+                            {material.title}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="button button--secondary"
+                      type="button"
+                      disabled={!selectedMaterial || mutation.isPending}
+                      onClick={() =>
+                        void run(
+                          "material",
+                          {
+                            type: "attachMaterial",
+                            materialId: selectedMaterial,
+                          },
+                          "Materiał dołączony",
+                        ).then(() => setSelectedMaterial(""))
+                      }
+                    >
+                      Dołącz
+                    </button>
+                  </div>
+                )}
+                <details className="lesson-quick-material">
+                  <summary>
+                    <Plus size={16} /> Dodaj nowy link
+                  </summary>
+                  <div className="lesson-form-grid">
+                    <label className="field">
+                      <span>Nazwa</span>
+                      <input
+                        value={materialTitle}
+                        onChange={(event) =>
+                          setMaterialTitle(event.target.value)
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Adres URL</span>
+                      <input
+                        type="url"
+                        value={materialUrl}
+                        onChange={(event) => setMaterialUrl(event.target.value)}
+                        placeholder="https://"
+                      />
+                    </label>
+                  </div>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => void createMaterial()}
+                    disabled={mutation.isPending}
+                  >
+                    Dodaj i dołącz
+                  </button>
+                </details>
+              </div>
+            )}
+          </section>
+
+          <section
+            className="lesson-flow-section"
+            aria-labelledby="section-Obecność"
+          >
+            <SectionHeading
+              icon={<Users size={19} />}
+              step="Rozliczenie zajęć"
+              title="Obecność"
+              description={
+                data.participants.length > 1
+                  ? "Oznacz każdego uczestnika z historycznej listy tej lekcji."
+                  : "Oznacz obecność ucznia przed zakończeniem zajęć."
+              }
+            />
+            {data.participants.length > 1 && !attendanceLocked && (
+              <button
+                className="button button--secondary lesson-mark-all"
+                type="button"
+                onClick={() =>
+                  void run(
+                    "attendance",
+                    { type: "markAllPresent" },
+                    "Wszyscy oznaczeni jako obecni",
+                  )
+                }
+                disabled={mutation.isPending}
+              >
+                <Check size={16} /> Oznacz wszystkich obecnych
+              </button>
+            )}
+            <div className="lesson-attendance-list">
+              {data.participants.map((participant) => (
+                <div
+                  className="lesson-attendance-row"
+                  key={participant.studentId}
                 >
-                  Zmień termin
+                  <div className="lesson-attendance-person">
+                    <span className="avatar">{initials(participant.name)}</span>
+                    <div>
+                      <strong>{participant.name}</strong>
+                      <small>
+                        {[participant.subject, participant.level]
+                          .filter(Boolean)
+                          .join(" · ") || "Uczestnik zajęć"}
+                        {participant.status === "archived"
+                          ? " · archiwalny"
+                          : ""}
+                      </small>
+                    </div>
+                  </div>
+                  <div
+                    className="attendance-choice"
+                    role="group"
+                    aria-label={`Obecność: ${participant.name}`}
+                  >
+                    {(["present", "absent", "late"] as const).map((status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        aria-pressed={participant.attendanceStatus === status}
+                        disabled={attendanceLocked || mutation.isPending}
+                        onClick={() =>
+                          void run(
+                            "attendance",
+                            {
+                              type: "markAttendance",
+                              studentId: participant.studentId,
+                              status,
+                            },
+                            `Obecność: ${attendanceLabel(status)}`,
+                          )
+                        }
+                      >
+                        {attendanceLabel(status)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section
+            className="lesson-completion-panel"
+            aria-labelledby="completion-title"
+          >
+            <div>
+              <span className="eyebrow">Ostatni krok</span>
+              <h2 id="completion-title">Zakończ zajęcia</h2>
+              <p>
+                {unresolved
+                  ? `Pozostało do oznaczenia: ${unresolved}.`
+                  : data.packageContext && !data.packageContext.consumedByLesson
+                    ? `Zakończenie wykorzysta 1 lekcję z pakietu „${data.packageContext.name}”.`
+                    : "Obecność jest uzupełniona. Możesz zakończyć zajęcia."}
+              </p>
+            </div>
+            {lesson.status !== "completed" && !locked && (
+              <div className="lesson-completion-actions">
+                <button
+                  className="button button--primary"
+                  type="button"
+                  disabled={
+                    mutation.isPending ||
+                    unresolved > 0 ||
+                    beforeStart ||
+                    data.teacher.readOnly
+                  }
+                  onClick={() =>
+                    void run(
+                      "complete",
+                      { type: "completeLesson" },
+                      "Zajęcia zakończone",
+                    )
+                  }
+                >
+                  {mutation.isPending ? (
+                    <LoaderCircle className="spin" size={18} />
+                  ) : (
+                    <CheckCircle2 size={18} />
+                  )}{" "}
+                  Zakończ zajęcia
+                </button>
+                <button
+                  className="button button--quiet"
+                  type="button"
+                  disabled={
+                    mutation.isPending || beforeStart || data.teacher.readOnly
+                  }
+                  onClick={() => {
+                    if (
+                      window.confirm(
+                        "Oznaczyć te zajęcia jako nieobecność? Pakiet nie zostanie wykorzystany.",
+                      )
+                    )
+                      void run(
+                        "no-show",
+                        { type: "markNoShow" },
+                        "Zajęcia oznaczone jako nieobecność",
+                      );
+                  }}
+                >
+                  Oznacz nieobecność
                 </button>
               </div>
             )}
-            <button
-              type="button"
-              className="button button--quiet button--full"
-              disabled={busy || readOnly || lesson.status === "cancelled"}
-              onClick={cancelLesson}
-            >
-              Anuluj lekcję
-            </button>
-          </div>
-          <div className="lesson-save">
-            <p className="save-status" role="status">
-              {isSubmitting
-                ? "Zapisywanie…"
-                : isDirty
-                  ? "Niezapisane zmiany"
-                  : "Wszystkie zmiany zapisane"}
-            </p>
-            {saveError && (
-              <p className="form-alert" role="alert">
-                {saveError}
-              </p>
+            {beforeStart && lesson.status !== "completed" && (
+              <small>
+                Zakończenie i nieobecność będą dostępne od godziny rozpoczęcia.
+              </small>
             )}
+          </section>
+        </div>
+
+        <ContextRail
+          data={data}
+          busy={mutation.isPending}
+          onCancel={() => {
+            if (
+              window.confirm(
+                "Odwołać te zajęcia? Historia zostanie zachowana, a pakiet nie zostanie wykorzystany.",
+              )
+            )
+              void run(
+                "cancel",
+                {
+                  type: "cancelLesson",
+                  expectedUpdatedAt: lesson.updatedAt,
+                },
+                "Zajęcia odwołane",
+              );
+          }}
+        />
+      </div>
+    </main>
+  );
+}
+
+function LessonStateBanner({ data }: { data: LessonWorkspaceData }) {
+  if (data.lesson.status === "completed") {
+    return (
+      <div className="lesson-state-banner lesson-state-banner--complete">
+        <CheckCircle2 size={21} aria-hidden="true" />
+        <div>
+          <strong>Zajęcia zakończone</strong>
+          <p>
+            To jest zapis historyczny. Notatki i praca domowa nadal mogą być
+            uzupełniane.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  if (data.lesson.status === "cancelled") {
+    return (
+      <div className="lesson-state-banner" role="status">
+        <AlertTriangle size={21} aria-hidden="true" />
+        <div>
+          <strong>Zajęcia odwołane</strong>
+          <p>Historia została zachowana. Zajęć nie można zakończyć.</p>
+        </div>
+      </div>
+    );
+  }
+  if (data.lesson.status === "no_show") {
+    return (
+      <div className="lesson-state-banner" role="status">
+        <CircleUserRound size={21} aria-hidden="true" />
+        <div>
+          <strong>Nieobecność</strong>
+          <p>
+            Uczestnicy zostali oznaczeni jako nieobecni. Pakiet nie został
+            wykorzystany.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
+function WorkspaceSection({
+  icon,
+  step,
+  title,
+  description,
+  children,
+  saveState = "idle",
+  actionLabel,
+  onAction,
+  disabled,
+  privacy,
+  secondaryAction,
+}: {
+  icon: ReactNode;
+  step: string;
+  title: string;
+  description: string;
+  children: ReactNode;
+  saveState?: SaveState;
+  actionLabel: string;
+  onAction: () => void;
+  disabled?: boolean;
+  privacy?: string;
+  secondaryAction?: { label: string; onClick: () => void };
+}) {
+  return (
+    <section
+      className="lesson-flow-section"
+      aria-labelledby={`section-${title}`}
+    >
+      <SectionHeading
+        icon={icon}
+        step={step}
+        title={title}
+        description={description}
+        privacy={privacy}
+      />
+      <fieldset className="lesson-section-fields" disabled={disabled}>
+        <legend className="sr-only">{title}</legend>
+        {children}
+      </fieldset>
+      <div className="lesson-section-footer">
+        <SaveLabel state={saveState} />
+        <div>
+          {secondaryAction && (
             <button
               type="button"
-              className="button button--secondary button--full"
-              onClick={save(false)}
-              disabled={busy || readOnly || !isDirty}
+              className="button button--quiet"
+              disabled={disabled}
+              onClick={secondaryAction.onClick}
             >
-              {isSubmitting && <LoaderCircle className="spin" size={17} />}
-              Zapisz wersję roboczą
+              {secondaryAction.label}
             </button>
-            <button
-              type="button"
-              className="button button--primary button--full"
-              onClick={save(true)}
-              disabled={busy || readOnly || lesson.status === "cancelled"}
-            >
-              <CheckCircle2 size={18} />
-              {copy.actions.completeLesson}
-            </button>
-          </div>
-        </aside>
-      </form>
+          )}
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={disabled || saveState === "saving"}
+            onClick={onAction}
+          >
+            {saveState === "saving" && (
+              <LoaderCircle className="spin" size={16} />
+            )}
+            {actionLabel}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SectionHeading({
+  icon,
+  step,
+  title,
+  description,
+  privacy,
+}: {
+  icon: ReactNode;
+  step: string;
+  title: string;
+  description: string;
+  privacy?: string;
+}) {
+  return (
+    <div className="lesson-section-heading">
+      <span className="lesson-section-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <div>
+        <span className="eyebrow">{step}</span>
+        <h2 id={`section-${title}`}>{title}</h2>
+        <p>{description}</p>
+      </div>
+      {privacy && <span className="lesson-privacy-badge">{privacy}</span>}
     </div>
   );
 }
 
-function lessonValues(lesson: import("@/lib/domain").Lesson): Values {
-  return {
-    topic: lesson.topic,
-    homework: lesson.homework,
-    generalNotes: lesson.generalNotes,
-    planItems: lesson.planItems,
-    participants: lesson.participants,
-  };
+function SaveLabel({ state }: { state: SaveState }) {
+  return (
+    <span
+      className={`lesson-save-label lesson-save-label--${state}`}
+      role="status"
+    >
+      {state === "saving"
+        ? "Zapisywanie…"
+        : state === "saved"
+          ? "Zapisano"
+          : state === "error"
+            ? "Nie zapisano"
+            : ""}
+    </span>
+  );
+}
+
+function ContextRail({
+  data,
+  busy,
+  onCancel,
+}: {
+  data: LessonWorkspaceData;
+  busy: boolean;
+  onCancel: () => void;
+}) {
+  const lesson = data.lesson;
+  const groupLesson = Boolean(lesson.groupId || data.participants.length > 1);
+  const locked = ["completed", "cancelled", "no_show"].includes(lesson.status);
+  return (
+    <aside className="lesson-context-rail" aria-label="Kontekst zajęć">
+      <div className="lesson-context-block">
+        <span className="eyebrow">{groupLesson ? "Grupa" : "Uczeń"}</span>
+        <strong>{lesson.participantLabel}</strong>
+        <p>{[lesson.subject, lesson.level].filter(Boolean).join(" · ")}</p>
+        {(lesson.groupId || lesson.studentId) && (
+          <Link
+            className="text-link"
+            href={
+              lesson.groupId
+                ? `/app/uczniowie/grupy/${lesson.groupId}`
+                : `/app/uczniowie/${lesson.studentId}`
+            }
+          >
+            Zobacz {lesson.groupId ? "grupę" : "ucznia"}{" "}
+            <ChevronRight size={14} />
+          </Link>
+        )}
+      </div>
+      {data.packageContext && (
+        <div className="lesson-context-block lesson-package-context">
+          <span className="eyebrow">Pakiet</span>
+          <strong>
+            {data.packageContext.remainingLessons}{" "}
+            {lessonCountWord(data.packageContext.remainingLessons)}
+          </strong>
+          <p>
+            {data.packageContext.consumedByLesson
+              ? "Ta lekcja została już rozliczona."
+              : "Pozostało przed zakończeniem tych zajęć."}
+          </p>
+        </div>
+      )}
+      <AdjacentLesson
+        title="Poprzednie zajęcia"
+        item={data.previousLesson}
+        timezone={data.teacher.timezone}
+      />
+      <AdjacentLesson
+        title="Następne zajęcia"
+        item={data.nextLesson}
+        timezone={data.teacher.timezone}
+      />
+      {!locked && !data.teacher.readOnly && (
+        <div className="lesson-context-block lesson-danger-zone">
+          <span className="eyebrow">Zmiana planu</span>
+          <Link className="text-link" href="/app/kalendarz">
+            Przełóż w kalendarzu
+          </Link>
+          <button type="button" disabled={busy} onClick={onCancel}>
+            Odwołaj zajęcia
+          </button>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function AdjacentLesson({
+  title,
+  item,
+  timezone,
+}: {
+  title: string;
+  item?: LessonWorkspaceData["previousLesson"];
+  timezone: string;
+}) {
+  return (
+    <div className="lesson-context-block">
+      <span className="eyebrow">{title}</span>
+      {item ? (
+        <>
+          <strong>
+            {formatInTimeZone(item.startsAt, timezone, "d MMM, HH:mm", {
+              locale: pl,
+            })}
+          </strong>
+          <p>{item.topic || "Bez tematu"}</p>
+          <Link className="text-link" href={`/app/lekcje/${item.id}`}>
+            Otwórz <ChevronRight size={14} />
+          </Link>
+        </>
+      ) : (
+        <p>Brak zaplanowanych zajęć.</p>
+      )}
+    </div>
+  );
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("");
+}
+
+function attendanceLabel(status: "present" | "absent" | "late") {
+  return status === "present"
+    ? "Obecny"
+    : status === "absent"
+      ? "Nieobecny"
+      : "Spóźniony";
+}
+
+function lessonCountWord(count: number) {
+  if (count === 1) return "lekcja";
+  if (count >= 2 && count <= 4) return "lekcje";
+  return "lekcji";
 }

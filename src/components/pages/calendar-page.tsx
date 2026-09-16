@@ -24,7 +24,7 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   useEffect,
   useMemo,
@@ -135,6 +135,7 @@ export function CalendarPage() {
   const mutation = useAppMutation(session.id);
   const { openLessonComposer, showToast, showError } = useAppUi();
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [planningStudentId, setPlanningStudentId] = useState(
     searchParams.get("student") ?? "",
   );
@@ -154,6 +155,22 @@ export function CalendarPage() {
     start: "12:00",
     end: "13:00",
   });
+  useEffect(() => {
+    const action = searchParams.get("action");
+    if (!action) return;
+    const timer = window.setTimeout(() => {
+      if (action === "lesson") openLessonComposer();
+      if (action === "block") {
+        setBlockForm((current) => ({
+          ...current,
+          open: true,
+          date: localDateKey(anchor, session.timezone),
+        }));
+      }
+      router.replace("/app/kalendarz", { scroll: false });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [anchor, openLessonComposer, router, searchParams, session.timezone]);
   useEffect(() => {
     const saved = window.localStorage.getItem(
       "easy4tutor-calendar-view",

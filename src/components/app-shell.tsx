@@ -29,7 +29,6 @@ import {
 import { authRequest } from "@/lib/api-client";
 import type { Teacher } from "@/lib/domain";
 import { copy } from "@/lib/copy";
-import { useAppData } from "@/hooks/use-app-data";
 import { AppUiProvider, useAppUi } from "./app-ui-context";
 import { LessonComposer } from "./lesson-composer";
 import { StudentComposer } from "./student-composer";
@@ -70,10 +69,9 @@ function ShellBody({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { data, error, refetch } = useAppData(teacher.id);
   const {
+    lessonComposer,
     openLessonComposer,
-    openStudentComposer,
     studentComposerOpen,
     toast,
     dismissToast,
@@ -103,16 +101,15 @@ function ShellBody({
       showError(error);
     }
   }
-  const readOnly = data?.teacher.subscription.readOnly;
+  const readOnly = teacher.subscription.readOnly;
   function startPlanning() {
     setMobileMenu(false);
     if (readOnly) {
       router.push("/app/ustawienia/subskrypcja");
       return;
     }
-    if (data && !data.students.some((s) => s.status === "active"))
-      openStudentComposer();
-    else if (pathname !== "/app/kalendarz") router.push("/app/kalendarz");
+    if (!["/app/kalendarz", "/app/dzisiaj"].includes(pathname))
+      router.push("/app/kalendarz?action=lesson");
     else openLessonComposer();
   }
 
@@ -178,11 +175,11 @@ function ShellBody({
               .join("")}
           </span>
           <span>
-            <strong>{data?.teacher.name ?? teacher.name}</strong>
+            <strong>{teacher.name}</strong>
             <small>
-              {(data?.teacher.email ?? teacher.email) === "demo@tutorflow.local"
+              {teacher.email === "demo@tutorflow.local"
                 ? "Konto demonstracyjne"
-                : (data?.teacher.email ?? teacher.email)}
+                : teacher.email}
             </small>
           </span>
           <button
@@ -264,7 +261,7 @@ function ShellBody({
             Brak połączenia. Niezapisane zmiany mogą zostać utracone.
           </div>
         )}
-        {data?.teacher.subscription.readOnly && (
+        {teacher.subscription.readOnly && (
           <div className="readonly-banner" role="status">
             Tryb tylko do odczytu. Dane i eksport są dostępne, ale zapisywanie
             wymaga aktywnej subskrypcji.{" "}
@@ -272,23 +269,7 @@ function ShellBody({
           </div>
         )}
 
-        {error && !data ? (
-          <div className="route-error" role="alert">
-            <h1>Nie udało się wczytać danych</h1>
-            <p>
-              Sprawdź połączenie i spróbuj ponownie. Twoje zapisane dane są
-              bezpieczne.
-            </p>
-            <button
-              className="button button--primary"
-              onClick={() => refetch()}
-            >
-              Spróbuj ponownie
-            </button>
-          </div>
-        ) : (
-          children
-        )}
+        {children}
       </main>
 
       <nav className="bottom-nav" aria-label="Nawigacja mobilna">
@@ -314,7 +295,7 @@ function ShellBody({
         </button>
       </nav>
 
-      <LessonComposer />
+      {lessonComposer && <LessonComposer />}
       {studentComposerOpen && <StudentComposer />}
       {toast && (
         <div

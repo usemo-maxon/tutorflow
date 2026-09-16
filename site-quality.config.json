@@ -1,0 +1,28 @@
+{
+  "siteType": "authenticated lesson workflow",
+  "renderMode": "ssr",
+  "accessMode": "authenticated",
+  "routes": [
+    {
+      "path": "/app/lekcje/[lessonId]",
+      "heading": "Lesson participant or group name",
+      "primaryAction": "Zakończ zajęcia",
+      "expectedAnonymousStatuses": [307, 401]
+    }
+  ],
+  "viewports": [
+    { "name": "desktop", "width": 1440, "height": 900 },
+    { "name": "mobile", "width": 390, "height": 844 }
+  ],
+  "criticalFlows": [
+    "open lesson workspace",
+    "save plan and notes",
+    "manage homework and materials",
+    "mark individual and group attendance",
+    "complete lesson"
+  ],
+  "outputDir": ".next",
+  "basePath": "",
+  "requiredFiles": ["package.json", "next.config.ts"],
+  "criticalAssets": []
+}

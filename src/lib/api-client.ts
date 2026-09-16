@@ -1,3 +1,8 @@
+import type { DashboardData } from "./dashboard";
+import type {
+  LessonWorkspaceAction,
+  LessonWorkspaceData,
+} from "./lesson-workspace";
 import type { AppAction, AppData, AppError, MutationResponse } from "./domain";
 
 export class ClientApiError extends Error {
@@ -24,6 +29,17 @@ export async function fetchAppData(
   return parseResponse<AppData>(response);
 }
 
+export async function fetchDashboardData(
+  signal?: AbortSignal,
+): Promise<DashboardData> {
+  const timeout = AbortSignal.timeout(20_000);
+  const response = await fetch("/api/dashboard", {
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    cache: "no-store",
+  });
+  return parseResponse<DashboardData>(response);
+}
+
 export async function mutateApp(action: AppAction): Promise<MutationResponse> {
   const response = await fetch("/api/app", {
     method: "POST",
@@ -31,6 +47,36 @@ export async function mutateApp(action: AppAction): Promise<MutationResponse> {
     body: JSON.stringify(action),
   });
   return parseResponse<MutationResponse>(response);
+}
+
+export async function fetchLessonWorkspace(
+  lessonId: string,
+  signal?: AbortSignal,
+): Promise<LessonWorkspaceData> {
+  const timeout = AbortSignal.timeout(20_000);
+  const response = await fetch(
+    `/api/lessons/${encodeURIComponent(lessonId)}/workspace`,
+    {
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      cache: "no-store",
+    },
+  );
+  return parseResponse<LessonWorkspaceData>(response);
+}
+
+export async function mutateLessonWorkspace(
+  lessonId: string,
+  action: LessonWorkspaceAction,
+): Promise<LessonWorkspaceData> {
+  const response = await fetch(
+    `/api/lessons/${encodeURIComponent(lessonId)}/workspace`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(action),
+    },
+  );
+  return parseResponse<LessonWorkspaceData>(response);
 }
 
 export async function authRequest(

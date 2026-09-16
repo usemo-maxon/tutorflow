@@ -173,6 +173,17 @@ export interface Lesson {
   planItems: PlanItem[];
   homework: string;
   generalNotes: string;
+  planObjectives?: string;
+  studentSummary?: string;
+  homeworkTitle?: string;
+  homeworkDueAt?: ISODateTime;
+  workspaceMaterials?: Array<{
+    id: EntityId;
+    title: string;
+    description: string;
+    type: "link" | "file" | "note";
+    url?: string;
+  }>;
   participants: LessonParticipant[];
   createdAt: ISODateTime;
   updatedAt?: ISODateTime;

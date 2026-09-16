@@ -1,5 +1,5 @@
 begin;
-select plan(15);
+select plan(19);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -94,6 +94,12 @@ values (
   (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
   '12000000-0000-4000-8000-000000000001', 'One lesson', 1, 8000, 'PLN', 'active'
 );
+insert into public.payments (workspace_id, student_id, amount_grosz, currency, status, paid_at)
+values (
+  (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
+  '12000000-0000-4000-8000-000000000001', 8000, 'PLN', 'paid', now()
+);
+select is((select count(*)::integer from public.payments), 1, 'member sees own workspace payment');
 select is(public.complete_lesson_with_package(
   (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
   '14000000-0000-4000-8000-000000000001', '12000000-0000-4000-8000-000000000001',
@@ -115,6 +121,9 @@ select is((select remaining_lessons from public.package_balances where package_i
 set local request.jwt.claims = '{"sub":"11000000-0000-4000-8000-000000000002","role":"authenticated"}';
 select is((select count(*)::integer from public.students), 0, 'other workspace cannot read students');
 select is((select count(*)::integer from public.lessons), 0, 'other workspace cannot read lessons');
+select is((select count(*)::integer from public.packages), 0, 'other workspace cannot read dashboard package warnings');
+select is((select count(*)::integer from public.package_balances), 0, 'other workspace cannot read dashboard package balances');
+select is((select count(*)::integer from public.payments), 0, 'other workspace cannot read payment information');
 select is_empty($$
   update public.students set display_name = 'Stolen'
   where id = '12000000-0000-4000-8000-000000000001'

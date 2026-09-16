@@ -3,7 +3,7 @@
 import { Plus, Search, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppData } from "@/hooks/use-app-data";
 import { formatMoney } from "@/lib/format";
 import { useSessionTeacher } from "../app-shell";
@@ -18,6 +18,14 @@ export function GroupsPage() {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [composer, setComposer] = useState(false);
+  useEffect(() => {
+    if (searchParams.get("action") !== "new") return;
+    const timer = window.setTimeout(() => {
+      setComposer(true);
+      router.replace("/app/uczniowie/grupy", { scroll: false });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [router, searchParams]);
   const status =
     searchParams.get("status") === "archived" ? "archived" : "active";
   const groups = useMemo(
