@@ -15,6 +15,7 @@ export interface LessonComposerPreset {
   studentIds?: string[];
   date?: string;
   time?: string;
+  durationMinutes?: number;
 }
 
 interface ToastState {

@@ -210,14 +210,24 @@ export function LessonComposer() {
     ] as const) {
       if (!getFieldState(key).isDirty) setValue(key, defaults[key]);
     }
-    if (!getFieldState("occurrences.0.durationMinutes").isDirty)
+    if (
+      !lessonComposer?.durationMinutes &&
+      !getFieldState("occurrences.0.durationMinutes").isDirty
+    )
       setValue(
         "occurrences.0.durationMinutes",
         (student ?? group)!.defaultDurationMinutes,
       );
     if (!getFieldState("subject").isDirty)
       setValue("subject", defaults.subject);
-  }, [targetKey, data?.students, data?.groups, getFieldState, setValue]);
+  }, [
+    targetKey,
+    data?.students,
+    data?.groups,
+    getFieldState,
+    lessonComposer?.durationMinutes,
+    setValue,
+  ]);
 
   useEffect(() => {
     if (formatValue === "online" && atTeacherPlace) {
@@ -1036,7 +1046,8 @@ function getDefaults(
         id: crypto.randomUUID(),
         date: preset.date ?? formatInTimeZone(nextHour, timezone, "yyyy-MM-dd"),
         time: preset.time ?? formatInTimeZone(nextHour, timezone, "HH:mm"),
-        durationMinutes: selected?.defaultDurationMinutes ?? 60,
+        durationMinutes:
+          preset.durationMinutes ?? selected?.defaultDurationMinutes ?? 60,
       },
     ],
     intervalWeeks: 1,

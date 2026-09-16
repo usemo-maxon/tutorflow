@@ -1,5 +1,5 @@
 begin;
-select plan(25);
+select plan(31);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -64,6 +64,19 @@ select lives_ok($$
   select public.cancel_lesson_relational(jsonb_build_object('lessonId', (select id from public.lessons where client_request_id = '34000000-0000-4000-8000-000000000002'), 'scope', 'single'))
 $$, 'single lesson cancellation succeeds without deletion');
 select is((select status::text from public.lessons where client_request_id = '34000000-0000-4000-8000-000000000002'), 'cancelled', 'cancelled lesson remains in history');
+
+select lives_ok($$
+  select public.reschedule_lesson_relational(jsonb_build_object('lessonId', (select id from public.lessons where client_request_id = '34000000-0000-4000-8000-000000000001'), 'startsAt', '2030-01-08T19:00:00Z'))
+$$, 'single lesson drag accepts a time adjacent to an existing block');
+select is((select extract(epoch from (ends_at - starts_at))::integer / 60 from public.lessons where client_request_id = '34000000-0000-4000-8000-000000000001'), 60, 'single lesson drag preserves duration');
+select lives_ok($$
+  select public.upsert_calendar_block_relational(jsonb_build_object('blockId', (select id from public.calendar_blocks where title = 'Lekarz'), 'title', 'Lekarz', 'startsAt', '2030-01-08T20:00:00Z', 'endsAt', '2030-01-08T21:00:00Z', 'timezone', 'Europe/Warsaw'))
+$$, 'calendar block drag accepts a time adjacent to the moved lesson');
+select is((select extract(epoch from (ends_at - starts_at))::integer / 60 from public.calendar_blocks where title = 'Lekarz'), 60, 'calendar block drag preserves duration');
+select throws_ok($$
+  select public.upsert_calendar_block_relational(jsonb_build_object('blockId', (select id from public.calendar_blocks where title = 'Lekarz'), 'title', 'Lekarz', 'startsAt', '2030-01-08T19:30:00Z', 'endsAt', '2030-01-08T20:30:00Z', 'timezone', 'Europe/Warsaw'))
+$$, '23P01', null, 'calendar block drag into a lesson is rejected');
+select is((select starts_at::text from public.calendar_blocks where title = 'Lekarz'), '2030-01-08 20:00:00+00', 'failed calendar block drag is rolled back transactionally');
 
 insert into public.availability_rules (workspace_id, tutor_id, kind, label, day_of_week, start_time, end_time, timezone, is_available)
 values ((select workspace_id from public.tutor_profiles where id = '31000000-0000-4000-8000-000000000001'), '31000000-0000-4000-8000-000000000001', 'recurring', 'Dostępność', 1, '14:00', '20:00', 'Europe/Warsaw', true);

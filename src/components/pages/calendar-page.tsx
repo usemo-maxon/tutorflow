@@ -1,6 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useQueryClient, type QueryKey } from "@tanstack/react-query";
 import {
   addDays,
   addMonths,
@@ -28,14 +29,33 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
-  type DragEvent,
   type CSSProperties,
 } from "react";
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
+import { ClientApiError } from "@/lib/api-client";
+import {
+  blockDragEntry,
+  blockPresetFromCalendarRange,
+  buildCalendarMoveAction,
+  calendarMinuteFromPointer,
+  calendarMinuteFromTime,
+  calendarRangeFromMinutes,
+  calendarTimeFromMinute,
+  CALENDAR_SELECTION_THRESHOLD_PX,
+  dragDurationMinutes,
+  lessonDragEntry,
+  lessonPresetFromCalendarRange,
+  moveCalendarEntryOptimistically,
+  runOptimisticCalendarMove,
+  type CalendarDragEntry,
+  type CalendarLessonDragEntry,
+  type CalendarRangeSelection,
+} from "@/lib/calendar-interactions";
 import { copy } from "@/lib/copy";
-import type { AppData, Lesson } from "@/lib/domain";
+import type { AppData, Lesson, RecurrenceMutationScope } from "@/lib/domain";
 import {
   formatTime,
   getWeekDays,
@@ -133,15 +153,30 @@ export function CalendarPage() {
   }, [anchor, session.timezone, view]);
   const { data, isPending } = useAppData(session.id, queryRange);
   const mutation = useAppMutation(session.id);
+  const queryClient = useQueryClient();
   const { openLessonComposer, showToast, showError } = useAppUi();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [planningStudentId, setPlanningStudentId] = useState(
     searchParams.get("student") ?? "",
   );
-  const [dragged, setDragged] = useState<{
-    id: string;
+  const [dragged, setDragged] = useState<CalendarDragEntry | null>(null);
+  const [rangeChoice, setRangeChoice] = useState<
+    | (CalendarRangeSelection & {
+        point: { x: number; y: number };
+      })
+    | null
+  >(null);
+  const [availabilityMove, setAvailabilityMove] = useState<{
+    entry: CalendarDragEntry;
     startsAt: string;
+    scope?: RecurrenceMutationScope;
+  } | null>(null);
+  const [recurrenceMove, setRecurrenceMove] = useState<{
+    entry: CalendarLessonDragEntry;
+    startsAt: string;
+    kind: "scope" | "historical";
+    scope: Extract<RecurrenceMutationScope, "single" | "future">;
   } | null>(null);
   const [conflict, setConflict] = useState<{
     lesson: Lesson;
@@ -207,12 +242,6 @@ export function CalendarPage() {
   }, [data, rangeDays, timezone]);
 
   if (isPending || !data) return <PageLoading />;
-  const calendarData = data;
-  const { startHour, endHour } = calendarBounds(
-    rangeLessons,
-    timezone,
-    calendarData,
-  );
   const readOnly = data.teacher.subscription.readOnly;
   const planningStudent = data.students.find(
     (student) => student.id === planningStudentId,
@@ -248,50 +277,76 @@ export function CalendarPage() {
       time,
     });
   }
-  async function dropLesson(event: DragEvent<HTMLDivElement>, day: Date) {
-    event.preventDefault();
-    if (!dragged || readOnly || mutation.isPending) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const minute = Math.max(
-      0,
-      Math.min(
-        (endHour - startHour) * 60 - 30,
-        Math.round(((event.clientY - rect.top) / hourHeight) * 2) * 30,
-      ),
+  async function moveCalendarEntry(
+    entry: CalendarDragEntry,
+    startsAt: string,
+    allowOutsideAvailability = false,
+    scope?: RecurrenceMutationScope,
+  ) {
+    if (readOnly || mutation.isPending) return;
+    const queryKey = ["app", session.id] as const;
+    await queryClient.cancelQueries({ queryKey });
+    const snapshots = queryClient.getQueriesData<AppData>({ queryKey });
+    const action = buildCalendarMoveAction(
+      entry,
+      startsAt,
+      timezone,
+      allowOutsideAvailability,
+      scope,
     );
-    const hour = startHour + Math.floor(minute / 60);
-    const minutes = minute % 60;
-    const time = `${String(hour).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+    try {
+      if (scope === "future") {
+        await mutation.mutateAsync(action);
+      } else {
+        await runOptimisticCalendarMove({
+          apply: () => {
+            queryClient.setQueriesData<AppData>({ queryKey }, (current) =>
+              current
+                ? moveCalendarEntryOptimistically(current, entry, startsAt)
+                : current,
+            );
+          },
+          persist: () => mutation.mutateAsync(action),
+          rollback: () => {
+            snapshots.forEach(([key, value]) =>
+              queryClient.setQueryData(key as QueryKey, value),
+            );
+          },
+        });
+      }
+    } catch (error) {
+      if (
+        entry.kind === "lesson" &&
+        !allowOutsideAvailability &&
+        error instanceof ClientApiError &&
+        error.data.code === "OUTSIDE_AVAILABILITY"
+      ) {
+        setAvailabilityMove({ entry, startsAt, scope });
+      } else {
+        showError(error);
+      }
+    } finally {
+      setDragged(null);
+    }
+  }
+  function dropCalendarEntry(day: Date, time: string) {
+    if (!dragged) return;
     const startsAt = localInputToUtc(
       localDateKey(day, timezone),
       time,
       timezone,
     );
-    try {
-      await mutation.mutateAsync({
-        type: "rescheduleLesson",
-        lessonId: dragged.id,
+    if (dragged.kind === "lesson" && dragged.seriesId) {
+      setRecurrenceMove({
+        entry: dragged,
         startsAt,
+        kind: dragged.status === "completed" ? "historical" : "scope",
+        scope: dragged.status === "completed" ? "future" : "single",
       });
-      showToast({
-        message: copy.toasts.dateChanged,
-        actionLabel: copy.actions.undo,
-        onAction: async () => {
-          try {
-            await mutation.mutateAsync({
-              type: "rescheduleLesson",
-              lessonId: dragged.id,
-              startsAt: dragged.startsAt,
-            });
-          } catch (error) {
-            showError(error);
-          }
-        },
-      });
-    } catch (error) {
-      showError(error);
+      setDragged(null);
+      return;
     }
-    setDragged(null);
+    void moveCalendarEntry(dragged, startsAt);
   }
   async function createBlock(event: React.FormEvent) {
     event.preventDefault();
@@ -454,11 +509,11 @@ export function CalendarPage() {
           timezone={timezone}
           planning={Boolean(planningStudentId)}
           onSlot={handleSlot}
-          onDrag={(lesson) => {
-            if (lesson.mode !== "recurring")
-              setDragged({ id: lesson.id, startsAt: lesson.startsAt });
-          }}
-          onDrop={dropLesson}
+          dragged={dragged}
+          onDrag={setDragged}
+          onDrop={dropCalendarEntry}
+          selectedRange={rangeChoice}
+          onRangeSelect={(range, point) => setRangeChoice({ ...range, point })}
           readOnly={readOnly || mutation.isPending}
           onDragEnd={() => setDragged(null)}
           onDeleteBlock={deleteBlock}
@@ -503,6 +558,185 @@ export function CalendarPage() {
           onDeleteBlock={deleteBlock}
         />
       </div>
+
+      {rangeChoice && (
+        <RangeActionMenu
+          selection={rangeChoice}
+          onCancel={() => setRangeChoice(null)}
+          onLesson={() => {
+            openLessonComposer(
+              lessonPresetFromCalendarRange(
+                rangeChoice,
+                planningStudentId ? [planningStudentId] : undefined,
+              ),
+            );
+            setRangeChoice(null);
+          }}
+          onBlock={() => {
+            setBlockForm((current) => ({
+              ...current,
+              open: true,
+              ...blockPresetFromCalendarRange(rangeChoice),
+            }));
+            setRangeChoice(null);
+          }}
+        />
+      )}
+
+      <Dialog.Root
+        open={Boolean(recurrenceMove)}
+        onOpenChange={(open) => {
+          if (!open) setRecurrenceMove(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="dialog-content dialog-content--alert">
+            {recurrenceMove?.kind === "historical" ? (
+              <>
+                <Dialog.Title>Te zajęcia zostały już zakończone.</Dialog.Title>
+                <Dialog.Description>
+                  Możesz przenieść przyszłe zajęcia z tej serii.
+                </Dialog.Description>
+                <footer className="dialog-footer">
+                  <button
+                    className="button button--quiet"
+                    onClick={() => setRecurrenceMove(null)}
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    className="button button--primary"
+                    disabled={mutation.isPending}
+                    onClick={() => {
+                      if (!recurrenceMove) return;
+                      const pending = recurrenceMove;
+                      setRecurrenceMove(null);
+                      void moveCalendarEntry(
+                        pending.entry,
+                        pending.startsAt,
+                        false,
+                        "future",
+                      );
+                    }}
+                  >
+                    Przenieś przyszłe zajęcia
+                  </button>
+                </footer>
+              </>
+            ) : (
+              <>
+                <Dialog.Title>Przenieś:</Dialog.Title>
+                <Dialog.Description>
+                  Wybierz, których zajęć ma dotyczyć nowy termin.
+                </Dialog.Description>
+                <fieldset className="scope-choice">
+                  <legend>Zakres zmiany</legend>
+                  <label>
+                    <input
+                      type="radio"
+                      name="calendar-recurrence-scope"
+                      value="single"
+                      checked={recurrenceMove?.scope === "single"}
+                      onChange={() =>
+                        setRecurrenceMove((current) =>
+                          current ? { ...current, scope: "single" } : current,
+                        )
+                      }
+                    />
+                    Tylko te zajęcia
+                  </label>
+                  <label>
+                    <input
+                      type="radio"
+                      name="calendar-recurrence-scope"
+                      value="future"
+                      checked={recurrenceMove?.scope === "future"}
+                      onChange={() =>
+                        setRecurrenceMove((current) =>
+                          current ? { ...current, scope: "future" } : current,
+                        )
+                      }
+                    />
+                    Te i kolejne zajęcia
+                  </label>
+                </fieldset>
+                <footer className="dialog-footer">
+                  <button
+                    className="button button--quiet"
+                    onClick={() => setRecurrenceMove(null)}
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    className="button button--primary"
+                    disabled={mutation.isPending}
+                    onClick={() => {
+                      if (!recurrenceMove) return;
+                      const pending = recurrenceMove;
+                      setRecurrenceMove(null);
+                      void moveCalendarEntry(
+                        pending.entry,
+                        pending.startsAt,
+                        false,
+                        pending.scope,
+                      );
+                    }}
+                  >
+                    Przenieś
+                  </button>
+                </footer>
+              </>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      <Dialog.Root
+        open={Boolean(availabilityMove)}
+        onOpenChange={(open) => {
+          if (!open) setAvailabilityMove(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="dialog-content dialog-content--alert">
+            <Dialog.Title>Termin poza dostępnością</Dialog.Title>
+            <Dialog.Description>
+              Ten termin jest poza Twoją regularną dostępnością. Możesz zachować
+              go jako ręczny wyjątek.
+            </Dialog.Description>
+            <div className="dialog-alert-icon">
+              <AlertTriangle size={24} />
+            </div>
+            <footer className="dialog-footer">
+              <button
+                className="button button--quiet"
+                onClick={() => setAvailabilityMove(null)}
+              >
+                Wybierz inny termin
+              </button>
+              <button
+                className="button button--primary"
+                disabled={mutation.isPending}
+                onClick={() => {
+                  if (!availabilityMove) return;
+                  const pending = availabilityMove;
+                  setAvailabilityMove(null);
+                  void moveCalendarEntry(
+                    pending.entry,
+                    pending.startsAt,
+                    true,
+                    pending.scope,
+                  );
+                }}
+              >
+                Przenieś mimo to
+              </button>
+            </footer>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
 
       <Dialog.Root
         open={Boolean(conflict)}
@@ -647,6 +881,66 @@ export function CalendarPage() {
   );
 }
 
+function RangeActionMenu({
+  selection,
+  onLesson,
+  onBlock,
+  onCancel,
+}: {
+  selection: CalendarRangeSelection & { point: { x: number; y: number } };
+  onLesson: () => void;
+  onBlock: () => void;
+  onCancel: () => void;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const closeOnPointer = (event: globalThis.PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) onCancel();
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+    document.addEventListener("pointerdown", closeOnPointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnPointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [onCancel]);
+  const left = Math.max(
+    12,
+    Math.min(selection.point.x, window.innerWidth - 268),
+  );
+  const top = Math.max(
+    12,
+    Math.min(selection.point.y + 10, window.innerHeight - 220),
+  );
+  return (
+    <div
+      ref={menuRef}
+      className="calendar-range-menu"
+      role="dialog"
+      aria-label="Działanie dla zaznaczonego czasu"
+      style={{ left, top }}
+    >
+      <strong>Co chcesz zrobić?</strong>
+      <span>
+        {selection.start}–{selection.end}
+      </span>
+      <button className="button button--primary" onClick={onLesson}>
+        Dodaj zajęcia
+      </button>
+      <button className="button button--secondary" onClick={onBlock}>
+        Zablokuj czas
+      </button>
+      <button className="button button--quiet" onClick={onCancel}>
+        Anuluj
+      </button>
+    </div>
+  );
+}
+
 function CalendarGrid({
   days,
   lessons,
@@ -654,8 +948,11 @@ function CalendarGrid({
   timezone,
   planning,
   onSlot,
+  dragged,
   onDrag,
   onDrop,
+  selectedRange,
+  onRangeSelect,
   readOnly,
   onDragEnd,
   onDeleteBlock,
@@ -669,14 +966,33 @@ function CalendarGrid({
   onDragEnd: () => void;
   onDeleteBlock: (blockId: string) => void;
   onSlot: (day: Date, time: string, lesson?: Lesson) => void;
-  onDrag: (lesson: Lesson) => void;
-  onDrop: (event: DragEvent<HTMLDivElement>, day: Date) => void;
+  dragged: CalendarDragEntry | null;
+  onDrag: (entry: CalendarDragEntry) => void;
+  onDrop: (day: Date, time: string) => void;
+  selectedRange: CalendarRangeSelection | null;
+  onRangeSelect: (
+    range: CalendarRangeSelection,
+    point: { x: number; y: number },
+  ) => void;
 }) {
   const now = useMinuteClock();
   const [hoverSlot, setHoverSlot] = useState<{
     day: string;
     minute: number;
   } | null>(null);
+  const [dragHover, setDragHover] = useState<{
+    day: string;
+    minute: number;
+  } | null>(null);
+  const [selectionDraft, setSelectionDraft] =
+    useState<CalendarRangeSelection | null>(null);
+  const selectionGesture = useRef<{
+    day: string;
+    pointerId: number;
+    startY: number;
+    anchorMinute: number;
+  } | null>(null);
+  const suppressClick = useRef(false);
   const { startHour, endHour } = calendarBounds(lessons, timezone, data);
   const hours = Array.from(
     { length: endHour - startHour },
@@ -748,59 +1064,175 @@ function CalendarGrid({
           const nowMinutes =
             Number(formatInTimeZone(now, timezone, "H")) * 60 +
             Number(formatInTimeZone(now, timezone, "m"));
+          const visibleSelection =
+            selectionDraft?.date === dayKey
+              ? selectionDraft
+              : selectedRange?.date === dayKey
+                ? selectedRange
+                : null;
           return (
             <div
               className={`calendar-day-column${today ? " today" : ""}${allDayUnavailable ? " calendar-day-column--unavailable" : ""}`}
               key={dayKey}
               onDragOver={(event) => {
                 event.preventDefault();
+                if (!dragged) return;
+                const minute = calendarMinuteFromPointer({
+                  clientY: event.clientY,
+                  columnTop: event.currentTarget.getBoundingClientRect().top,
+                  startHour,
+                  endHour,
+                  durationMinutes: dragDurationMinutes(dragged),
+                });
+                setDragHover({ day: dayKey, minute });
               }}
               onDrop={(event) => {
-                onDrop(event, day);
+                event.preventDefault();
+                if (!dragged) return;
+                const minute = calendarMinuteFromPointer({
+                  clientY: event.clientY,
+                  columnTop: event.currentTarget.getBoundingClientRect().top,
+                  startHour,
+                  endHour,
+                  durationMinutes: dragDurationMinutes(dragged),
+                });
+                setDragHover(null);
+                onDrop(day, calendarTimeFromMinute(minute));
+              }}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node))
+                  setDragHover(null);
               }}
               onMouseLeave={() => setHoverSlot(null)}
               onMouseMove={(event) => {
                 if (
                   readOnly ||
+                  dragged ||
+                  selectionGesture.current ||
                   (event.target as HTMLElement).closest("[data-event]")
                 ) {
                   setHoverSlot(null);
                   return;
                 }
-                const minute = Math.max(
-                  0,
-                  Math.min(
-                    (endHour - startHour) * 60 - 30,
-                    Math.floor(
-                      ((event.clientY -
-                        event.currentTarget.getBoundingClientRect().top) /
-                        hourHeight) *
-                        2,
-                    ) * 30,
-                  ),
-                );
+                const minute = calendarMinuteFromPointer({
+                  clientY: event.clientY,
+                  columnTop: event.currentTarget.getBoundingClientRect().top,
+                  startHour,
+                  endHour,
+                });
                 setHoverSlot({ day: dayKey, minute });
               }}
-              onClick={(event) => {
+              onPointerDown={(event) => {
                 if (
                   readOnly ||
+                  event.pointerType !== "mouse" ||
+                  event.button !== 0 ||
+                  (event.target as HTMLElement).closest(
+                    "[data-event], button, a, input, select",
+                  )
+                )
+                  return;
+                event.preventDefault();
+                const anchorMinute = calendarMinuteFromPointer({
+                  clientY: event.clientY,
+                  columnTop: event.currentTarget.getBoundingClientRect().top,
+                  startHour,
+                  endHour,
+                });
+                selectionGesture.current = {
+                  day: dayKey,
+                  pointerId: event.pointerId,
+                  startY: event.clientY,
+                  anchorMinute,
+                };
+                event.currentTarget.setPointerCapture(event.pointerId);
+              }}
+              onPointerMove={(event) => {
+                const gesture = selectionGesture.current;
+                if (
+                  !gesture ||
+                  gesture.day !== dayKey ||
+                  gesture.pointerId !== event.pointerId ||
+                  Math.abs(event.clientY - gesture.startY) <
+                    CALENDAR_SELECTION_THRESHOLD_PX
+                )
+                  return;
+                const currentMinute = calendarMinuteFromPointer({
+                  clientY: event.clientY,
+                  columnTop: event.currentTarget.getBoundingClientRect().top,
+                  startHour,
+                  endHour,
+                  durationMinutes: 0,
+                });
+                setHoverSlot(null);
+                setSelectionDraft(
+                  calendarRangeFromMinutes(
+                    dayKey,
+                    gesture.anchorMinute,
+                    currentMinute,
+                  ),
+                );
+              }}
+              onPointerUp={(event) => {
+                const gesture = selectionGesture.current;
+                if (
+                  !gesture ||
+                  gesture.day !== dayKey ||
+                  gesture.pointerId !== event.pointerId
+                )
+                  return;
+                selectionGesture.current = null;
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                if (
+                  Math.abs(event.clientY - gesture.startY) <
+                  CALENDAR_SELECTION_THRESHOLD_PX
+                ) {
+                  suppressClick.current = true;
+                  setSelectionDraft(null);
+                  onSlot(day, calendarTimeFromMinute(gesture.anchorMinute));
+                  return;
+                }
+                const currentMinute = calendarMinuteFromPointer({
+                  clientY: event.clientY,
+                  columnTop: event.currentTarget.getBoundingClientRect().top,
+                  startHour,
+                  endHour,
+                  durationMinutes: 0,
+                });
+                const range = calendarRangeFromMinutes(
+                  dayKey,
+                  gesture.anchorMinute,
+                  currentMinute,
+                );
+                suppressClick.current = true;
+                setSelectionDraft(null);
+                onRangeSelect(range, { x: event.clientX, y: event.clientY });
+              }}
+              onPointerCancel={(event) => {
+                selectionGesture.current = null;
+                setSelectionDraft(null);
+                if (event.currentTarget.hasPointerCapture(event.pointerId))
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+              }}
+              onClick={(event) => {
+                if (suppressClick.current) {
+                  suppressClick.current = false;
+                  return;
+                }
+                if (
+                  readOnly ||
+                  selectedRange ||
                   (event.target as HTMLElement).closest("[data-event]")
                 )
                   return;
-                const rect = event.currentTarget.getBoundingClientRect();
-                const minute = Math.max(
-                  0,
-                  Math.min(
-                    (endHour - startHour) * 60 - 30,
-                    Math.floor(((event.clientY - rect.top) / hourHeight) * 2) *
-                      30,
-                  ),
-                );
-                const hour = startHour + Math.floor(minute / 60);
-                onSlot(
-                  day,
-                  `${String(hour).padStart(2, "0")}:${minute % 60 === 30 ? "30" : "00"}`,
-                );
+                const minute = calendarMinuteFromPointer({
+                  clientY: event.clientY,
+                  columnTop: event.currentTarget.getBoundingClientRect().top,
+                  startHour,
+                  endHour,
+                });
+                onSlot(day, calendarTimeFromMinute(minute));
               }}
             >
               {allDayUnavailable && (
@@ -812,13 +1244,47 @@ function CalendarGrid({
                 <span
                   aria-hidden="true"
                   className="calendar-slot-preview"
-                  style={{ top: (hoverSlot.minute / 60) * hourHeight }}
+                  style={{
+                    top:
+                      ((hoverSlot.minute - startHour * 60) / 60) * hourHeight,
+                  }}
                 >
                   <Plus size={12} />
-                  {String(
-                    startHour + Math.floor(hoverSlot.minute / 60),
-                  ).padStart(2, "0")}
-                  :{hoverSlot.minute % 60 === 30 ? "30" : "00"}
+                  {calendarTimeFromMinute(hoverSlot.minute)}
+                </span>
+              )}
+              {visibleSelection && (
+                <span
+                  aria-hidden="true"
+                  className="calendar-range-selection"
+                  style={{
+                    top:
+                      ((calendarMinuteFromTime(visibleSelection.start) -
+                        startHour * 60) /
+                        60) *
+                      hourHeight,
+                    height:
+                      (visibleSelection.durationMinutes / 60) * hourHeight,
+                  }}
+                >
+                  {visibleSelection.start}–{visibleSelection.end}
+                </span>
+              )}
+              {dragged && dragHover?.day === dayKey && (
+                <span
+                  aria-hidden="true"
+                  className={`calendar-drag-preview calendar-drag-preview--${dragged.kind}`}
+                  style={{
+                    top:
+                      ((dragHover.minute - startHour * 60) / 60) * hourHeight,
+                    height:
+                      (dragDurationMinutes(dragged) / 60) * hourHeight - 3,
+                  }}
+                >
+                  {calendarTimeFromMinute(dragHover.minute)}–
+                  {calendarTimeFromMinute(
+                    dragHover.minute + dragDurationMinutes(dragged),
+                  )}
                 </span>
               )}
               {hours.map((hour) => (
@@ -872,6 +1338,16 @@ function CalendarGrid({
                     data-event
                     className="calendar-block"
                     key={block.id}
+                    draggable={!readOnly}
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", block.id);
+                      onDrag(blockDragEntry(block));
+                    }}
+                    onDragEnd={() => {
+                      setDragHover(null);
+                      onDragEnd();
+                    }}
                     style={{
                       top: ((startMinutes - startHour * 60) / 60) * hourHeight,
                       height: Math.max(
@@ -929,14 +1405,19 @@ function CalendarGrid({
                     key={lesson.id}
                     draggable={
                       !readOnly &&
-                      lesson.mode !== "recurring" &&
+                      (lesson.status !== "completed" ||
+                        lesson.mode === "recurring") &&
                       lesson.status !== "cancelled"
                     }
-                    onDragEnd={onDragEnd}
+                    onDragEnd={() => {
+                      setDragHover(null);
+                      onDragEnd();
+                    }}
                     title={`${label} · ${lesson.subject || lesson.topic || "Temat do ustalenia"} · ${lesson.durationMinutes} min · ${copy.status[lesson.status]}`}
                     onDragStart={(event) => {
                       event.dataTransfer.effectAllowed = "move";
-                      onDrag(lesson);
+                      event.dataTransfer.setData("text/plain", lesson.id);
+                      onDrag(lessonDragEntry(lesson));
                     }}
                     className={`calendar-event calendar-event--${lesson.status}${["failed", "deleted_in_google"].includes(lesson.syncStatus) ? " calendar-event--sync-error" : ""}`}
                     style={{

@@ -9,6 +9,7 @@ import type {
   PlanItem,
   Student,
 } from "@/lib/domain";
+import { localInputToUtc } from "@/lib/format";
 import { ApiFailure } from "./errors";
 import {
   cancelLesson as transitionToCancelled,
@@ -571,30 +572,103 @@ export async function performAction(
       }
       case "rescheduleLesson": {
         const lesson = ownedLesson(store, teacherId, action.lessonId);
+        if (
+          (lesson.status === "completed" || lesson.status === "cancelled") &&
+          !(
+            lesson.status === "completed" &&
+            action.scope === "future" &&
+            lesson.seriesId
+          )
+        ) {
+          throw new ApiFailure(409, {
+            code: "COMPLETED_LESSON_IMMUTABLE",
+            message:
+              "Uzupełnionej lekcji nie można przenieść ani odwołać z kalendarza.",
+          });
+        }
         validateOccurrence({
           startsAt: action.startsAt,
           durationMinutes: action.durationMinutes ?? lesson.durationMinutes,
         });
-        const delta =
-          new Date(action.startsAt).getTime() -
-          new Date(lesson.startsAt).getTime();
+        const timezone = lesson.timezone ?? teacher.timezone;
+        const originalReference =
+          lesson.recurrenceOriginalStartsAt ?? lesson.startsAt;
+        const referenceDate = formatInTimeZone(
+          originalReference,
+          timezone,
+          "yyyy-MM-dd",
+        );
+        const targetDate = formatInTimeZone(
+          action.startsAt,
+          timezone,
+          "yyyy-MM-dd",
+        );
+        const targetTime = formatInTimeZone(action.startsAt, timezone, "HH:mm");
+        const localDayDelta = Math.round(
+          (new Date(`${targetDate}T00:00:00.000Z`).getTime() -
+            new Date(`${referenceDate}T00:00:00.000Z`).getTime()) /
+            86_400_000,
+        );
+        let splitReference = lesson;
+        if (lesson.status === "completed" && action.scope === "future") {
+          const next = store.lessons
+            .filter(
+              (candidate) =>
+                candidate.teacherId === teacherId &&
+                candidate.seriesId === lesson.seriesId &&
+                candidate.status !== "completed" &&
+                candidate.status !== "cancelled" &&
+                new Date(candidate.startsAt).getTime() > Date.now(),
+            )
+            .sort((left, right) =>
+              left.startsAt.localeCompare(right.startsAt),
+            )[0];
+          if (!next) {
+            throw new ApiFailure(409, {
+              code: "NO_FUTURE_OCCURRENCES",
+              message: "W tej serii nie ma przyszłych zajęć do przeniesienia.",
+            });
+          }
+          splitReference = next;
+        }
+        const splitOriginal =
+          splitReference.recurrenceOriginalStartsAt ?? splitReference.startsAt;
         const targets =
           action.scope !== "single" && lesson.seriesId
             ? store.lessons.filter(
                 (candidate) =>
                   candidate.teacherId === teacherId &&
-                  candidate.seriesId === lesson.seriesId &&
+                  candidate.seriesId === splitReference.seriesId &&
                   candidate.status !== "completed" &&
+                  candidate.status !== "cancelled" &&
                   (action.scope === "series" ||
-                    candidate.startsAt >= lesson.startsAt),
+                    (candidate.recurrenceOriginalStartsAt ??
+                      candidate.startsAt) >= splitOriginal),
               )
             : [lesson];
+        const delta =
+          new Date(action.startsAt).getTime() -
+          new Date(lesson.startsAt).getTime();
         const targetIds = new Set(targets.map((target) => target.id));
         const proposed = targets.map((target) => ({
           target,
-          startsAt: new Date(
-            new Date(target.startsAt).getTime() + delta,
-          ).toISOString(),
+          startsAt:
+            action.scope === "future" && lesson.seriesId
+              ? localInputToUtc(
+                  shiftDateKey(
+                    formatInTimeZone(
+                      target.recurrenceOriginalStartsAt ?? target.startsAt,
+                      timezone,
+                      "yyyy-MM-dd",
+                    ),
+                    localDayDelta,
+                  ),
+                  targetTime,
+                  timezone,
+                )
+              : new Date(
+                  new Date(target.startsAt).getTime() + delta,
+                ).toISOString(),
         }));
         const conflicts = proposed.flatMap(({ target, startsAt }) =>
           findConflicts(
@@ -1083,6 +1157,12 @@ function ownedGroup(store: StoreShape, teacherId: string, groupId: string) {
   );
   if (!group) unauthorized();
   return group;
+}
+
+function shiftDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 function ownedLesson(store: StoreShape, teacherId: string, lessonId: string) {

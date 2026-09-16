@@ -852,6 +852,19 @@ function databaseFailure(error: { code?: string; message?: string }): never {
         "Uzupełnionej lekcji nie można przenieść ani odwołać z kalendarza.",
     });
   }
+  if (message.includes("NO_FUTURE_OCCURRENCES")) {
+    throw new ApiFailure(409, {
+      code: "NO_FUTURE_OCCURRENCES",
+      message: "W tej serii nie ma przyszłych zajęć do przeniesienia.",
+    });
+  }
+  if (message.includes("INVALID_LOCAL_TIME")) {
+    throw new ApiFailure(422, {
+      code: "INVALID_LOCAL_TIME",
+      message:
+        "Wybrana godzina nie istnieje albo jest niejednoznaczna przy zmianie czasu.",
+    });
+  }
   if (message.includes("TARGET_NOT_ACTIVE")) {
     throw new ApiFailure(422, {
       code: "TARGET_NOT_ACTIVE",

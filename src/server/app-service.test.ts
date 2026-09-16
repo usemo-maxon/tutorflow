@@ -2,6 +2,7 @@ import { beforeAll, afterAll, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { formatInTimeZone } from "date-fns-tz";
 import type { CreateLessonInput, StudentCreateInput } from "../lib/domain";
 
 let storage: typeof import("./store");
@@ -175,6 +176,66 @@ describe("refined user journeys preserve the existing domain rules", () => {
     expect(response.data.lessons.find((l) => l.id === second)?.status).toBe(
       "scheduled",
     );
+  });
+  it("uses completed recurring history only as a reference for a future move", async () => {
+    const input = create("2025-02-04", "recurring");
+    input.occurrences.push(
+      { startsAt: "2042-03-25T16:00:00.000Z", durationMinutes: 60 },
+      { startsAt: "2042-04-01T15:00:00.000Z", durationMinutes: 60 },
+    );
+    input.recurrence = {
+      frequency: "weekly",
+      count: 3,
+      timezone: "Europe/Warsaw",
+    };
+    const created = await perform(teacherId, {
+      type: "createLesson",
+      lesson: input,
+    });
+    const [historicalId] = created.result!.ids!;
+    const historical = created.data.lessons.find(
+      (lesson) => lesson.id === historicalId,
+    )!;
+    await perform(teacherId, {
+      type: "saveLesson",
+      lessonId: historicalId,
+      topic: historical.topic,
+      planItems: historical.planItems,
+      homework: historical.homework,
+      generalNotes: historical.generalNotes,
+      participants: historical.participants,
+      complete: true,
+    });
+
+    const moved = await perform(teacherId, {
+      type: "rescheduleLesson",
+      lessonId: historicalId,
+      startsAt: "2025-02-05T17:00:00.000Z",
+      scope: "future",
+    });
+    const series = moved.data.lessons
+      .filter((lesson) => lesson.seriesId === historical.seriesId)
+      .sort((left, right) =>
+        left.recurrenceOriginalStartsAt!.localeCompare(
+          right.recurrenceOriginalStartsAt!,
+        ),
+      );
+    expect(series[0]).toMatchObject({
+      id: historicalId,
+      startsAt: "2025-02-04T09:00:00.000Z",
+      status: "completed",
+    });
+    expect(
+      series
+        .slice(1)
+        .map((lesson) =>
+          formatInTimeZone(
+            lesson.startsAt,
+            "Europe/Warsaw",
+            "yyyy-MM-dd HH:mm",
+          ),
+        ),
+    ).toEqual(["2042-03-26 18:00", "2042-04-02 18:00"]);
   });
   it("blocks archived students and preserves history", async () => {
     const before = (await storage.getAppData(teacherId)).lessons.length;
@@ -405,6 +466,110 @@ describe("refined user journeys preserve the existing domain rules", () => {
         (item) => item.id === studentId,
       )?.name,
     ).not.toBe("Przejęty");
+  });
+  it("moves lessons and blocks transactionally with half-open conflict rules", async () => {
+    const calendarTeacher = await storage.createTeacher({
+      name: "Test kalendarza",
+      email: "calendar-moves@example.test",
+      password: "test-only-password",
+    });
+    const calendarStudentId = (
+      await perform(calendarTeacher.id, {
+        type: "createStudent",
+        student: { ...student, displayName: "Uczeń kalendarza" },
+      })
+    ).result!.id!;
+    const schedule = async (startsAt: string) =>
+      perform(calendarTeacher.id, {
+        type: "createLesson",
+        lesson: {
+          ...create("2036-05-12"),
+          participantIds: [calendarStudentId],
+          occurrences: [{ startsAt, durationMinutes: 60 }],
+        },
+      });
+    const first = await schedule("2036-05-12T17:00:00.000Z");
+    const second = await schedule("2036-05-12T18:00:00.000Z");
+    const firstId = first.result!.ids![0];
+    const secondId = second.result!.ids![0];
+
+    await expect(
+      perform(calendarTeacher.id, {
+        type: "rescheduleLesson",
+        lessonId: firstId,
+        startsAt: "2036-05-12T18:30:00.000Z",
+      }),
+    ).rejects.toThrow();
+    expect(
+      (await storage.getAppData(calendarTeacher.id)).lessons.find(
+        (item) => item.id === firstId,
+      )?.startsAt,
+    ).toBe("2036-05-12T17:00:00.000Z");
+
+    const moved = await perform(calendarTeacher.id, {
+      type: "rescheduleLesson",
+      lessonId: firstId,
+      startsAt: "2036-05-12T19:00:00.000Z",
+    });
+    expect(
+      moved.data.lessons.find((item) => item.id === firstId),
+    ).toMatchObject({
+      startsAt: "2036-05-12T19:00:00.000Z",
+      durationMinutes: 60,
+    });
+    expect(
+      moved.data.lessons.find((item) => item.id === secondId)?.startsAt,
+    ).toBe("2036-05-12T18:00:00.000Z");
+
+    const createdBlock = await perform(calendarTeacher.id, {
+      type: "createCalendarBlock",
+      block: {
+        title: "Prywatne",
+        startsAt: "2036-05-12T20:00:00.000Z",
+        endsAt: "2036-05-12T21:30:00.000Z",
+        timezone: "Europe/Warsaw",
+      },
+    });
+    const blockId = createdBlock.result!.id!;
+    const block = createdBlock.data.calendarBlocks.find(
+      (item) => item.id === blockId,
+    )!;
+    const movedBlock = await perform(calendarTeacher.id, {
+      type: "updateCalendarBlock",
+      blockId,
+      block: {
+        title: block.title,
+        startsAt: "2036-05-12T21:00:00.000Z",
+        endsAt: "2036-05-12T22:30:00.000Z",
+        timezone: block.timezone,
+      },
+      expectedUpdatedAt: block.updatedAt,
+    });
+    expect(
+      movedBlock.data.calendarBlocks.find((item) => item.id === blockId),
+    ).toMatchObject({
+      startsAt: "2036-05-12T21:00:00.000Z",
+      endsAt: "2036-05-12T22:30:00.000Z",
+    });
+    expect(movedBlock.data.lessons).toHaveLength(2);
+
+    await expect(
+      perform(calendarTeacher.id, {
+        type: "updateCalendarBlock",
+        blockId,
+        block: {
+          title: block.title,
+          startsAt: "2036-05-12T19:30:00.000Z",
+          endsAt: "2036-05-12T21:00:00.000Z",
+          timezone: block.timezone,
+        },
+      }),
+    ).rejects.toThrow();
+    expect(
+      (await storage.getAppData(calendarTeacher.id)).calendarBlocks.find(
+        (item) => item.id === blockId,
+      )?.startsAt,
+    ).toBe("2036-05-12T21:00:00.000Z");
   });
   it("blocks writes for read-only subscriptions and leaves reads available", async () => {
     await storage.mutateStore((store) => {
