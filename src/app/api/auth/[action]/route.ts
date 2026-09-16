@@ -3,7 +3,10 @@ import { z } from "zod";
 import { SESSION_COOKIE } from "@/server/auth";
 import { isSupabaseConfigured, siteUrl } from "@/server/env";
 import { ApiFailure, errorResponse } from "@/server/errors";
-import { createSupabaseServerClient } from "@/server/supabase";
+import {
+  createSupabaseServerClient,
+  getSupabasePublicConfig,
+} from "@/server/supabase";
 import {
   createSession,
   createTeacher,
@@ -30,6 +33,21 @@ export async function GET(
   { params }: { params: Promise<{ action: string }> },
 ) {
   const { action } = await params;
+  if (action === "config") {
+    try {
+      return Response.json(getSupabasePublicConfig(), {
+        headers: { "Cache-Control": "private, no-store" },
+      });
+    } catch {
+      return Response.json(
+        { code: "AUTH_UNAVAILABLE" },
+        {
+          status: 503,
+          headers: { "Cache-Control": "private, no-store" },
+        },
+      );
+    }
+  }
   if (action !== "session")
     return Response.json({ code: "NOT_FOUND" }, { status: 404 });
   if (isSupabaseConfigured()) {

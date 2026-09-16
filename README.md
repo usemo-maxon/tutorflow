@@ -109,7 +109,9 @@ its `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and
 `SUPABASE_SERVICE_ROLE_KEY` variables. Explicit `NEXT_PUBLIC_SUPABASE_*` and
 `SUPABASE_SECRET_KEY` values take precedence. On Vercel,
 `VERCEL_PROJECT_PRODUCTION_URL` is used as a safe site URL fallback when
-`NEXT_PUBLIC_SITE_URL` is absent.
+`NEXT_PUBLIC_SITE_URL` is absent. When only the integration aliases are present,
+the browser loads the non-secret Supabase URL and publishable key from the
+same-origin `/api/auth/config` endpoint.
 
 Attach and verify the custom domain in Vercel, make it primary, redirect the generated `*.vercel.app` hostname to it, and redeploy after setting the domain-dependent variables.
 

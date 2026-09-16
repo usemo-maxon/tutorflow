@@ -98,7 +98,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     setServerError("");
 
     try {
-      const supabase = createSupabaseBrowserClient();
+      const supabase = await createSupabaseBrowserClient();
       const next = safeAppPath(searchParams.get("returnTo"));
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",

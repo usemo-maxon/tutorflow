@@ -4,7 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
-function publicConfig() {
+export function getSupabasePublicConfig() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
   const key =
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
@@ -17,7 +17,7 @@ function publicConfig() {
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
-  const { url, key } = publicConfig();
+  const { url, key } = getSupabasePublicConfig();
   return createServerClient(url, key, {
     cookies: {
       getAll: () => cookieStore.getAll(),
