@@ -93,7 +93,11 @@ export interface LessonWorkspaceData {
 }
 
 const entityId = z.string().uuid();
-const optionalTimestamp = z.string().datetime().optional();
+// PostgREST serializes `timestamptz` values with an explicit numeric offset
+// (for example `+00:00`). Accept those values as well as the `Z` form emitted
+// by `Date#toISOString` so optimistic-concurrency tokens can round-trip.
+const isoDateTime = z.iso.datetime({ offset: true });
+const optionalTimestamp = isoDateTime.optional();
 const attendanceStatus = z.enum(["present", "absent", "late"]);
 
 export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
@@ -108,7 +112,7 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
         text: z.string().trim().min(1).max(2_000),
       }),
     ),
-    expectedUpdatedAt: z.string().datetime(),
+    expectedUpdatedAt: isoDateTime,
   }),
   z.object({
     type: z.literal("saveNote"),
@@ -120,7 +124,7 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
     type: z.literal("upsertHomework"),
     title: z.string().trim().min(1).max(200),
     description: z.string().trim().max(10_000),
-    dueAt: z.string().datetime().nullable().optional(),
+    dueAt: isoDateTime.nullable().optional(),
   }),
   z.object({ type: z.literal("deleteHomework") }),
   z.object({ type: z.literal("attachMaterial"), materialId: entityId }),
@@ -146,13 +150,13 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
     type: z.literal("updateColor"),
     color: CalendarColorSchema,
     scope: z.enum(["single", "future", "series"]),
-    expectedUpdatedAt: z.string().datetime(),
+    expectedUpdatedAt: isoDateTime,
   }),
   z.object({ type: z.literal("completeLesson") }),
   z.object({ type: z.literal("markNoShow") }),
   z.object({
     type: z.literal("cancelLesson"),
-    expectedUpdatedAt: z.string().datetime(),
+    expectedUpdatedAt: isoDateTime,
   }),
 ]);
 

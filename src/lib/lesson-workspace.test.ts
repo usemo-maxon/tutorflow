@@ -82,4 +82,20 @@ describe("LessonWorkspaceActionSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("accepts PostgREST timestamps when saving a lesson color", () => {
+    expect(
+      LessonWorkspaceActionSchema.parse({
+        type: "updateColor",
+        color: "#6fafd9",
+        scope: "single",
+        expectedUpdatedAt: "2026-09-16T12:00:00.123456+00:00",
+      }),
+    ).toEqual({
+      type: "updateColor",
+      color: "#6FAFD9",
+      scope: "single",
+      expectedUpdatedAt: "2026-09-16T12:00:00.123456+00:00",
+    });
+  });
 });
