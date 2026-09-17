@@ -210,14 +210,13 @@ export async function createTeacher(input: {
 }
 
 function providerState(provider: "google" | "telegram" | "payu") {
+  if (provider === "google") {
+    return { status: "not_connected" as const };
+  }
   const configured =
-    provider === "google"
-      ? Boolean(
-          process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
-        )
-      : provider === "telegram"
-        ? Boolean(process.env.TELEGRAM_BOT_TOKEN)
-        : Boolean(process.env.PAYU_POS_ID && process.env.PAYU_CLIENT_SECRET);
+    provider === "telegram"
+      ? Boolean(process.env.TELEGRAM_BOT_TOKEN)
+      : Boolean(process.env.PAYU_POS_ID && process.env.PAYU_CLIENT_SECRET);
   return {
     status: configured
       ? ("not_connected" as const)

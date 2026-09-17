@@ -7,6 +7,9 @@ import { createSupabaseServerClient } from "@/server/supabase";
 export async function GET() {
   const teacher = await currentTeacher();
   if (!teacher) redirect("/logowanie");
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    redirect("/app/ustawienia/integracje?google=error");
+  }
   const state = randomBytes(32).toString("base64url");
   const tokenHash = createHash("sha256").update(state).digest("hex");
   const supabase = await createSupabaseServerClient();

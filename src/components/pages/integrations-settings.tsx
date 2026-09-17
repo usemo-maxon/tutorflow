@@ -42,58 +42,69 @@ export function IntegrationsSettings() {
           icon={<CalendarDays />}
           name="Google Calendar"
           state={data.integrations.google.status}
+          syncState={data.integrations.google.syncState}
           label={data.integrations.google.label}
           description="Dwukierunkowa synchronizacja lekcji i podgląd zajętości z wybranego kalendarza."
           error={data.integrations.google.lastError}
         >
           {data.integrations.google.status === "connected" && (
-            <button
-              type="button"
-              className="button button--secondary"
-              disabled={syncing}
-              aria-describedby={
-                syncFeedback ? "google-sync-feedback" : undefined
-              }
-              onClick={async () => {
-                setSyncFeedback(null);
-                setSyncing(true);
-                try {
-                  const response = await fetch(
-                    "/api/integrations/google/sync",
-                    {
-                      method: "POST",
-                    },
-                  );
-                  const payload = (await response.json().catch(() => null)) as {
-                    message?: string;
-                  } | null;
-                  if (!response.ok) {
-                    throw new Error(
-                      payload?.message ??
-                        "Nie udało się rozpocząć synchronizacji.",
-                    );
-                  }
-                  setSyncFeedback({
-                    kind: "success",
-                    message:
-                      "Synchronizacja została uruchomiona. Dane odświeżą się automatycznie.",
-                  });
-                  void refetch();
-                } catch (error) {
-                  setSyncFeedback({
-                    kind: "error",
-                    message:
-                      error instanceof Error
-                        ? error.message
-                        : "Nie udało się rozpocząć synchronizacji.",
-                  });
-                } finally {
-                  setSyncing(false);
+            <>
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={syncing}
+                aria-describedby={
+                  syncFeedback ? "google-sync-feedback" : undefined
                 }
-              }}
-            >
-              {syncing ? "Synchronizuję…" : "Synchronizuj teraz"}
-            </button>
+                onClick={async () => {
+                  setSyncFeedback(null);
+                  setSyncing(true);
+                  try {
+                    const response = await fetch(
+                      "/api/integrations/google/sync",
+                      {
+                        method: "POST",
+                      },
+                    );
+                    const payload = (await response
+                      .json()
+                      .catch(() => null)) as {
+                      message?: string;
+                    } | null;
+                    if (!response.ok) {
+                      throw new Error(
+                        payload?.message ??
+                          "Nie udało się rozpocząć synchronizacji.",
+                      );
+                    }
+                    setSyncFeedback({
+                      kind: "success",
+                      message:
+                        "Synchronizacja została uruchomiona. Dane odświeżą się automatycznie.",
+                    });
+                    void refetch();
+                  } catch (error) {
+                    setSyncFeedback({
+                      kind: "error",
+                      message:
+                        error instanceof Error
+                          ? error.message
+                          : "Nie udało się rozpocząć synchronizacji.",
+                    });
+                  } finally {
+                    setSyncing(false);
+                  }
+                }}
+              >
+                {syncing ? "Synchronizuję…" : "Synchronizuj teraz"}
+              </button>
+              <a
+                className="button button--secondary"
+                href="/api/integrations/google/connect"
+              >
+                Połącz ponownie
+              </a>
+            </>
           )}
           {data.integrations.google.status !== "connected" &&
             data.integrations.google.status !== "not_configured" && (
@@ -101,9 +112,10 @@ export function IntegrationsSettings() {
                 className="button button--secondary"
                 href="/api/integrations/google/connect"
               >
-                {data.integrations.google.status === "reconnect_required"
+                {data.integrations.google.status === "reconnect_required" ||
+                data.integrations.google.status === "error"
                   ? "Połącz ponownie"
-                  : "Połącz Google Calendar"}
+                  : "Połącz z Google"}
               </a>
             )}
           {failedLesson && (
@@ -159,6 +171,7 @@ function IntegrationCard({
   icon,
   name,
   state,
+  syncState,
   label,
   description,
   error,
@@ -172,13 +185,16 @@ function IntegrationCard({
     | "not_configured"
     | "error"
     | "reconnect_required";
+  syncState?: "idle" | "pending" | "syncing" | "error" | "reconnect_required";
   label?: string;
   description: string;
   error?: string;
   children?: ReactNode;
 }) {
-  const status =
-    state === "connected"
+  const hasSyncError = state === "connected" && syncState === "error";
+  const status = hasSyncError
+    ? "Błąd synchronizacji"
+    : state === "connected"
       ? "Połączono"
       : state === "error" || state === "reconnect_required"
         ? "Wymaga uwagi"
@@ -193,9 +209,15 @@ function IntegrationCard({
       <div>
         <div className="integration-title">
           <h3>{name}</h3>
-          <span className={`status-badge status-badge--integration-${state}`}>
+          <span
+            className={`status-badge status-badge--integration-${hasSyncError ? "error" : state}`}
+          >
             {state === "connected" ? (
-              <CheckCircle2 size={14} aria-hidden="true" />
+              hasSyncError ? (
+                <AlertTriangle size={14} aria-hidden="true" />
+              ) : (
+                <CheckCircle2 size={14} aria-hidden="true" />
+              )
             ) : state === "error" || state === "reconnect_required" ? (
               <AlertTriangle size={14} aria-hidden="true" />
             ) : null}

@@ -138,11 +138,7 @@ const localAllowed = () =>
   process.env.NODE_ENV !== "production" &&
   (Boolean(process.env.TUTORFLOW_DATA_DIR) || !isSupabaseConfigured());
 
-function configured(provider: "google" | "telegram" | "payu"): boolean {
-  if (provider === "google")
-    return Boolean(
-      process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
-    );
+function configured(provider: "telegram" | "payu"): boolean {
   if (provider === "telegram") return Boolean(process.env.TELEGRAM_BOT_TOKEN);
   return Boolean(
     process.env.PAYU_POS_ID &&
@@ -154,6 +150,10 @@ function configured(provider: "google" | "telegram" | "payu"): boolean {
 function defaultIntegration(
   provider: "google" | "telegram" | "payu",
 ): IntegrationState {
+  // Google Calendar is a supported integration even before the teacher has a
+  // connection row. OAuth configuration is still validated by the route that
+  // starts the authenticated connection flow.
+  if (provider === "google") return { status: "not_connected" };
   return { status: configured(provider) ? "not_connected" : "not_configured" };
 }
 
