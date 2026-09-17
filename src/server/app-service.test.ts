@@ -349,6 +349,55 @@ describe("refined user journeys preserve the existing domain rules", () => {
       }),
     ).rejects.toThrow();
   });
+  it("repeats recurring unavailability, rejects overrides, and keeps adjacent intervals valid", async () => {
+    const created = await perform(teacherId, {
+      type: "createAvailability",
+      rule: {
+        kind: "recurring",
+        weekday: 6,
+        isAvailable: false,
+        label: "Cyklicznie niedostępny",
+        start: "2026-09-12T08:00:00.000Z",
+        end: "2026-09-12T18:00:00.000Z",
+      },
+    });
+    expect(created.data.availability.at(-1)).toMatchObject({
+      kind: "recurring",
+      weekday: 6,
+      isAvailable: false,
+    });
+
+    for (const startsAt of [
+      "2040-01-07T09:00:00.000Z",
+      "2040-01-14T09:00:00.000Z",
+    ]) {
+      await expect(
+        perform(teacherId, {
+          type: "createLesson",
+          lesson: {
+            ...create("2040-01-07"),
+            occurrences: [{ startsAt, durationMinutes: 60 }],
+            allowOutsideAvailability: true,
+          },
+        }),
+      ).rejects.toThrow();
+    }
+
+    for (const startsAt of [
+      "2040-01-07T08:00:00.000Z",
+      "2040-01-07T19:00:00.000Z",
+    ]) {
+      await expect(
+        perform(teacherId, {
+          type: "createLesson",
+          lesson: {
+            ...create("2040-01-07"),
+            occurrences: [{ startsAt, durationMinutes: 60 }],
+          },
+        }),
+      ).resolves.toBeDefined();
+    }
+  });
   it("warns about probable student duplicates without creating a record", async () => {
     const current = await storage.getAppData(teacherId);
     const before = current.students.length;
@@ -571,6 +620,49 @@ describe("refined user journeys preserve the existing domain rules", () => {
       )?.startsAt,
     ).toBe("2036-05-12T21:00:00.000Z");
   });
+  it("keeps recurring color scopes explicit and preserves historical colors", async () => {
+    const recurring = create("2038-06-01", "recurring");
+    recurring.color = "#7C9CF5";
+    recurring.recurrence = {
+      frequency: "weekly",
+      count: 3,
+      timezone: "Europe/Warsaw",
+    };
+    recurring.occurrences = [
+      { startsAt: "2038-06-01T09:00:00.000Z", durationMinutes: 60 },
+      { startsAt: "2038-06-08T09:00:00.000Z", durationMinutes: 60 },
+      { startsAt: "2038-06-15T09:00:00.000Z", durationMinutes: 60 },
+    ];
+    const created = await perform(teacherId, {
+      type: "createLesson",
+      lesson: recurring,
+    });
+    const [firstId, secondId] = created.result!.ids!;
+    await perform(teacherId, {
+      type: "updateLessonColor",
+      lessonId: firstId,
+      color: "#63B3A6",
+      scope: "single",
+    });
+    await storage.mutateStore((store) => {
+      const first = store.lessons.find((item) => item.id === firstId)!;
+      first.status = "completed";
+    });
+    const recolored = await perform(teacherId, {
+      type: "updateLessonColor",
+      lessonId: secondId,
+      color: "#D98593",
+      scope: "future",
+    });
+    const series = recolored.data.lessons.filter(
+      (item) =>
+        item.seriesId ===
+        recolored.data.lessons.find((item) => item.id === secondId)?.seriesId,
+    );
+    expect(series.find((item) => item.id === firstId)?.color).toBe("#63B3A6");
+    expect(series.filter((item) => item.color === "#D98593")).toHaveLength(2);
+  });
+
   it("blocks writes for read-only subscriptions and leaves reads available", async () => {
     await storage.mutateStore((store) => {
       store.teachers.find((t) => t.id === teacherId)!.subscription.readOnly =

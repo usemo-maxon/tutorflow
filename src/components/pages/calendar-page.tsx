@@ -55,6 +55,10 @@ import {
   type CalendarRangeSelection,
 } from "@/lib/calendar-interactions";
 import { copy } from "@/lib/copy";
+import {
+  getCalendarEventSurface,
+  getReadableForeground,
+} from "@/lib/calendar-colors";
 import type { AppData, Lesson, RecurrenceMutationScope } from "@/lib/domain";
 import {
   formatTime,
@@ -67,6 +71,7 @@ import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
 import { PageLoading } from "../ui/loading";
 import { LessonStatusBadge } from "../ui/status-badge";
+import { CalendarColorPicker } from "../calendar-color-picker";
 
 type CalendarView = "day" | "week" | "month" | "agenda";
 function calendarBounds(lessons: Lesson[], timezone: string, data?: AppData) {
@@ -189,6 +194,7 @@ export function CalendarPage() {
     date: localDateKey(new Date(), session.timezone),
     start: "12:00",
     end: "13:00",
+    color: "#7F8A9A",
   });
   useEffect(() => {
     const action = searchParams.get("action");
@@ -358,6 +364,7 @@ export function CalendarPage() {
           startsAt: localInputToUtc(blockForm.date, blockForm.start, timezone),
           endsAt: localInputToUtc(blockForm.date, blockForm.end, timezone),
           timezone,
+          color: blockForm.color,
         },
       });
       setBlockForm((current) => ({ ...current, open: false }));
@@ -854,6 +861,12 @@ export function CalendarPage() {
                   />
                 </label>
               </div>
+              <CalendarColorPicker
+                value={blockForm.color}
+                onChange={(color) =>
+                  setBlockForm((current) => ({ ...current, color }))
+                }
+              />
               <footer className="dialog-footer">
                 <button
                   type="button"
@@ -1059,7 +1072,9 @@ function CalendarGrid({
             (block) => localDateKey(block.startsAt, timezone) === dayKey,
           );
           const availability = availabilityForDay(data, day, timezone);
-          const allDayUnavailable = availability.some((rule) => rule.allDay);
+          const allDayUnavailable = availability.some(
+            (rule) => rule.allDay && !rule.isAvailable,
+          );
           const today = dayKey === localDateKey(now, timezone);
           const nowMinutes =
             Number(formatInTimeZone(now, timezone, "H")) * 60 +
@@ -1349,6 +1364,7 @@ function CalendarGrid({
                       onDragEnd();
                     }}
                     style={{
+                      ...calendarColorStyle(block.color),
                       top: ((startMinutes - startHour * 60) / 60) * hourHeight,
                       height: Math.max(
                         30,
@@ -1421,6 +1437,7 @@ function CalendarGrid({
                     }}
                     className={`calendar-event calendar-event--${lesson.status}${["failed", "deleted_in_google"].includes(lesson.syncStatus) ? " calendar-event--sync-error" : ""}`}
                     style={{
+                      ...calendarColorStyle(lesson.color),
                       top: Math.max(0, top),
                       height: Math.max(
                         36,
@@ -1531,7 +1548,9 @@ function AgendaView({
           (block) => localDateKey(block.startsAt, timezone) === key,
         );
         const unavailable = availabilityForDay(data, day, timezone);
-        const allDayUnavailable = unavailable.some((rule) => rule.allDay);
+        const allDayUnavailable = unavailable.some(
+          (rule) => rule.allDay && !rule.isAvailable,
+        );
         return (
           <section
             key={key}
@@ -1572,6 +1591,7 @@ function AgendaView({
               <div
                 className="agenda-event-row agenda-event-row--block"
                 key={block.id}
+                style={calendarColorStyle(block.color)}
               >
                 <time>{formatTime(block.startsAt, timezone)}</time>
                 <span>
@@ -1602,6 +1622,7 @@ function AgendaView({
                     className="agenda-event-row"
                     href={`/app/lekcje/${lesson.id}`}
                     key={lesson.id}
+                    style={calendarColorStyle(lesson.color)}
                   >
                     <time>{formatTime(lesson.startsAt, timezone)}</time>
                     <span>
@@ -1647,6 +1668,16 @@ function AgendaView({
       })}
     </div>
   );
+}
+
+function calendarColorStyle(color: string): CSSProperties {
+  return {
+    "--calendar-color": color,
+    "--calendar-surface": getCalendarEventSurface(color),
+    "--calendar-foreground": getReadableForeground(
+      getCalendarEventSurface(color),
+    ),
+  } as CSSProperties;
 }
 
 function MonthView({
@@ -1702,7 +1733,7 @@ function MonthView({
                 </small>
               )}
               {dayLessons.slice(0, 3).map((lesson) => (
-                <span key={lesson.id}>
+                <span key={lesson.id} style={calendarColorStyle(lesson.color)}>
                   {formatTime(lesson.startsAt, timezone)} ·{" "}
                   {
                     data.students.find(

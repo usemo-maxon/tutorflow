@@ -15,6 +15,7 @@ import type { StoreShape, TeacherRecord } from "./store";
 import { createSupabaseServerClient } from "./supabase";
 import { ApiFailure } from "./errors";
 import { findProbableDuplicateIds, studentDisplayName } from "./domain/student";
+import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
 
 interface StudentRow {
   id: string;
@@ -81,6 +82,7 @@ interface GroupMemberRow {
 
 interface LessonRow {
   id: string;
+  color: string;
   group_id: string | null;
   starts_at: string;
   ends_at: string;
@@ -196,12 +198,12 @@ async function loadTenantStore(
   let lessonsQuery = supabase
     .from("lessons")
     .select(
-      "id,group_id,starts_at,ends_at,format,location,meeting_url,price_grosz,currency,creation_mode,recurring_series_id,recurrence_original_starts_at,status,sync_status,sync_message,title,subject,timezone,created_at,updated_at",
+      "id,color,group_id,starts_at,ends_at,format,location,meeting_url,price_grosz,currency,creation_mode,recurring_series_id,recurrence_original_starts_at,status,sync_status,sync_message,title,subject,timezone,created_at,updated_at",
     )
     .eq("workspace_id", workspaceId);
   let calendarBlocksQuery = supabase
     .from("calendar_blocks")
-    .select("id,title,starts_at,ends_at,timezone,created_at,updated_at")
+    .select("id,title,color,starts_at,ends_at,timezone,created_at,updated_at")
     .eq("workspace_id", workspaceId)
     .eq("tutor_id", teacherId);
   if (range) {
@@ -231,6 +233,7 @@ async function loadTenantStore(
     groupMembersResult,
     packagesResult,
     packageBalancesResult,
+    chargeBalancesResult,
   ] = await Promise.all([
     supabase
       .from("students")
@@ -313,6 +316,12 @@ async function loadTenantStore(
       .from("package_balances")
       .select("package_id,student_id,remaining_lessons")
       .eq("workspace_id", workspaceId),
+    supabase
+      .from("charge_balances")
+      .select("student_id,outstanding_grosz,currency")
+      .eq("workspace_id", workspaceId)
+      .gt("outstanding_grosz", 0)
+      .neq("status", "cancelled"),
   ]);
   const domainFailure = [
     studentsResult,
@@ -333,6 +342,7 @@ async function loadTenantStore(
     groupMembersResult,
     packagesResult,
     packageBalancesResult,
+    chargeBalancesResult,
   ].find((result) => result.error);
   if (domainFailure?.error) throw domainFailure.error;
 
@@ -410,6 +420,20 @@ async function loadTenantStore(
         Number(row.remaining_lessons),
     );
   }
+  const balanceDueByStudent = new Map<
+    string,
+    { amount: number; currency: string }
+  >();
+  for (const row of chargeBalancesResult.data ?? []) {
+    const studentId = row.student_id as string;
+    const currency = row.currency as string;
+    const current = balanceDueByStudent.get(studentId);
+    if (current && current.currency !== currency) continue;
+    balanceDueByStudent.set(studentId, {
+      amount: (current?.amount ?? 0) + Number(row.outstanding_grosz),
+      currency,
+    });
+  }
   const students: StoreShape["students"] = studentRows.map((row) => ({
     id: row.id,
     teacherId,
@@ -431,13 +455,19 @@ async function loadTenantStore(
     defaultPrice:
       row.default_lesson_price_grosz === null
         ? null
-        : { amount: Number(row.default_lesson_price_grosz), currency: "PLN" },
+        : {
+            amount: Number(row.default_lesson_price_grosz),
+            currency: row.currency,
+          },
     timezone: row.timezone ?? undefined,
     groupIds: groupIdsByStudent.get(row.id) ?? [],
     packageRemainingLessons: packageRemainingByStudent.has(row.id)
       ? packageRemainingByStudent.get(row.id)!
       : null,
-    balanceDue: { amount: 0, currency: "PLN" },
+    balanceDue: balanceDueByStudent.get(row.id) ?? {
+      amount: 0,
+      currency: row.currency,
+    },
     createdAt: row.created_at,
   }));
   const participantsByLesson = groupBy(
@@ -461,7 +491,6 @@ async function loadTenantStore(
   const noteByLesson = new Map(
     noteRows.map((note) => [note.lesson_id, note.content]),
   );
-  const balanceDueByStudent = new Map<string, number>();
   const lessons: StoreShape["lessons"] = lessonRows.map((row) => {
     const lessonParticipants = participantsByLesson.get(row.id) ?? [];
     const planItems = (planItemsByLesson.get(row.id) ?? [])
@@ -473,20 +502,9 @@ async function loadTenantStore(
       }));
     const priceAmount =
       row.price_grosz === null ? null : Number(row.price_grosz);
-    if (
-      priceAmount !== null &&
-      ["completed", "needs_completion"].includes(row.status)
-    ) {
-      for (const participant of lessonParticipants) {
-        if (participant.payment_status !== "unpaid") continue;
-        balanceDueByStudent.set(
-          participant.student_id,
-          (balanceDueByStudent.get(participant.student_id) ?? 0) + priceAmount,
-        );
-      }
-    }
     return {
       id: row.id,
+      color: row.color ?? DEFAULT_CALENDAR_COLOR,
       teacherId,
       groupId: row.group_id ?? undefined,
       participantIds: lessonParticipants.map(
@@ -503,7 +521,9 @@ async function loadTenantStore(
           ? (row.meeting_url ?? "")
           : (row.location ?? ""),
       price:
-        priceAmount === null ? null : { amount: priceAmount, currency: "PLN" },
+        priceAmount === null
+          ? null
+          : { amount: priceAmount, currency: row.currency },
       mode: row.creation_mode,
       seriesId: row.recurring_series_id ?? undefined,
       recurrenceOriginalStartsAt:
@@ -537,9 +557,6 @@ async function loadTenantStore(
       updatedAt: row.updated_at,
     };
   });
-  for (const student of students) {
-    student.balanceDue.amount = balanceDueByStudent.get(student.id) ?? 0;
-  }
   const contactsById = new Map(contactRows.map((row) => [row.id, row]));
   const contacts: StoreShape["contacts"] = studentContactRows.flatMap(
     (relation) => {
@@ -672,6 +689,7 @@ async function loadTenantStore(
       ),
       calendarBlocks: (calendarBlocksResult.data ?? []).map((row) => ({
         id: row.id,
+        color: row.color ?? "#7F8A9A",
         teacherId,
         title: row.title,
         startsAt: row.starts_at,
@@ -896,6 +914,7 @@ const schedulingActionTypes = [
   "setPayment",
   "cancelLesson",
   "rescheduleLesson",
+  "updateLessonColor",
   "retrySync",
   "disableSync",
   "createAvailability",
@@ -942,41 +961,45 @@ export async function mutateSchedulingDomain(
       }
       const first = action.lesson.occurrences[0];
       const recurrence = action.lesson.recurrence;
-      const { data, error } = await supabase.rpc("create_lesson_schedule", {
-        p_payload: {
-          targetType: target.type,
-          targetId: target.id,
-          requestId: action.lesson.requestId ?? crypto.randomUUID(),
-          mode: action.lesson.mode,
-          timezone: recurrence?.timezone ?? timezone,
-          occurrences: action.lesson.occurrences,
-          format: action.lesson.format,
-          location: action.lesson.location,
-          priceGrosz: action.lesson.priceAmount,
-          title: action.lesson.topic,
-          subject: action.lesson.subject ?? "",
-          plan: action.lesson.plan,
-          allowOutsideAvailability:
-            action.lesson.allowOutsideAvailability ?? false,
-          recurrence:
-            action.lesson.mode === "recurring"
-              ? {
-                  intervalWeeks:
-                    recurrence?.intervalWeeks ??
-                    (recurrence?.frequency === "biweekly" ? 2 : 1),
-                  daysOfWeek: recurrence?.daysOfWeek ?? [
-                    new Date(first.startsAt).getUTCDay() || 7,
-                  ],
-                  startDate:
-                    recurrence?.startDate ?? first.startsAt.slice(0, 10),
-                  endDate: recurrence?.endDate ?? null,
-                  startTime:
-                    recurrence?.startTime ?? first.startsAt.slice(11, 16),
-                  durationMinutes: first.durationMinutes,
-                }
-              : null,
+      const { data, error } = await supabase.rpc(
+        "create_lesson_schedule_with_color",
+        {
+          p_payload: {
+            targetType: target.type,
+            targetId: target.id,
+            requestId: action.lesson.requestId ?? crypto.randomUUID(),
+            mode: action.lesson.mode,
+            timezone: recurrence?.timezone ?? timezone,
+            occurrences: action.lesson.occurrences,
+            format: action.lesson.format,
+            location: action.lesson.location,
+            priceGrosz: action.lesson.priceAmount,
+            title: action.lesson.topic,
+            color: action.lesson.color ?? DEFAULT_CALENDAR_COLOR,
+            subject: action.lesson.subject ?? "",
+            plan: action.lesson.plan,
+            allowOutsideAvailability:
+              action.lesson.allowOutsideAvailability ?? false,
+            recurrence:
+              action.lesson.mode === "recurring"
+                ? {
+                    intervalWeeks:
+                      recurrence?.intervalWeeks ??
+                      (recurrence?.frequency === "biweekly" ? 2 : 1),
+                    daysOfWeek: recurrence?.daysOfWeek ?? [
+                      new Date(first.startsAt).getUTCDay() || 7,
+                    ],
+                    startDate:
+                      recurrence?.startDate ?? first.startsAt.slice(0, 10),
+                    endDate: recurrence?.endDate ?? null,
+                    startTime:
+                      recurrence?.startTime ?? first.startsAt.slice(11, 16),
+                    durationMinutes: first.durationMinutes,
+                  }
+                : null,
+          },
         },
-      });
+      );
       if (error) databaseFailure(error);
       const payload = data as { id?: string; ids?: string[] };
       result = { id: payload.id, ids: payload.ids };
@@ -1059,6 +1082,22 @@ export async function mutateSchedulingDomain(
           expectedUpdatedAt: action.expectedUpdatedAt,
         },
       });
+      if (error) databaseFailure(error);
+      result = data as MutationResponse["result"];
+      break;
+    }
+    case "updateLessonColor": {
+      const { data, error } = await supabase.rpc(
+        "update_lesson_color_relational",
+        {
+          p_payload: {
+            lessonId: action.lessonId,
+            color: action.color,
+            scope: action.scope ?? "single",
+            expectedUpdatedAt: action.expectedUpdatedAt,
+          },
+        },
+      );
       if (error) databaseFailure(error);
       result = data as MutationResponse["result"];
       break;
@@ -1193,13 +1232,14 @@ export async function mutateSchedulingDomain(
     }
     case "createCalendarBlock": {
       const { data, error } = await supabase.rpc(
-        "upsert_calendar_block_relational",
+        "upsert_calendar_block_with_color",
         {
           p_payload: {
             title: action.block.title,
             startsAt: action.block.startsAt,
             endsAt: action.block.endsAt,
             timezone: action.block.timezone,
+            color: action.block.color ?? "#7F8A9A",
           },
         },
       );
@@ -1209,7 +1249,7 @@ export async function mutateSchedulingDomain(
     }
     case "updateCalendarBlock": {
       const { data, error } = await supabase.rpc(
-        "upsert_calendar_block_relational",
+        "upsert_calendar_block_with_color",
         {
           p_payload: {
             blockId: action.blockId,
@@ -1217,6 +1257,7 @@ export async function mutateSchedulingDomain(
             startsAt: action.block.startsAt,
             endsAt: action.block.endsAt,
             timezone: action.block.timezone,
+            color: action.block.color ?? "#7F8A9A",
             expectedUpdatedAt: action.expectedUpdatedAt,
           },
         },

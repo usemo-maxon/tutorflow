@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AppAction } from "./domain";
+import { normalizeCalendarColor } from "./calendar-colors";
 
 const EntityIdSchema = z.uuid();
 const CurrencySchema = z.string().regex(/^[A-Z]{3}$/);
@@ -19,6 +20,17 @@ const TimezoneSchema = z
     }
   }, "Wybierz poprawną strefę czasową.");
 const LocalTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
+export const CalendarColorSchema = z.string().transform((value, context) => {
+  const normalized = normalizeCalendarColor(value);
+  if (!normalized) {
+    context.addIssue({
+      code: "custom",
+      message: "Wybierz poprawny kolor w formacie #RRGGBB.",
+    });
+    return z.NEVER;
+  }
+  return normalized;
+});
 
 export const MoneySchema = z.object({
   amount: MinorUnitsSchema,
@@ -101,6 +113,7 @@ export const LessonCreateSchema = z
     location: z.string().trim().max(500),
     priceAmount: MinorUnitsSchema.nullable(),
     topic: z.string().trim().max(500),
+    color: CalendarColorSchema.optional(),
     subject: z.string().trim().max(120).optional(),
     plan: z.array(z.string().trim().max(2_000)).max(100),
     recurrence: z
@@ -163,6 +176,7 @@ export const CalendarBlockCreateSchema = z
     startsAt: ISODateTimeSchema,
     endsAt: ISODateTimeSchema,
     timezone: TimezoneSchema,
+    color: CalendarColorSchema.optional(),
   })
   .refine((value) => value.startsAt < value.endsAt, {
     path: ["endsAt"],
@@ -323,6 +337,13 @@ const ActionSchema = z.discriminatedUnion("type", [
     scope: z.enum(["single", "future", "series"]).optional(),
     expectedUpdatedAt: ISODateTimeSchema.optional(),
     allowOutsideAvailability: z.boolean().optional(),
+  }),
+  z.object({
+    type: z.literal("updateLessonColor"),
+    lessonId: EntityIdSchema,
+    color: CalendarColorSchema,
+    scope: z.enum(["single", "future", "series"]).optional(),
+    expectedUpdatedAt: ISODateTimeSchema.optional(),
   }),
   z.object({ type: z.literal("retrySync"), lessonId: EntityIdSchema }),
   z.object({ type: z.literal("disableSync"), lessonId: EntityIdSchema }),

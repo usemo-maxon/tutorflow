@@ -7,13 +7,16 @@ import type {
   LessonWorkspaceAction,
   LessonWorkspaceData,
 } from "@/lib/lesson-workspace";
+import type { FinanceAction, FinancialOverview } from "@/lib/finance";
 import {
   ClientApiError,
   fetchAppData,
   fetchDashboardData,
   fetchLessonWorkspace,
+  fetchFinancialOverview,
   mutateApp,
   mutateLessonWorkspace,
+  mutateFinancialOverview,
 } from "@/lib/api-client";
 
 export function useDashboardData(teacherId: string) {
@@ -109,6 +112,42 @@ export function useAppMutation(teacherId: string) {
       void queryClient.invalidateQueries({
         queryKey: ["dashboard", teacherId],
       });
+    },
+  });
+}
+
+export function useFinancialOverview(teacherId: string, studentId?: string) {
+  const router = useRouter();
+  return useQuery({
+    queryKey: ["finance", teacherId, studentId ?? "workspace"],
+    queryFn: ({ signal }) => fetchFinancialOverview({ studentId }, signal),
+    retry(failureCount, error) {
+      if (error instanceof ClientApiError && error.status < 500) return false;
+      return failureCount < 2;
+    },
+    throwOnError(error) {
+      if (error instanceof ClientApiError && error.status === 401) {
+        router.push("/logowanie");
+      }
+      return false;
+    },
+  });
+}
+
+export function useFinanceMutation(teacherId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (action: FinanceAction) => mutateFinancialOverview(action),
+    onSuccess(data, action) {
+      queryClient.setQueryData<FinancialOverview>(
+        ["finance", teacherId, action.studentId],
+        data,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["finance", teacherId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["dashboard", teacherId],
+      });
+      void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
     },
   });
 }

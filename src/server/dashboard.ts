@@ -46,6 +46,11 @@ export interface DashboardSource {
     studentId: string;
     remainingLessons: number;
   }>;
+  overdueCharges?: Array<{
+    studentId: string;
+    outstanding: number;
+    currency: string;
+  }>;
   partialErrors?: DashboardData["partialErrors"];
 }
 
@@ -138,6 +143,26 @@ export function buildDashboardData(source: DashboardSource): DashboardData {
       actionLabel:
         unfinished.length === 1 ? "Otwórz lekcję" : "Otwórz najstarszą",
       count: unfinished.length,
+    });
+  }
+
+  const overdue = source.overdueCharges ?? [];
+  if (overdue.length) {
+    const currency = overdue[0].currency;
+    const sameCurrency = overdue.filter((item) => item.currency === currency);
+    const total = sameCurrency.reduce((sum, item) => sum + item.outstanding, 0);
+    attentionItems.push({
+      id: "overdue-payments",
+      type: "overdue_payment",
+      priority: 2,
+      title:
+        overdue.length === 1
+          ? `${students.get(overdue[0].studentId)?.name ?? "Uczeń"} — płatność po terminie`
+          : `${overdue.length} płatności po terminie`,
+      detail: `${new Intl.NumberFormat("pl-PL", { style: "currency", currency }).format(total / 100)} wymaga rozliczenia.`,
+      href: "/app/platnosci?filter=overdue",
+      actionLabel: "Zobacz należności",
+      count: overdue.length,
     });
   }
 
@@ -306,6 +331,7 @@ export function dashboardSourceFromAppData(
         studentId: student.id,
         remainingLessons: student.packageRemainingLessons!,
       })),
+    overdueCharges: [],
   };
 }
 

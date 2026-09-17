@@ -1,4 +1,5 @@
 import type { DashboardData } from "./dashboard";
+import type { FinanceAction, FinancialOverview } from "./finance";
 import type {
   LessonWorkspaceAction,
   LessonWorkspaceData,
@@ -77,6 +78,31 @@ export async function mutateLessonWorkspace(
     },
   );
   return parseResponse<LessonWorkspaceData>(response);
+}
+
+export async function fetchFinancialOverview(
+  options: { studentId?: string; cursor?: number } = {},
+  signal?: AbortSignal,
+): Promise<FinancialOverview> {
+  const search = new URLSearchParams();
+  if (options.studentId) search.set("studentId", options.studentId);
+  if (options.cursor) search.set("cursor", String(options.cursor));
+  const response = await fetch(`/api/finance?${search}`, {
+    signal,
+    cache: "no-store",
+  });
+  return parseResponse<FinancialOverview>(response);
+}
+
+export async function mutateFinancialOverview(
+  action: FinanceAction,
+): Promise<FinancialOverview> {
+  const response = await fetch("/api/finance", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(action),
+  });
+  return parseResponse<FinancialOverview>(response);
 }
 
 export async function authRequest(

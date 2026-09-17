@@ -15,6 +15,7 @@ import { PageLoading } from "../ui/loading";
 const schema = z
   .object({
     kind: z.enum(["single", "recurring"]),
+    recurringType: z.enum(["available", "unavailable"]),
     date: z.string().min(1, "Wybierz datę."),
     weekday: z.number().min(1).max(7),
     startTime: z.string().min(1, "Wybierz godzinę rozpoczęcia."),
@@ -51,6 +52,7 @@ export function AvailabilitySettings() {
     resolver: zodResolver(schema),
     defaultValues: {
       kind: "recurring",
+      recurringType: "available",
       date: localDateKey(new Date(), session.timezone),
       weekday: 1,
       startTime: "17:00",
@@ -92,7 +94,8 @@ export function AvailabilitySettings() {
             data.teacher.timezone,
           ),
           weekday: values.kind === "recurring" ? values.weekday : undefined,
-          isAvailable: values.kind === "recurring",
+          isAvailable:
+            values.kind === "recurring" && values.recurringType === "available",
         },
       });
       showToast({ message: "Dostępność zapisana" });
@@ -204,7 +207,7 @@ export function AvailabilitySettings() {
             </label>
             <label>
               <input type="radio" value="recurring" {...register("kind")} />
-              <span>Co tydzień dostępny</span>
+              <span>Co tydzień</span>
             </label>
           </div>
           {kind === "single" ? (
@@ -226,11 +229,31 @@ export function AvailabilitySettings() {
               </select>
             </label>
           )}
+          {kind === "recurring" && (
+            <div className="segmented-control">
+              <label>
+                <input
+                  type="radio"
+                  value="available"
+                  {...register("recurringType")}
+                />
+                <span>Dostępny</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  value="unavailable"
+                  {...register("recurringType")}
+                />
+                <span>Niedostępny</span>
+              </label>
+            </div>
+          )}
           <label className="check-row all-day-choice">
             <input type="checkbox" {...register("allDay")} />
             <span>
               Cały dzień
-              <small>Dla jednorazowej niedostępności</small>
+              <small>Dla niedostępności bez godzin</small>
             </span>
           </label>
           <div className="form-row">

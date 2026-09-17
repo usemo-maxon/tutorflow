@@ -2,6 +2,7 @@ import "server-only";
 
 import { decryptSecret, encryptSecret } from "./crypto";
 import { createSupabaseAdminClient } from "./supabase";
+import { nearestGoogleEventColorId } from "./google-calendar-colors";
 
 export interface GoogleCredentials {
   accessToken: string;
@@ -70,6 +71,7 @@ export async function validGoogleAccessToken(
 
 interface CalendarLesson {
   id: string;
+  color: string;
   startsAt: string;
   durationMinutes: number;
   location: string;
@@ -90,6 +92,7 @@ export function googleEvent(lesson: CalendarLesson, studentNames: string[]) {
     start: { dateTime: lesson.startsAt },
     end: { dateTime: end },
     location: lesson.location || undefined,
+    colorId: nearestGoogleEventColorId(lesson.color),
     status: lesson.status === "cancelled" ? "cancelled" : "confirmed",
     extendedProperties: { private: { tutorflowLessonId: lesson.id } },
   };

@@ -14,6 +14,7 @@ import {
 
 const lesson = {
   id: "lesson-1",
+  color: "#6F8FEF",
   startsAt: "2035-01-10T16:00:00.000Z",
   durationMinutes: 60,
   updatedAt: "2035-01-01T10:00:00.000Z",
@@ -21,6 +22,7 @@ const lesson = {
 const block = {
   id: "block-1",
   title: "Prywatne",
+  color: "#7F8A9A",
   startsAt: "2035-01-10T18:00:00.000Z",
   endsAt: "2035-01-10T19:30:00.000Z",
   timezone: "Europe/Warsaw",

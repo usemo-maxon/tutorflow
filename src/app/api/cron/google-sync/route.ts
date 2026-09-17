@@ -73,7 +73,7 @@ async function processJob(job: {
       supabase
         .from("lessons")
         .select(
-          "id,title,starts_at,ends_at,format,location,meeting_url,status,sync_status",
+          "id,title,color,starts_at,ends_at,format,location,meeting_url,status,sync_status",
         )
         .eq("workspace_id", job.workspace_id)
         .eq("id", job.lesson_id)
@@ -103,6 +103,7 @@ async function processJob(job: {
       .filter((name): name is string => Boolean(name));
     const lesson = {
       id: lessonRow.id,
+      color: lessonRow.color,
       startsAt: lessonRow.starts_at,
       durationMinutes: Math.round(
         (new Date(lessonRow.ends_at).getTime() -

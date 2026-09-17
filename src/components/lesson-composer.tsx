@@ -29,6 +29,8 @@ import {
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
 import { useSessionTeacher } from "./app-shell";
 import { useAppUi, type LessonComposerPreset } from "./app-ui-context";
+import { CalendarColorPicker } from "./calendar-color-picker";
+import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
 
 const occurrenceSchema = z.object({
   id: z.string(),
@@ -51,6 +53,7 @@ const schema = z
     priceZloty: z.number().min(0),
     trial: z.boolean(),
     subject: z.string(),
+    color: z.string(),
     topic: z.string(),
     plan: z.string(),
   })
@@ -135,6 +138,7 @@ export function LessonComposer() {
   const endDate = useWatch({ control, name: "endDate" });
   const count = useWatch({ control, name: "count" });
   const firstOccurrence = useWatch({ control, name: "occurrences.0" });
+  const color = useWatch({ control, name: "color" });
   const activeStudents =
     data?.students.filter((student) => student.status === "active") ?? [];
   const activeGroups =
@@ -315,6 +319,7 @@ export function LessonComposer() {
             : Math.round(values.priceZloty * 100),
           topic: values.topic,
           subject: values.subject,
+          color: values.color,
           allowOutsideAvailability,
           requestId,
           plan: values.plan
@@ -938,6 +943,12 @@ export function LessonComposer() {
                 </span>
                 <input placeholder="np. angielski" {...register("subject")} />
               </label>
+              <CalendarColorPicker
+                value={color}
+                onChange={(nextColor) =>
+                  setValue("color", nextColor, { shouldDirty: true })
+                }
+              />
               <details className="optional-plan">
                 <summary>
                   Temat i wstępny plan <small>opcjonalnie</small>
@@ -1068,6 +1079,7 @@ function getDefaults(
     priceZloty: (selected?.defaultPrice?.amount ?? 0) / 100,
     trial: selected?.defaultPrice === null,
     subject: "",
+    color: DEFAULT_CALENDAR_COLOR,
     topic: "",
     plan: "",
   };

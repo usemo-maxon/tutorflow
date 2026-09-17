@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CalendarColorSchema,
   LessonCreateSchema,
   MoneySchema,
   PackageCreateSchema,
@@ -30,6 +31,13 @@ describe("centralized domain validation", () => {
       defaultPrice: { amount: 8000, currency: "PLN" },
     });
     expect(result.success).toBe(false);
+  });
+
+  it("normalizes valid calendar colors and rejects CSS expressions", () => {
+    expect(CalendarColorSchema.parse("#7c9cf5")).toBe("#7C9CF5");
+    expect(CalendarColorSchema.safeParse("hsl(210 80% 60%)").success).toBe(
+      false,
+    );
   });
 
   it("rejects lessons without participants and unbounded recurring input", () => {

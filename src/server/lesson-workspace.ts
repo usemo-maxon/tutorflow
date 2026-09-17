@@ -11,6 +11,7 @@ import { isSupabaseConfigured } from "./env";
 import { ApiFailure } from "./errors";
 import * as local from "./store";
 import { createSupabaseServerClient } from "./supabase";
+import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
 
 const localAdapterEnabled = () =>
   process.env.NODE_ENV !== "production" &&
@@ -94,7 +95,7 @@ async function getRelationalWorkspace(
   const { data: lesson, error: lessonError } = await supabase
     .from("lessons")
     .select(
-      "id,student_id,group_id,title,subject,starts_at,ends_at,timezone,status,format,location,meeting_url,sync_status,created_at,updated_at,billing_type",
+      "id,color,student_id,group_id,title,subject,starts_at,ends_at,timezone,status,format,location,meeting_url,sync_status,created_at,updated_at,billing_type,price_grosz,currency,recurring_series_id",
     )
     .eq("workspace_id", workspaceId)
     .eq("id", lessonId)
@@ -195,39 +196,57 @@ async function getRelationalWorkspace(
 
   const participantRows = participantsResult.data ?? [];
   const studentIds = participantRows.map((row) => row.student_id as string);
-  const [studentsResult, attendanceResult, consumedPackageResult] =
-    await Promise.all([
-      studentIds.length
-        ? supabase
-            .from("students")
-            .select("id,display_name,subject,level,status")
-            .eq("workspace_id", workspaceId)
-            .in("id", studentIds)
-        : Promise.resolve({ data: [], error: null }),
-      supabase
-        .from("attendances")
-        .select("student_id,status")
-        .eq("workspace_id", workspaceId)
-        .eq("lesson_id", lessonId),
-      lesson.student_id && lesson.billing_type === "package"
-        ? supabase
-            .from("package_usages")
-            .select("id,package_id")
-            .eq("workspace_id", workspaceId)
-            .eq("lesson_id", lessonId)
-            .eq("kind", "consumption")
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
-    ]);
+  const [
+    studentsResult,
+    attendanceResult,
+    consumedPackageResult,
+    chargeResult,
+  ] = await Promise.all([
+    studentIds.length
+      ? supabase
+          .from("students")
+          .select("id,display_name,subject,level,status")
+          .eq("workspace_id", workspaceId)
+          .in("id", studentIds)
+      : Promise.resolve({ data: [], error: null }),
+    supabase
+      .from("attendances")
+      .select("student_id,status")
+      .eq("workspace_id", workspaceId)
+      .eq("lesson_id", lessonId),
+    lesson.student_id && lesson.billing_type === "package"
+      ? supabase
+          .from("package_usages")
+          .select("id,package_id")
+          .eq("workspace_id", workspaceId)
+          .eq("lesson_id", lessonId)
+          .eq("kind", "consumption")
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    lesson.student_id &&
+    ["per_lesson", "per_student"].includes(lesson.billing_type)
+      ? supabase
+          .from("charge_balances")
+          .select(
+            "status,outstanding_grosz,due_at,is_overdue,currency,amount_grosz",
+          )
+          .eq("workspace_id", workspaceId)
+          .eq("lesson_id", lessonId)
+          .eq("student_id", lesson.student_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
   if (
     studentsResult.error ||
     attendanceResult.error ||
-    consumedPackageResult.error
+    consumedPackageResult.error ||
+    chargeResult.error
   ) {
     databaseFailure(
       studentsResult.error ??
         attendanceResult.error ??
-        consumedPackageResult.error,
+        consumedPackageResult.error ??
+        chargeResult.error,
     );
   }
   const packageResult =
@@ -306,6 +325,8 @@ async function getRelationalWorkspace(
     },
     lesson: {
       id: lesson.id,
+      color: lesson.color ?? DEFAULT_CALENDAR_COLOR,
+      seriesId: lesson.recurring_series_id ?? undefined,
       studentId: lesson.student_id ?? undefined,
       groupId: lesson.group_id ?? undefined,
       participantLabel:
@@ -359,6 +380,27 @@ async function getRelationalWorkspace(
             consumedByLesson: Boolean(usageResult.data),
           }
         : undefined,
+    financialContext: {
+      mode: lesson.billing_type,
+      amount:
+        lesson.price_grosz === null ? undefined : Number(lesson.price_grosz),
+      currency: lesson.currency,
+      status:
+        lesson.billing_type === "package"
+          ? "package"
+          : chargeResult.data
+            ? Number(chargeResult.data.outstanding_grosz) === 0
+              ? "paid"
+              : chargeResult.data.status === "partial"
+                ? "partial"
+                : "unpaid"
+            : "not_created",
+      outstanding: chargeResult.data
+        ? Number(chargeResult.data.outstanding_grosz)
+        : undefined,
+      dueAt: chargeResult.data?.due_at ?? undefined,
+      overdue: Boolean(chargeResult.data?.is_overdue),
+    },
     previousLesson: previousResult.data
       ? {
           id: previousResult.data.id,
@@ -413,6 +455,22 @@ async function mutateRelationalWorkspace(
   if (!lesson) notFound();
   const now = new Date().toISOString();
   const editable = !["cancelled", "no_show"].includes(lesson.status);
+
+  if (action.type === "updateColor") {
+    const { error: colorError } = await supabase.rpc(
+      "update_lesson_color_relational",
+      {
+        p_payload: {
+          lessonId,
+          color: action.color,
+          scope: action.scope,
+          expectedUpdatedAt: action.expectedUpdatedAt,
+        },
+      },
+    );
+    if (colorError) databaseFailure(colorError);
+    return;
+  }
 
   if (action.type === "updatePlan") {
     if (!editable) lifecycleConflict();
@@ -785,6 +843,8 @@ function workspaceFromLocalStore(
     },
     lesson: {
       id: lesson.id,
+      color: lesson.color ?? DEFAULT_CALENDAR_COLOR,
+      seriesId: lesson.seriesId,
       studentId:
         !lesson.groupId && lesson.participantIds.length === 1
           ? lesson.participantIds[0]
@@ -887,6 +947,32 @@ function mutateLocalWorkspace(
     lesson.topic = action.topic;
     lesson.planObjectives = action.objectives;
     lesson.planItems = action.items;
+  } else if (action.type === "updateColor") {
+    const targets =
+      action.scope !== "single" && lesson.seriesId
+        ? store.lessons.filter(
+            (candidate) =>
+              candidate.teacherId === teacherId &&
+              candidate.seriesId === lesson.seriesId &&
+              candidate.status !== "completed" &&
+              candidate.status !== "cancelled" &&
+              (action.scope === "series"
+                ? Date.parse(candidate.startsAt) >= Date.now()
+                : (candidate.recurrenceOriginalStartsAt ??
+                    candidate.startsAt) >=
+                  (lesson.recurrenceOriginalStartsAt ?? lesson.startsAt)),
+          )
+        : [lesson];
+    targets.forEach((target) => {
+      target.color = action.color;
+      target.syncStatus =
+        target.syncStatus === "disabled"
+          ? "disabled"
+          : teacher.google.status === "connected"
+            ? "pending"
+            : "disabled";
+      target.updatedAt = now;
+    });
   } else if (action.type === "saveNote") {
     if (action.noteType === "private") lesson.generalNotes = action.content;
     else lesson.studentSummary = action.content;

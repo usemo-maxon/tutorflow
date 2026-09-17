@@ -1,7 +1,7 @@
 import type { LessonStatus } from "./domain";
 
 export type DashboardAttentionType =
-  "sync_failure" | "unfinished_lessons" | "low_package";
+  "sync_failure" | "unfinished_lessons" | "overdue_payment" | "low_package";
 
 export interface DashboardLesson {
   id: string;

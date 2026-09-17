@@ -15,7 +15,15 @@ import {
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { useAppData, useAppMutation } from "@/hooks/use-app-data";
+import {
+  CreatePackageDialog,
+  RecordPaymentDialog,
+} from "@/components/finance-dialogs";
+import {
+  useAppData,
+  useAppMutation,
+  useFinancialOverview,
+} from "@/hooks/use-app-data";
 import type { StudentContact } from "@/lib/domain";
 import { copy } from "@/lib/copy";
 import { formatDateTime, formatMoney } from "@/lib/format";
@@ -27,7 +35,7 @@ import { StudentGroupDialog } from "../student-group-dialog";
 import { ConfirmDialog } from "../ui/confirm-dialog";
 import { EmptyState } from "../ui/empty-state";
 import { PageLoading } from "../ui/loading";
-import { LessonStatusBadge, PaymentBadge } from "../ui/status-badge";
+import { LessonStatusBadge } from "../ui/status-badge";
 
 const tabs = [
   ["overview", "Przegląd"],
@@ -41,6 +49,7 @@ export function StudentDetailPage() {
   const { studentId } = useParams<{ studentId: string }>();
   const session = useSessionTeacher();
   const { data, isPending } = useAppData(session.id);
+  const financeQuery = useFinancialOverview(session.id, studentId);
   const mutation = useAppMutation(session.id);
   const { openStudentComposer, showToast, showError } = useAppUi();
   const searchParams = useSearchParams();
@@ -211,8 +220,9 @@ export function StudentDetailPage() {
         <div>
           <span>Rozliczenie</span>
           <strong>
-            {student.balanceDue.amount > 0
-              ? `${formatMoney(student.balanceDue)} do zapłaty`
+            {(financeQuery.data?.summary.outstanding ??
+              student.balanceDue.amount) > 0
+              ? `${formatMoney({ amount: financeQuery.data?.summary.outstanding ?? student.balanceDue.amount, currency: financeQuery.data?.summary.currency ?? student.balanceDue.currency })} do zapłaty`
               : "Rozliczone"}
           </strong>
         </div>
@@ -492,41 +502,176 @@ export function StudentDetailPage() {
       {activeTab === "payments" && (
         <section className="tab-panel">
           <div className="section-heading">
-            <h2>Rozliczenia ucznia</h2>
-            <Link
-              prefetch={false}
-              className="button button--secondary"
-              href="/api/export/platnosci"
-            >
-              {copy.actions.exportCsv}
-            </Link>
-          </div>
-          <div className="payment-rows">
-            {related.length ? (
-              [...related].reverse().map((lesson) => {
-                const payment =
-                  lesson.participants.find(
-                    (entry) => entry.studentId === student.id,
-                  )?.paymentStatus ?? "unpaid";
-                return (
-                  <Link href={`/app/lekcje/${lesson.id}`} key={lesson.id}>
-                    <span>
-                      <strong>{lesson.topic || "Lekcja bez tematu"}</strong>
-                      <small>
-                        {formatDateTime(lesson.startsAt, data.teacher.timezone)}
-                      </small>
-                    </span>
-                    <span className="money-value">
-                      {formatMoney(lesson.price)}
-                    </span>
-                    <PaymentBadge status={payment} />
-                  </Link>
-                );
-              })
-            ) : (
-              <EmptyState title={copy.empty.payments} />
+            <div>
+              <p className="eyebrow">Płatności i pakiety</p>
+              <h2>Rozliczenia ucznia</h2>
+            </div>
+            {financeQuery.data && (
+              <div className="finance-header-actions">
+                <CreatePackageDialog
+                  overview={financeQuery.data}
+                  defaultStudentId={student.id}
+                />
+                <RecordPaymentDialog
+                  overview={financeQuery.data}
+                  defaultStudentId={student.id}
+                />
+              </div>
             )}
           </div>
+          {financeQuery.isPending ? (
+            <PageLoading />
+          ) : financeQuery.data ? (
+            <div className="student-finance">
+              <section
+                className="student-balance-card"
+                aria-label="Saldo ucznia"
+              >
+                <span>Do zapłaty</span>
+                <strong>
+                  {formatMoney({
+                    amount: financeQuery.data.summary.outstanding,
+                    currency: financeQuery.data.summary.currency,
+                  })}
+                </strong>
+                <small>
+                  {financeQuery.data.summary.overdue > 0
+                    ? `${formatMoney({ amount: financeQuery.data.summary.overdue, currency: financeQuery.data.summary.currency })} po terminie`
+                    : "Brak zaległości po terminie"}
+                </small>
+              </section>
+              <div className="student-finance-grid">
+                <section>
+                  <h3>Otwarte pozycje</h3>
+                  {financeQuery.data.openCharges.length ? (
+                    <div className="finance-list" role="list">
+                      {financeQuery.data.openCharges.map((charge) => (
+                        <article
+                          className="finance-list-row finance-list-row--compact"
+                          role="listitem"
+                          key={charge.id}
+                        >
+                          <div className="finance-list-main">
+                            <strong>{charge.description}</strong>
+                            <span>
+                              {charge.overdue
+                                ? "Po terminie"
+                                : charge.dueAt
+                                  ? `Termin ${formatDateTime(charge.dueAt, financeQuery.data!.workspace.timezone)}`
+                                  : "Bez terminu"}
+                            </span>
+                          </div>
+                          <div className="finance-list-amount">
+                            <strong>
+                              {formatMoney({
+                                amount: charge.outstanding,
+                                currency: charge.currency,
+                              })}
+                            </strong>
+                            {charge.allocated > 0 && (
+                              <small>częściowo opłacone</small>
+                            )}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="Brak otwartych należności" />
+                  )}
+                </section>
+                <section>
+                  <h3>Pakiety</h3>
+                  {financeQuery.data.packages.length ? (
+                    <div className="student-package-list">
+                      {financeQuery.data.packages.map((item) => (
+                        <article className="package-card" key={item.id}>
+                          <div className="package-card-head">
+                            <div>
+                              <strong>{item.name}</strong>
+                              <span>
+                                {item.remainingLessons} z {item.totalLessons}{" "}
+                                zajęć pozostało
+                              </span>
+                            </div>
+                          </div>
+                          <div className="package-progress">
+                            <span
+                              style={{
+                                width: `${Math.min(100, (item.usedLessons / item.totalLessons) * 100)}%`,
+                              }}
+                            />
+                          </div>
+                          <p>
+                            {formatMoney({
+                              amount: item.price,
+                              currency: item.currency,
+                            })}
+                            {item.expiresAt
+                              ? ` · ważny do ${new Intl.DateTimeFormat("pl-PL", { dateStyle: "medium", timeZone: financeQuery.data!.workspace.timezone }).format(new Date(item.expiresAt))}`
+                              : ""}
+                          </p>
+                          {item.paymentOutstanding > 0 && (
+                            <small className="package-payment-due">
+                              Płatność do uregulowania
+                            </small>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <EmptyState title="Brak pakietów" />
+                  )}
+                </section>
+              </div>
+              <section>
+                <h3>Ostatnie płatności</h3>
+                {financeQuery.data.recentPayments.length ? (
+                  <div className="finance-list" role="list">
+                    {financeQuery.data.recentPayments.map((payment) => (
+                      <article
+                        className="finance-list-row finance-list-row--compact"
+                        role="listitem"
+                        key={payment.id}
+                      >
+                        <div className="finance-list-main">
+                          <strong>{payment.note || "Płatność"}</strong>
+                          <span>
+                            {payment.paidAt
+                              ? formatDateTime(
+                                  payment.paidAt,
+                                  financeQuery.data!.workspace.timezone,
+                                )
+                              : ""}
+                          </span>
+                        </div>
+                        <div className="finance-list-amount">
+                          <strong>
+                            {formatMoney({
+                              amount: payment.amount,
+                              currency: payment.currency,
+                            })}
+                          </strong>
+                          {payment.unallocated > 0 && (
+                            <small>
+                              {formatMoney({
+                                amount: payment.unallocated,
+                                currency: payment.currency,
+                              })}{" "}
+                              nieprzypisane
+                            </small>
+                          )}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState title="Brak płatności" />
+                )}
+              </section>
+            </div>
+          ) : (
+            <EmptyState title="Nie udało się wczytać rozliczeń." />
+          )}
         </section>
       )}
       {activeTab === "materials" && (

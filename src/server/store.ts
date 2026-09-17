@@ -32,6 +32,7 @@ import type {
   StudentStatImport,
   Teacher,
 } from "@/lib/domain";
+import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
 
 export interface TeacherRecord extends Teacher {
   passwordHash: string;
@@ -317,6 +318,7 @@ export function appDataFromStore(
     .filter((lesson) => lesson.teacherId === teacherId)
     .map((record) => ({
       ...withoutTenant(record),
+      color: record.color ?? DEFAULT_CALENDAR_COLOR,
       subject: record.subject ?? "",
       timezone: record.timezone ?? teacher.timezone,
       updatedAt: record.updatedAt ?? record.createdAt,
@@ -410,7 +412,10 @@ export function appDataFromStore(
       .map(withoutTenant),
     calendarBlocks: (store.calendarBlocks ?? [])
       .filter((item) => item.teacherId === teacherId)
-      .map(withoutTenant)
+      .map((item) => ({
+        ...withoutTenant(item),
+        color: item.color ?? "#7F8A9A",
+      }))
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
     integrations: {
       google: teacher.google,
@@ -624,6 +629,7 @@ function seedDemo(store: StoreShape, teacherId: string, now: Date): void {
     startsAt.setSeconds(0, 0);
     return {
       id: randomUUID(),
+      color: DEFAULT_CALENDAR_COLOR,
       teacherId,
       participantIds: input.studentIds,
       startsAt: startsAt.toISOString(),

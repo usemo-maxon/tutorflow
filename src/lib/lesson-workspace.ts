@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AttendanceStatus, LessonStatus, SyncStatus } from "./domain";
+import { CalendarColorSchema } from "./validation";
 
 export interface LessonWorkspaceParticipant {
   id: string;
@@ -43,6 +44,8 @@ export interface LessonWorkspaceData {
   };
   lesson: {
     id: string;
+    color: string;
+    seriesId?: string;
     studentId?: string;
     groupId?: string;
     participantLabel: string;
@@ -75,6 +78,15 @@ export interface LessonWorkspaceData {
     name: string;
     remainingLessons: number;
     consumedByLesson: boolean;
+  };
+  financialContext?: {
+    mode: "per_lesson" | "per_student" | "package" | "trial";
+    amount?: number;
+    currency: string;
+    status: "not_created" | "unpaid" | "partial" | "paid" | "package";
+    outstanding?: number;
+    dueAt?: string;
+    overdue?: boolean;
   };
   previousLesson?: LessonWorkspaceAdjacentLesson;
   nextLesson?: LessonWorkspaceAdjacentLesson;
@@ -130,6 +142,12 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
     status: attendanceStatus,
   }),
   z.object({ type: z.literal("markAllPresent") }),
+  z.object({
+    type: z.literal("updateColor"),
+    color: CalendarColorSchema,
+    scope: z.enum(["single", "future", "series"]),
+    expectedUpdatedAt: z.string().datetime(),
+  }),
   z.object({ type: z.literal("completeLesson") }),
   z.object({ type: z.literal("markNoShow") }),
   z.object({

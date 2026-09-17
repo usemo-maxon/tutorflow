@@ -27,6 +27,7 @@ export type CalendarDragEntry =
       kind: "block";
       id: string;
       title: string;
+      color: string;
       startsAt: string;
       endsAt: string;
       timezone: string;
@@ -59,6 +60,7 @@ export function blockDragEntry(block: CalendarBlock): CalendarDragEntry {
     kind: "block",
     id: block.id,
     title: block.title,
+    color: block.color,
     startsAt: block.startsAt,
     endsAt: block.endsAt,
     timezone: block.timezone,
@@ -170,6 +172,7 @@ export function buildCalendarMoveAction(
     blockId: entry.id,
     block: {
       title: entry.title,
+      color: entry.color,
       startsAt,
       endsAt,
       timezone,

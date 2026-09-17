@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import {
   useLessonWorkspace,
   useLessonWorkspaceMutation,
@@ -35,11 +35,17 @@ import type {
   LessonWorkspaceAction,
   LessonWorkspaceData,
 } from "@/lib/lesson-workspace";
-import { localInputToUtc } from "@/lib/format";
+import { formatMoney, localInputToUtc } from "@/lib/format";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
 import { PageLoading } from "../ui/loading";
 import { LessonStatusBadge } from "../ui/status-badge";
+import { CalendarColorPicker } from "../calendar-color-picker";
+import {
+  getCalendarEventSurface,
+  getCalendarTint,
+} from "@/lib/calendar-colors";
+import type { RecurrenceMutationScope } from "@/lib/domain";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -106,6 +112,9 @@ function LessonWorkspaceView({
   const [materialTitle, setMaterialTitle] = useState("");
   const [materialUrl, setMaterialUrl] = useState("");
   const [selectedMaterial, setSelectedMaterial] = useState("");
+  const [color, setColor] = useState(data.lesson.color);
+  const [colorScope, setColorScope] =
+    useState<RecurrenceMutationScope>("single");
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   const [error, setError] = useState("");
   const dirty =
@@ -116,7 +125,8 @@ function LessonWorkspaceView({
     summary !== data.lesson.summary ||
     homeworkTitle !== (data.homework?.title ?? "") ||
     homeworkDescription !== (data.homework?.description ?? "") ||
-    homeworkDue !== (data.homework?.dueAt?.slice(0, 10) ?? "");
+    homeworkDue !== (data.homework?.dueAt?.slice(0, 10) ?? "") ||
+    color !== data.lesson.color;
   useUnsavedChanges(dirty);
 
   const lesson = data.lesson;
@@ -246,8 +256,33 @@ function LessonWorkspaceView({
     }
   }
 
+  async function saveColor() {
+    const result = await run(
+      "color",
+      {
+        type: "updateColor",
+        color,
+        scope: lesson.seriesId ? colorScope : "single",
+        expectedUpdatedAt: lesson.updatedAt,
+      },
+      lesson.seriesId && colorScope !== "single"
+        ? "Kolor przyszłych zajęć został zapisany"
+        : "Kolor zajęć został zapisany",
+    );
+    if (result) setColor(result.lesson.color);
+  }
+
   return (
-    <main className="lesson-page lesson-workspace-page page-enter">
+    <main
+      className="lesson-page lesson-workspace-page page-enter"
+      style={
+        {
+          "--lesson-color": lesson.color,
+          "--lesson-tint": getCalendarTint(lesson.color),
+          "--lesson-event-surface": getCalendarEventSurface(lesson.color),
+        } as CSSProperties
+      }
+    >
       <nav className="lesson-breadcrumbs" aria-label="Nawigacja zajęć">
         <Link href="/app/dzisiaj">
           <ArrowLeft size={16} aria-hidden="true" /> Dzisiaj
@@ -306,6 +341,55 @@ function LessonWorkspaceView({
       </header>
 
       <LessonStateBanner data={data} />
+      {!data.teacher.readOnly && (
+        <section className="lesson-color-panel" aria-label="Kolor zajęć">
+          <div className="lesson-color-panel__intro">
+            <span className="eyebrow">Kalendarz</span>
+            <strong>Kolor zajęć</strong>
+            <small>Ten sam akcent łączy kalendarz, lekcję i plan zajęć.</small>
+          </div>
+          <CalendarColorPicker value={color} onChange={setColor} />
+          {lesson.seriesId && (
+            <fieldset className="lesson-color-scope">
+              <legend>Zakres zmiany</legend>
+              {(
+                [
+                  ["single", "Tylko te zajęcia"],
+                  ["future", "Te i kolejne zajęcia"],
+                  ["series", "Wszystkie przyszłe w serii"],
+                ] as const
+              ).map(([scope, label]) => (
+                <label key={scope}>
+                  <input
+                    type="radio"
+                    name="lesson-color-scope"
+                    value={scope}
+                    checked={colorScope === scope}
+                    onChange={() => setColorScope(scope)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <button
+            type="button"
+            className="button button--secondary"
+            disabled={
+              mutation.isPending ||
+              saveStates.color === "saving" ||
+              (color === data.lesson.color &&
+                (!lesson.seriesId || colorScope === "single"))
+            }
+            onClick={() => void saveColor()}
+          >
+            {saveStates.color === "saving" && (
+              <LoaderCircle className="spin" size={16} />
+            )}
+            Zapisz kolor
+          </button>
+        </section>
+      )}
       {error && (
         <div className="lesson-inline-error" role="alert">
           <AlertTriangle size={18} aria-hidden="true" /> {error}
@@ -966,6 +1050,32 @@ function ContextRail({
           </Link>
         )}
       </div>
+      {data.financialContext && data.financialContext.mode !== "package" && (
+        <div className="lesson-context-block lesson-financial-context">
+          <span className="eyebrow">Rozliczenie</span>
+          <strong>
+            {data.financialContext.amount === undefined
+              ? "Lekcja próbna"
+              : formatMoney({
+                  amount: data.financialContext.amount,
+                  currency: data.financialContext.currency,
+                })}
+          </strong>
+          <p>
+            {data.financialContext.status === "paid"
+              ? "Opłacone"
+              : data.financialContext.status === "partial"
+                ? `${formatMoney({ amount: data.financialContext.outstanding ?? 0, currency: data.financialContext.currency })} pozostało`
+                : data.financialContext.overdue
+                  ? "Płatność po terminie"
+                  : data.financialContext.status === "unpaid"
+                    ? "Do zapłaty"
+                    : lesson.status === "completed"
+                      ? "Należność jest przygotowywana"
+                      : "Należność powstanie po zakończeniu"}
+          </p>
+        </div>
+      )}
       {data.packageContext && (
         <div className="lesson-context-block lesson-package-context">
           <span className="eyebrow">Pakiet</span>

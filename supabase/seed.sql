@@ -216,7 +216,8 @@ insert into public.payments (
   payment_method, provider, provider_transaction_id, paid_at, created_at
 ) values
   ('97000000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000001', 16000, 'PLN', 'paid', 'bank_transfer', null, null, '2026-09-01T09:00:00Z', '2026-09-01T09:00:00Z'),
-  ('97000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000002', 7500, 'PLN', 'pending', 'cash', null, null, null, '2026-09-15T09:00:00Z')
+  ('97000000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000002', 7500, 'PLN', 'pending', 'cash', null, null, null, '2026-09-15T09:00:00Z'),
+  ('97000000-0000-4000-8000-000000000003', '90000000-0000-4000-8000-000000000002', '91000000-0000-4000-8000-000000000002', 2500, 'PLN', 'paid', 'bank_transfer', null, null, '2026-09-12T09:00:00Z', '2026-09-12T09:00:00Z')
 on conflict (id) do update set status = excluded.status, paid_at = excluded.paid_at;
 
 insert into public.packages (
@@ -230,14 +231,35 @@ insert into public.packages (
   '2026-09-01T09:00:00Z', '2027-03-01T09:00:00Z'
 ) on conflict (id) do update set total_lessons = 2, price_grosz = 16000, status = 'active';
 
-insert into public.payment_allocations (
-  id, workspace_id, payment_id, package_id, amount_grosz
+insert into public.charges (
+  id, workspace_id, student_id, package_id, type, description, amount_grosz,
+  currency, status, due_at, created_at, settled_at
 ) values (
-  '98100000-0000-4000-8000-000000000001',
+  '98300000-0000-4000-8000-000000000001',
   '90000000-0000-4000-8000-000000000002',
-  '97000000-0000-4000-8000-000000000001',
-  '98000000-0000-4000-8000-000000000001', 16000
-) on conflict (id) do update set amount_grosz = excluded.amount_grosz;
+  '91000000-0000-4000-8000-000000000001',
+  '98000000-0000-4000-8000-000000000001',
+  'package', 'Pakiet 2 lekcji', 16000, 'PLN', 'settled',
+  '2026-09-08T09:00:00Z', '2026-09-01T09:00:00Z', '2026-09-01T09:00:00Z'
+) on conflict (id) do update set status = excluded.status, settled_at = excluded.settled_at;
+
+insert into public.charges (
+  id, workspace_id, student_id, type, description, amount_grosz,
+  currency, status, due_at, created_at
+) values (
+  '98300000-0000-4000-8000-000000000002',
+  '90000000-0000-4000-8000-000000000002',
+  '91000000-0000-4000-8000-000000000002',
+  'manual', 'Lekcja 8 września', 7500, 'PLN', 'partial',
+  '2026-09-15T18:00:00Z', '2026-09-08T15:00:00Z'
+) on conflict (id) do update set status = excluded.status, due_at = excluded.due_at;
+
+insert into public.payment_allocations (
+  id, workspace_id, payment_id, charge_id, package_id, amount_grosz
+) values
+  ('98100000-0000-4000-8000-000000000001', '90000000-0000-4000-8000-000000000002', '97000000-0000-4000-8000-000000000001', '98300000-0000-4000-8000-000000000001', '98000000-0000-4000-8000-000000000001', 16000),
+  ('98100000-0000-4000-8000-000000000002', '90000000-0000-4000-8000-000000000002', '97000000-0000-4000-8000-000000000003', '98300000-0000-4000-8000-000000000002', null, 2500)
+on conflict (id) do update set amount_grosz = excluded.amount_grosz;
 
 insert into public.package_usages (
   id, workspace_id, package_id, lesson_id, kind, units, idempotency_key, created_at

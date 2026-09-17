@@ -27,6 +27,7 @@ import {
 } from "./repository";
 import { findProbableDuplicateIds, studentDisplayName } from "./domain/student";
 import { appDataFromStore, type LessonRecord, type StoreShape } from "./store";
+import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
 
 export async function performAction(
   teacherId: string,
@@ -370,6 +371,14 @@ export async function performAction(
             occurrence.durationMinutes,
           ),
         );
+        const recurringUnavailable = input.occurrences.flatMap((occurrence) =>
+          findRecurringUnavailabilityConflicts(
+            store,
+            teacherId,
+            occurrence.startsAt,
+            occurrence.durationMinutes,
+          ),
+        );
         const blockConflict = input.occurrences.some((occurrence) =>
           hasCalendarBlockConflict(
             store,
@@ -381,15 +390,16 @@ export async function performAction(
         if (
           conflicts.length ||
           blockConflict ||
+          recurringUnavailable.length ||
           (unavailable.length && !input.allowOutsideAvailability)
         ) {
           throw new ApiFailure(409, {
             code:
-              conflicts.length || blockConflict
+              conflicts.length || blockConflict || recurringUnavailable.length
                 ? "LESSON_CONFLICT"
                 : "OUTSIDE_AVAILABILITY",
             message:
-              conflicts.length || blockConflict
+              conflicts.length || blockConflict || recurringUnavailable.length
                 ? "Wybrany termin jest już zajęty. Wybierz inny termin lub potwierdź lekcję grupową."
                 : "Ten termin jest poza Twoją regularną dostępnością.",
             details: {
@@ -417,6 +427,7 @@ export async function performAction(
             }));
           const lesson: LessonRecord = {
             id: randomUUID(),
+            color: input.color ?? DEFAULT_CALENDAR_COLOR,
             teacherId,
             groupId: group?.id,
             participantIds: uniqueIds,
@@ -696,6 +707,21 @@ export async function performAction(
             },
           });
         }
+        const recurringUnavailable = proposed.some(
+          ({ target, startsAt }) =>
+            findRecurringUnavailabilityConflicts(
+              store,
+              teacherId,
+              startsAt,
+              action.durationMinutes ?? target.durationMinutes,
+            ).length > 0,
+        );
+        if (recurringUnavailable) {
+          throw new ApiFailure(409, {
+            code: "LESSON_CONFLICT",
+            message: "Nowy termin przypada w cyklicznie niedostępnym czasie.",
+          });
+        }
         const outsideAvailability = proposed.some(
           ({ target, startsAt }) =>
             findAvailabilityConflicts(
@@ -718,6 +744,37 @@ export async function performAction(
           target.syncStatus =
             teacher.google.status === "connected" ? "pending" : "disabled";
         });
+        break;
+      }
+      case "updateLessonColor": {
+        const lesson = ownedLesson(store, teacherId, action.lessonId);
+        const now = Date.now();
+        const targets =
+          action.scope !== "single" && lesson.seriesId
+            ? store.lessons.filter(
+                (candidate) =>
+                  candidate.teacherId === teacherId &&
+                  candidate.seriesId === lesson.seriesId &&
+                  candidate.status !== "completed" &&
+                  candidate.status !== "cancelled" &&
+                  (action.scope === "series"
+                    ? Date.parse(candidate.startsAt) >= now
+                    : (candidate.recurrenceOriginalStartsAt ??
+                        candidate.startsAt) >=
+                      (lesson.recurrenceOriginalStartsAt ?? lesson.startsAt)),
+              )
+            : [lesson];
+        targets.forEach((target) => {
+          target.color = action.color;
+          target.syncStatus =
+            target.syncStatus === "disabled"
+              ? "disabled"
+              : teacher.google.status === "connected"
+                ? "pending"
+                : "disabled";
+          target.updatedAt = new Date().toISOString();
+        });
+        result = { ids: targets.map((target) => target.id) };
         break;
       }
       case "retrySync": {
@@ -834,6 +891,7 @@ export async function performAction(
         const now = new Date().toISOString();
         const block = {
           ...action.block,
+          color: action.block.color ?? "#7F8A9A",
           id: randomUUID(),
           teacherId,
           createdAt: now,
@@ -1123,6 +1181,40 @@ function findAvailabilityConflicts(
     return [{ id: "regular-hours", label: "Poza regularną dostępnością" }];
   }
   return [];
+}
+
+function findRecurringUnavailabilityConflicts(
+  store: StoreShape,
+  teacherId: string,
+  startsAt: string,
+  durationMinutes: number,
+) {
+  const timezone =
+    store.teachers.find((teacher) => teacher.id === teacherId)?.timezone ??
+    "Europe/Warsaw";
+  const weekday = Number(formatInTimeZone(startsAt, timezone, "i"));
+  const occurrenceStart =
+    Number(formatInTimeZone(startsAt, timezone, "H")) * 60 +
+    Number(formatInTimeZone(startsAt, timezone, "m"));
+  const occurrenceEnd = occurrenceStart + durationMinutes;
+  return store.availability.filter((rule) => {
+    if (
+      rule.teacherId !== teacherId ||
+      rule.kind !== "recurring" ||
+      rule.isAvailable ||
+      rule.weekday !== weekday
+    ) {
+      return false;
+    }
+    if (rule.allDay) return true;
+    const ruleStart =
+      Number(formatInTimeZone(rule.start, timezone, "H")) * 60 +
+      Number(formatInTimeZone(rule.start, timezone, "m"));
+    const ruleEnd =
+      Number(formatInTimeZone(rule.end, timezone, "H")) * 60 +
+      Number(formatInTimeZone(rule.end, timezone, "m"));
+    return occurrenceStart < ruleEnd && occurrenceEnd > ruleStart;
+  });
 }
 
 function emptyParticipant(

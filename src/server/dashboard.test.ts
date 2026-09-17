@@ -186,6 +186,27 @@ describe("buildDashboardData", () => {
     expect(buildDashboardData(source()).attentionItems).toEqual([]);
   });
 
+  it("surfaces outstanding overdue charges without mixing currencies", () => {
+    const data = buildDashboardData(
+      source({
+        overdueCharges: [
+          { studentId: "student-a", outstanding: 7_500, currency: "PLN" },
+          { studentId: "student-b", outstanding: 2_500, currency: "PLN" },
+          { studentId: "student-a", outstanding: 1_000, currency: "EUR" },
+        ],
+      }),
+    );
+
+    expect(data.attentionItems[0]).toMatchObject({
+      id: "overdue-payments",
+      type: "overdue_payment",
+      count: 3,
+      href: "/app/platnosci?filter=overdue",
+    });
+    expect(data.attentionItems[0].detail).toContain("100,00");
+    expect(data.attentionItems[0].detail).toContain("zł");
+  });
+
   it("counts non-cancelled monthly lessons but teaching time only from completed lessons", () => {
     const data = buildDashboardData(
       source({

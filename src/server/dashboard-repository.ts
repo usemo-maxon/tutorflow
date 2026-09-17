@@ -77,6 +77,7 @@ export async function queryTodayDashboardSource(
     monthResult,
     packagesResult,
     balancesResult,
+    overdueResult,
   ] = await Promise.all([
     supabase
       .from("students")
@@ -134,6 +135,7 @@ export async function queryTodayDashboardSource(
       .select("id,student_id")
       .eq("workspace_id", workspaceId)
       .eq("status", "active")
+      .or(`expires_at.is.null,expires_at.gte.${now.toISOString()}`)
       .limit(1000),
     supabase
       .from("package_balances")
@@ -141,6 +143,13 @@ export async function queryTodayDashboardSource(
       .eq("workspace_id", workspaceId)
       .lte("remaining_lessons", 2)
       .limit(1000),
+    supabase
+      .from("charge_balances")
+      .select("student_id,outstanding_grosz,currency")
+      .eq("workspace_id", workspaceId)
+      .eq("is_overdue", true)
+      .gt("outstanding_grosz", 0)
+      .limit(100),
   ]);
 
   const coreFailure = [studentsResult, todayResult, upcomingResult].find(
@@ -206,7 +215,9 @@ export async function queryTodayDashboardSource(
     Boolean(unfinishedResult.error) ||
     Boolean(syncResult.error) ||
     Boolean(packagesResult.error) ||
-    Boolean(balancesResult.error);
+    Boolean(balancesResult.error) ||
+    Boolean(overdueResult.error);
+
   const activePackageIds = new Set(
     packagesResult.error
       ? []
@@ -262,6 +273,13 @@ export async function queryTodayDashboardSource(
               studentId: row.student_id as string,
               remainingLessons: Number(row.remaining_lessons),
             })),
+    overdueCharges: overdueResult.error
+      ? []
+      : (overdueResult.data ?? []).map((row) => ({
+          studentId: row.student_id as string,
+          outstanding: Number(row.outstanding_grosz),
+          currency: row.currency as string,
+        })),
     partialErrors: [
       ...(optionalAttentionFailed ? (["attention"] as const) : []),
       ...(monthResult.error ? (["monthly_summary"] as const) : []),

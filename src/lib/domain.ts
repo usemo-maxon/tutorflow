@@ -1,6 +1,6 @@
 export type EntityId = string;
 export type ISODateTime = string;
-export type Money = { amount: number; currency: "PLN" };
+export type Money = { amount: number; currency: string };
 
 export type LessonStatus =
   "scheduled" | "needs_completion" | "completed" | "cancelled" | "no_show";
@@ -154,6 +154,7 @@ export interface LessonParticipant {
 
 export interface Lesson {
   id: EntityId;
+  color: string;
   groupId?: EntityId;
   participantIds: EntityId[];
   startsAt: ISODateTime;
@@ -232,6 +233,7 @@ export interface AvailabilityException {
 
 export interface CalendarBlock {
   id: EntityId;
+  color: string;
   title: string;
   startsAt: ISODateTime;
   endsAt: ISODateTime;
@@ -290,6 +292,7 @@ export interface CreateLessonInput {
   location: string;
   priceAmount: number | null;
   topic: string;
+  color?: string;
   subject?: string;
   plan: string[];
   recurrence?: {
@@ -369,6 +372,13 @@ export type AppAction =
       expectedUpdatedAt?: ISODateTime;
       allowOutsideAvailability?: boolean;
     }
+  | {
+      type: "updateLessonColor";
+      lessonId: string;
+      color: string;
+      scope?: RecurrenceMutationScope;
+      expectedUpdatedAt?: ISODateTime;
+    }
   | { type: "retrySync"; lessonId: string }
   | { type: "disableSync"; lessonId: string }
   | { type: "updateProfile"; name: string; timezone: string }
@@ -381,12 +391,17 @@ export type AppAction =
   | { type: "deleteAvailabilityException"; exceptionId: string }
   | {
       type: "createCalendarBlock";
-      block: Omit<CalendarBlock, "id" | "createdAt" | "updatedAt">;
+      block: Omit<CalendarBlock, "id" | "createdAt" | "updatedAt" | "color"> & {
+        color?: string;
+      };
     }
   | {
       type: "updateCalendarBlock";
       blockId: string;
-      block: Pick<CalendarBlock, "title" | "startsAt" | "endsAt" | "timezone">;
+      block: Pick<
+        CalendarBlock,
+        "title" | "startsAt" | "endsAt" | "timezone"
+      > & { color?: string };
       expectedUpdatedAt?: ISODateTime;
     }
   | { type: "deleteCalendarBlock"; blockId: string }

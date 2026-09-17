@@ -10,6 +10,7 @@ function lesson(
 ): Lesson {
   return {
     id,
+    color: "#6F8FEF",
     startsAt,
     status,
     participantIds,
