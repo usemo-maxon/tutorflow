@@ -1,15 +1,20 @@
 import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { encryptSecret } from "@/server/crypto";
 import { siteUrl } from "@/server/env";
 import {
   exchangeGoogleCode,
   type GoogleCredentials,
 } from "@/server/google-calendar";
+import { initializeGoogleConnection } from "@/server/google-calendar-sync";
 import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
 } from "@/server/supabase";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -52,17 +57,35 @@ export async function GET(request: Request) {
       .eq("user_id", auth.user.id)
       .single();
     if (!tutor) throw new Error("WORKSPACE_NOT_FOUND");
-    const { error } = await admin.from("integration_connections").upsert({
-      workspace_id: tutor.workspace_id,
-      teacher_id: auth.user.id,
-      provider: "google",
-      status: "connected",
-      label: "Kalendarz główny",
-      encrypted_credentials: encryptSecret(credentials),
-      last_error: null,
-      updated_at: new Date().toISOString(),
-    });
-    if (error) throw error;
+    const now = new Date().toISOString();
+    const { data: connection, error } = await admin
+      .from("integration_connections")
+      .upsert(
+        {
+          workspace_id: tutor.workspace_id,
+          teacher_id: auth.user.id,
+          provider: "google",
+          status: "connected",
+          label: "Kalendarz główny",
+          external_account_id: "primary",
+          selected_calendar_id: "primary",
+          encrypted_credentials: encryptSecret(credentials),
+          sync_token: null,
+          sync_state: "pending",
+          sync_requested_at: now,
+          last_error: null,
+          updated_at: now,
+        },
+        { onConflict: "teacher_id,provider" },
+      )
+      .select("id")
+      .single();
+    if (error || !connection) throw error ?? new Error("CONNECTION_NOT_FOUND");
+    after(() =>
+      initializeGoogleConnection(connection.id as string).catch(
+        () => undefined,
+      ),
+    );
   } catch {
     redirect("/app/ustawienia/integracje?google=error");
   }

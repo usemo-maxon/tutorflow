@@ -16,6 +16,7 @@ import { pl } from "date-fns/locale";
 import { formatInTimeZone } from "date-fns-tz";
 import {
   AlertTriangle,
+  CalendarClock,
   ChevronLeft,
   ChevronRight,
   GripVertical,
@@ -59,7 +60,12 @@ import {
   getCalendarEventSurface,
   getReadableForeground,
 } from "@/lib/calendar-colors";
-import type { AppData, Lesson, RecurrenceMutationScope } from "@/lib/domain";
+import type {
+  AppData,
+  ExternalGoogleEvent,
+  Lesson,
+  RecurrenceMutationScope,
+} from "@/lib/domain";
 import {
   formatTime,
   getWeekDays,
@@ -92,8 +98,24 @@ function calendarBounds(lessons: Lesson[], timezone: string, data?: AppData) {
   const blockEnds = (data?.calendarBlocks ?? []).map(
     (block) => Number(formatInTimeZone(block.endsAt, timezone, "H")) + 1,
   );
+  const externalStarts = (data?.externalGoogleEvents ?? [])
+    .filter((event) => !event.allDay && event.startsAt)
+    .map(
+      (event) =>
+        Number(formatInTimeZone(event.startsAt!, timezone, "H")) +
+        Number(formatInTimeZone(event.startsAt!, timezone, "m")) / 60,
+    );
+  const externalEnds = (data?.externalGoogleEvents ?? [])
+    .filter((event) => !event.allDay && event.endsAt)
+    .map(
+      (event) =>
+        Number(formatInTimeZone(event.endsAt!, timezone, "H")) +
+        Number(formatInTimeZone(event.endsAt!, timezone, "m")) / 60,
+    );
   return {
-    startHour: Math.floor(Math.min(7, ...starts, ...available, ...blockStarts)),
+    startHour: Math.floor(
+      Math.min(7, ...starts, ...available, ...blockStarts, ...externalStarts),
+    ),
     endHour: Math.min(
       24,
       Math.ceil(
@@ -101,11 +123,29 @@ function calendarBounds(lessons: Lesson[], timezone: string, data?: AppData) {
           22,
           ...available,
           ...blockEnds,
+          ...externalEnds,
           ...lessons.map((l, i) => starts[i] + l.durationMinutes / 60),
         ),
       ),
     ),
   };
+}
+
+function externalEventOccursOn(
+  event: ExternalGoogleEvent,
+  dayKey: string,
+  timezone: string,
+) {
+  return event.allDay
+    ? Boolean(
+        event.startDate &&
+        event.endDate &&
+        event.startDate <= dayKey &&
+        event.endDate > dayKey,
+      )
+    : Boolean(
+        event.startsAt && localDateKey(event.startsAt, timezone) === dayKey,
+      );
 }
 const hourHeight = 68;
 
@@ -942,7 +982,7 @@ function RangeActionMenu({
         {selection.start}–{selection.end}
       </span>
       <button className="button button--primary" onClick={onLesson}>
-        Dodaj zajęcia
+        Dodaj lekcję
       </button>
       <button className="button button--secondary" onClick={onBlock}>
         Zablokuj czas
@@ -1032,6 +1072,15 @@ function CalendarGrid({
               localDateKey(lesson.startsAt, timezone) ===
               localDateKey(day, timezone),
           ).length;
+          const allDayGoogle = data.externalGoogleEvents.filter(
+            (event) =>
+              event.allDay &&
+              externalEventOccursOn(
+                event,
+                localDateKey(day, timezone),
+                timezone,
+              ),
+          );
           return (
             <div
               key={day.toISOString()}
@@ -1044,6 +1093,14 @@ function CalendarGrid({
               <small>{lessonCountLabel(count)}</small>
               {allDayUnavailable && (
                 <span className="calendar-day-status">Niedostępny</span>
+              )}
+              {allDayGoogle.length > 0 && !allDayUnavailable && (
+                <span
+                  className="calendar-day-status calendar-day-status--google"
+                  title={allDayGoogle.map((event) => event.title).join(", ")}
+                >
+                  Google · cały dzień
+                </span>
               )}
               <button
                 className="calendar-add-day"
@@ -1070,6 +1127,10 @@ function CalendarGrid({
           );
           const dayBlocks = data.calendarBlocks.filter(
             (block) => localDateKey(block.startsAt, timezone) === dayKey,
+          );
+          const dayExternalEvents = data.externalGoogleEvents.filter(
+            (event) =>
+              !event.allDay && externalEventOccursOn(event, dayKey, timezone),
           );
           const availability = availabilityForDay(data, day, timezone);
           const allDayUnavailable = availability.some(
@@ -1393,6 +1454,44 @@ function CalendarGrid({
                   </div>
                 );
               })}
+              {dayExternalEvents.map((external) => {
+                const startMinutes =
+                  Number(formatInTimeZone(external.startsAt!, timezone, "H")) *
+                    60 +
+                  Number(formatInTimeZone(external.startsAt!, timezone, "m"));
+                const endMinutes =
+                  Number(formatInTimeZone(external.endsAt!, timezone, "H")) *
+                    60 +
+                  Number(formatInTimeZone(external.endsAt!, timezone, "m"));
+                return (
+                  <div
+                    data-event
+                    role="group"
+                    aria-label={`Wydarzenie Google: ${external.title}`}
+                    className={`calendar-external-event${external.transparency === "transparent" ? " calendar-external-event--free" : ""}`}
+                    key={external.id}
+                    style={{
+                      ...calendarColorStyle(external.color),
+                      top: ((startMinutes - startHour * 60) / 60) * hourHeight,
+                      height: Math.max(
+                        30,
+                        ((endMinutes - startMinutes) / 60) * hourHeight - 3,
+                      ),
+                    }}
+                    title={`${external.title} · ${formatTime(external.startsAt!, timezone)}–${formatTime(external.endsAt!, timezone)} · tylko do odczytu`}
+                  >
+                    <CalendarClock size={12} aria-hidden="true" />
+                    <time>{formatTime(external.startsAt!, timezone)}</time>
+                    <strong>{external.title}</strong>
+                    <small>
+                      Google Calendar
+                      {external.transparency === "transparent"
+                        ? " · wolny"
+                        : " · zajęty"}
+                    </small>
+                  </div>
+                );
+              })}
               {dayLessons.map((lesson) => {
                 const localHour = Number(
                   formatInTimeZone(lesson.startsAt, timezone, "H"),
@@ -1547,6 +1646,9 @@ function AgendaView({
         const blocks = data.calendarBlocks.filter(
           (block) => localDateKey(block.startsAt, timezone) === key,
         );
+        const externalEvents = data.externalGoogleEvents.filter((event) =>
+          externalEventOccursOn(event, key, timezone),
+        );
         const unavailable = availabilityForDay(data, day, timezone);
         const allDayUnavailable = unavailable.some(
           (rule) => rule.allDay && !rule.isAvailable,
@@ -1612,6 +1714,29 @@ function AgendaView({
                 )}
               </div>
             ))}
+            {externalEvents.map((event) => (
+              <div
+                className={`agenda-event-row agenda-event-row--external${event.transparency === "transparent" ? " agenda-event-row--free" : ""}`}
+                key={event.id}
+                style={calendarColorStyle(event.color)}
+              >
+                <time>
+                  {event.allDay
+                    ? "Cały dzień"
+                    : formatTime(event.startsAt!, timezone)}
+                </time>
+                <span>
+                  <strong>{event.title}</strong>
+                  <small>
+                    Google Calendar · tylko do odczytu
+                    {event.transparency === "transparent"
+                      ? " · oznaczono jako wolny"
+                      : ""}
+                  </small>
+                </span>
+                <CalendarClock size={16} aria-hidden="true" />
+              </div>
+            ))}
             {lessons.length ? (
               lessons.map((lesson) => {
                 const group = lesson.groupId
@@ -1658,7 +1783,7 @@ function AgendaView({
               })
             ) : (
               <p className="agenda-empty">
-                {unavailable.length || blocks.length
+                {unavailable.length || blocks.length || externalEvents.length
                   ? "Brak lekcji"
                   : "Wolny dzień"}
               </p>
@@ -1714,12 +1839,15 @@ function MonthView({
               localDateKey(lesson.startsAt, timezone) === dayKey &&
               lesson.status !== "cancelled",
           );
+          const dayExternalEvents = data.externalGoogleEvents.filter((event) =>
+            externalEventOccursOn(event, dayKey, timezone),
+          );
           const allDayUnavailable = isAllDayUnavailable(data, day, timezone);
           const today = dayKey === localDateKey(new Date(), timezone);
           return (
             <button
               key={day.toISOString()}
-              aria-label={`${formatInTimeZone(day, timezone, "d MMMM yyyy", { locale: pl })} · ${lessonCountLabel(dayLessons.length)}${allDayUnavailable ? " · Niedostępny cały dzień" : ""}`}
+              aria-label={`${formatInTimeZone(day, timezone, "d MMMM yyyy", { locale: pl })} · ${lessonCountLabel(dayLessons.length)} · ${dayExternalEvents.length} wydarzeń Google${allDayUnavailable ? " · Niedostępny cały dzień" : ""}`}
               className={`${today ? "today" : ""}${allDayUnavailable ? " month-day--unavailable" : ""}`}
               onClick={() => onDay(day)}
             >
@@ -1742,6 +1870,20 @@ function MonthView({
                   }
                 </span>
               ))}
+              {dayExternalEvents
+                .slice(0, Math.max(0, 3 - dayLessons.length))
+                .map((event) => (
+                  <span
+                    className="month-google-event"
+                    key={event.id}
+                    style={calendarColorStyle(event.color)}
+                  >
+                    {event.allDay
+                      ? "Cały dzień"
+                      : formatTime(event.startsAt!, timezone)}{" "}
+                    · {event.title}
+                  </span>
+                ))}
             </button>
           );
         })}

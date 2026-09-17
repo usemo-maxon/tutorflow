@@ -23,6 +23,7 @@ import type {
   AvailabilityException,
   AvailabilityRule,
   CalendarBlock,
+  ExternalGoogleEvent,
   Lesson,
   LessonParticipant,
   PlanItem,
@@ -70,6 +71,10 @@ export interface CalendarBlockRecord extends CalendarBlock {
   teacherId: string;
 }
 
+export interface ExternalGoogleEventRecord extends ExternalGoogleEvent {
+  teacherId: string;
+}
+
 export interface StudentStatImportRecord extends StudentStatImport {
   teacherId: string;
 }
@@ -91,6 +96,7 @@ export interface StoreShape {
   availability: AvailabilityRecord[];
   availabilityExceptions?: AvailabilityExceptionRecord[];
   calendarBlocks?: CalendarBlockRecord[];
+  externalGoogleEvents?: ExternalGoogleEventRecord[];
   sessions: SessionRecord[];
 }
 
@@ -417,6 +423,9 @@ export function appDataFromStore(
         color: item.color ?? "#7F8A9A",
       }))
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    externalGoogleEvents: (store.externalGoogleEvents ?? [])
+      .filter((item) => item.teacherId === teacherId)
+      .map(withoutTenant),
     integrations: {
       google: teacher.google,
       telegram: teacher.telegram,

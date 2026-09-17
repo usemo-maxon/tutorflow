@@ -205,9 +205,16 @@ export interface Teacher {
 }
 
 export interface IntegrationState {
-  status: "connected" | "not_connected" | "not_configured" | "error";
+  status:
+    | "connected"
+    | "not_connected"
+    | "not_configured"
+    | "error"
+    | "reconnect_required";
   label?: string;
   lastError?: string;
+  syncState?: "idle" | "pending" | "syncing" | "error" | "reconnect_required";
+  lastSuccessfulSyncAt?: ISODateTime;
 }
 
 export interface AvailabilityRule {
@@ -242,6 +249,24 @@ export interface CalendarBlock {
   updatedAt: ISODateTime;
 }
 
+export interface ExternalGoogleEvent {
+  id: EntityId;
+  title: string;
+  startsAt?: ISODateTime;
+  endsAt?: ISODateTime;
+  startDate?: string;
+  endDate?: string;
+  timezone?: string;
+  allDay: boolean;
+  status: "confirmed" | "tentative";
+  transparency: "opaque" | "transparent";
+  color: string;
+  recurringEventId?: string;
+  originalStartTime?: ISODateTime;
+  readOnly: true;
+  blocksTime: boolean;
+}
+
 export interface AppData {
   teacher: Teacher;
   students: Student[];
@@ -252,6 +277,7 @@ export interface AppData {
   availability: AvailabilityRule[];
   availabilityExceptions: AvailabilityException[];
   calendarBlocks: CalendarBlock[];
+  externalGoogleEvents: ExternalGoogleEvent[];
   integrations: {
     google: IntegrationState;
     telegram: IntegrationState;

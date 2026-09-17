@@ -8,14 +8,19 @@ import {
   Settings2,
 } from "lucide-react";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useAppData } from "@/hooks/use-app-data";
 import { useSessionTeacher } from "../app-shell";
 import { PageLoading } from "../ui/loading";
 
 export function IntegrationsSettings() {
+  const [syncing, setSyncing] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<{
+    kind: "success" | "error";
+    message: string;
+  } | null>(null);
   const session = useSessionTeacher();
-  const { data, isPending } = useAppData(session.id);
+  const { data, isPending, refetch } = useAppData(session.id);
   if (isPending || !data) return <PageLoading />;
   const failedLesson = data.lessons.find(
     (lesson) =>
@@ -38,16 +43,67 @@ export function IntegrationsSettings() {
           name="Google Calendar"
           state={data.integrations.google.status}
           label={data.integrations.google.label}
-          description="Jednokierunkowa synchronizacja lekcji z wybranym kalendarzem."
+          description="Dwukierunkowa synchronizacja lekcji i podgląd zajętości z wybranego kalendarza."
           error={data.integrations.google.lastError}
         >
+          {data.integrations.google.status === "connected" && (
+            <button
+              type="button"
+              className="button button--secondary"
+              disabled={syncing}
+              aria-describedby={
+                syncFeedback ? "google-sync-feedback" : undefined
+              }
+              onClick={async () => {
+                setSyncFeedback(null);
+                setSyncing(true);
+                try {
+                  const response = await fetch(
+                    "/api/integrations/google/sync",
+                    {
+                      method: "POST",
+                    },
+                  );
+                  const payload = (await response.json().catch(() => null)) as {
+                    message?: string;
+                  } | null;
+                  if (!response.ok) {
+                    throw new Error(
+                      payload?.message ??
+                        "Nie udało się rozpocząć synchronizacji.",
+                    );
+                  }
+                  setSyncFeedback({
+                    kind: "success",
+                    message:
+                      "Synchronizacja została uruchomiona. Dane odświeżą się automatycznie.",
+                  });
+                  void refetch();
+                } catch (error) {
+                  setSyncFeedback({
+                    kind: "error",
+                    message:
+                      error instanceof Error
+                        ? error.message
+                        : "Nie udało się rozpocząć synchronizacji.",
+                  });
+                } finally {
+                  setSyncing(false);
+                }
+              }}
+            >
+              {syncing ? "Synchronizuję…" : "Synchronizuj teraz"}
+            </button>
+          )}
           {data.integrations.google.status !== "connected" &&
             data.integrations.google.status !== "not_configured" && (
               <a
                 className="button button--secondary"
                 href="/api/integrations/google/connect"
               >
-                Połącz Google Calendar
+                {data.integrations.google.status === "reconnect_required"
+                  ? "Połącz ponownie"
+                  : "Połącz Google Calendar"}
               </a>
             )}
           {failedLesson && (
@@ -57,6 +113,20 @@ export function IntegrationsSettings() {
             >
               Otwórz lekcję z problemem
             </Link>
+          )}
+          {syncFeedback && (
+            <div
+              className={`integration-feedback integration-feedback--${syncFeedback.kind}`}
+              id="google-sync-feedback"
+              role={syncFeedback.kind === "error" ? "alert" : "status"}
+            >
+              {syncFeedback.kind === "error" ? (
+                <AlertTriangle size={16} aria-hidden="true" />
+              ) : (
+                <CheckCircle2 size={16} aria-hidden="true" />
+              )}
+              <span>{syncFeedback.message}</span>
+            </div>
           )}
         </IntegrationCard>
         <IntegrationCard
@@ -96,7 +166,12 @@ function IntegrationCard({
 }: {
   icon: ReactNode;
   name: string;
-  state: "connected" | "not_connected" | "not_configured" | "error";
+  state:
+    | "connected"
+    | "not_connected"
+    | "not_configured"
+    | "error"
+    | "reconnect_required";
   label?: string;
   description: string;
   error?: string;
@@ -105,22 +180,24 @@ function IntegrationCard({
   const status =
     state === "connected"
       ? "Połączono"
-      : state === "error"
+      : state === "error" || state === "reconnect_required"
         ? "Wymaga uwagi"
         : state === "not_configured"
           ? "Jeszcze niedostępne"
           : "Nie połączono";
   return (
     <article className="integration-card">
-      <span className="integration-icon">{icon}</span>
+      <span className="integration-icon" aria-hidden="true">
+        {icon}
+      </span>
       <div>
         <div className="integration-title">
           <h3>{name}</h3>
           <span className={`status-badge status-badge--integration-${state}`}>
             {state === "connected" ? (
-              <CheckCircle2 size={14} />
-            ) : state === "error" ? (
-              <AlertTriangle size={14} />
+              <CheckCircle2 size={14} aria-hidden="true" />
+            ) : state === "error" || state === "reconnect_required" ? (
+              <AlertTriangle size={14} aria-hidden="true" />
             ) : null}
             {status}
           </span>
@@ -134,7 +211,7 @@ function IntegrationCard({
             zapisywać wyniki w easy4tutor.
           </div>
         )}
-        {children}
+        {children && <div className="integration-actions">{children}</div>}
       </div>
     </article>
   );

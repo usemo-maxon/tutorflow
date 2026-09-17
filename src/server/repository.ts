@@ -185,7 +185,9 @@ async function loadTenantStore(
         .single(),
       supabase
         .from("integration_connections")
-        .select("provider,status,label,last_error")
+        .select(
+          "provider,status,label,last_error,sync_state,last_successful_sync_at",
+        )
         .eq("teacher_id", teacherId),
     ]);
   const failure = [profileResult, tutorResult, subscriptionResult].find(
@@ -206,6 +208,14 @@ async function loadTenantStore(
     .select("id,title,color,starts_at,ends_at,timezone,created_at,updated_at")
     .eq("workspace_id", workspaceId)
     .eq("tutor_id", teacherId);
+  let externalEventsQuery = supabase
+    .from("external_google_events")
+    .select(
+      "id,summary,starts_at,ends_at,start_date,end_date,timezone,all_day,status,transparency,app_color,recurring_event_id,original_start_time",
+    )
+    .eq("workspace_id", workspaceId)
+    .eq("teacher_id", teacherId)
+    .neq("status", "cancelled");
   if (range) {
     lessonsQuery = lessonsQuery
       .lt("starts_at", range.end)
@@ -213,6 +223,11 @@ async function loadTenantStore(
     calendarBlocksQuery = calendarBlocksQuery
       .lt("starts_at", range.end)
       .gt("ends_at", range.start);
+    const startDate = range.start.slice(0, 10);
+    const endDate = range.end.slice(0, 10);
+    externalEventsQuery = externalEventsQuery.or(
+      `and(all_day.eq.false,starts_at.lt.${range.end},ends_at.gt.${range.start}),and(all_day.eq.true,start_date.lte.${endDate},end_date.gte.${startDate})`,
+    );
   }
   const [
     studentsResult,
@@ -226,6 +241,7 @@ async function loadTenantStore(
     availabilityResult,
     availabilityExceptionsResult,
     calendarBlocksResult,
+    externalEventsResult,
     importsResult,
     contactsResult,
     studentContactsResult,
@@ -280,6 +296,7 @@ async function loadTenantStore(
       .eq("workspace_id", workspaceId)
       .eq("tutor_id", teacherId),
     calendarBlocksQuery,
+    externalEventsQuery,
     supabase
       .from("student_stat_imports")
       .select(
@@ -335,6 +352,7 @@ async function loadTenantStore(
     availabilityResult,
     availabilityExceptionsResult,
     calendarBlocksResult,
+    externalEventsResult,
     importsResult,
     contactsResult,
     studentContactsResult,
@@ -373,6 +391,8 @@ async function loadTenantStore(
         status: row.status,
         label: row.label ?? undefined,
         lastError: row.last_error ?? undefined,
+        syncState: row.sync_state ?? undefined,
+        lastSuccessfulSyncAt: row.last_successful_sync_at ?? undefined,
       } as IntegrationState,
     ]),
   );
@@ -698,6 +718,24 @@ async function loadTenantStore(
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       })),
+      externalGoogleEvents: (externalEventsResult.data ?? []).map((row) => ({
+        id: row.id,
+        teacherId,
+        title: row.summary || "Zajęty",
+        startsAt: row.starts_at ?? undefined,
+        endsAt: row.ends_at ?? undefined,
+        startDate: row.start_date ?? undefined,
+        endDate: row.end_date ?? undefined,
+        timezone: row.timezone ?? undefined,
+        allDay: row.all_day,
+        status: row.status,
+        transparency: row.transparency,
+        color: row.app_color ?? "#7F8A9A",
+        recurringEventId: row.recurring_event_id ?? undefined,
+        originalStartTime: row.original_start_time ?? undefined,
+        readOnly: true as const,
+        blocksTime: row.transparency !== "transparent",
+      })),
       sessions: [],
     } satisfies StoreShape,
   };
@@ -844,6 +882,12 @@ async function loadWriteContext(teacherId: string) {
 
 function databaseFailure(error: { code?: string; message?: string }): never {
   const message = error.message ?? "";
+  if (message.includes("EXTERNAL_GOOGLE_EVENT_CONFLICT")) {
+    throw new ApiFailure(409, {
+      code: "LESSON_CONFLICT",
+      message: "Ten termin jest oznaczony jako zajęty w Google Calendar.",
+    });
+  }
   if (message.includes("LESSON_CONFLICT")) {
     throw new ApiFailure(409, {
       code: "LESSON_CONFLICT",
@@ -1823,6 +1867,21 @@ export async function getAppData(
       ),
       calendarBlocks: data.calendarBlocks.filter(
         (block) => block.startsAt < range.end && block.endsAt > range.start,
+      ),
+      externalGoogleEvents: data.externalGoogleEvents.filter((event) =>
+        event.allDay
+          ? Boolean(
+              event.startDate &&
+              event.endDate &&
+              event.startDate <= range.end.slice(0, 10) &&
+              event.endDate >= range.start.slice(0, 10),
+            )
+          : Boolean(
+              event.startsAt &&
+              event.endsAt &&
+              event.startsAt < range.end &&
+              event.endsAt > range.start,
+            ),
       ),
     };
   }

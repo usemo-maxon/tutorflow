@@ -67,6 +67,15 @@ Add the canonical origin `https://YOUR_DOMAIN` as an authorized JavaScript origi
 
 Google login through Supabase and Calendar access are intentionally separate OAuth clients/flows. The app login callback is `https://YOUR_DOMAIN/auth/callback`; Google Cloud redirects Supabase Auth through `https://PROJECT_REF.supabase.co/auth/v1/callback`.
 
+Calendar authorization performs an initial full sync, registers
+`https://YOUR_DOMAIN/api/webhooks/google-calendar` as an Events watch callback,
+and then uses Google's `syncToken` for incremental reconciliation. Push
+notifications contain no event body; the callback validates the channel,
+resource and hashed channel token, marks the connection pending, and returns
+immediately. The scheduler below is also a polling safety net and renews watch
+channels before they expire. Access and refresh tokens remain AES-GCM encrypted
+in the server-only credential column.
+
 ### 4. Telegram
 
 Create the centralized bot with BotFather and set its username/token in Vercel. Register:
@@ -134,6 +143,10 @@ The scheduler needs only the HTTPS endpoint and `CRON_SECRET`. It must not recei
 - URL: `https://YOUR_DOMAIN/api/cron/google-sync`
 - Header: `Authorization: Bearer CRON_SECRET`
 - Recommended interval: `15 min`
+
+This pass handles outbound Lesson jobs, pending inbound reconciliations,
+dropped-notification polling, and watch-channel renewal. Keep it at 15 minutes
+or faster; normal changes are signalled immediately by the Google webhook.
 
 ##### Maintenance
 

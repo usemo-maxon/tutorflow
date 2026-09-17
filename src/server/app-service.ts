@@ -1077,11 +1077,33 @@ function hasCalendarBlockConflict(
 ): boolean {
   const start = new Date(startsAt).getTime();
   const end = start + durationMinutes * 60_000;
-  return (store.calendarBlocks ?? []).some((block) => {
+  const blockConflict = (store.calendarBlocks ?? []).some((block) => {
     if (block.teacherId !== teacherId || block.id === excludedId) return false;
     const blockStart = new Date(block.startsAt).getTime();
     const blockEnd = new Date(block.endsAt).getTime();
     return start < blockEnd && end > blockStart;
+  });
+  if (blockConflict) return true;
+  const timezone =
+    store.teachers.find((teacher) => teacher.id === teacherId)?.timezone ??
+    "Europe/Warsaw";
+  const startDate = formatInTimeZone(startsAt, timezone, "yyyy-MM-dd");
+  const endDate = formatInTimeZone(new Date(end), timezone, "yyyy-MM-dd");
+  return (store.externalGoogleEvents ?? []).some((event) => {
+    if (event.teacherId !== teacherId || !event.blocksTime) return false;
+    if (event.allDay)
+      return Boolean(
+        event.startDate &&
+        event.endDate &&
+        startDate < event.endDate &&
+        endDate >= event.startDate,
+      );
+    return Boolean(
+      event.startsAt &&
+      event.endsAt &&
+      start < Date.parse(event.endsAt) &&
+      end > Date.parse(event.startsAt),
+    );
   });
 }
 
