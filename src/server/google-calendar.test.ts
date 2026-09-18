@@ -9,13 +9,16 @@ vi.mock("./supabase", () => ({ createSupabaseAdminClient: vi.fn() }));
 
 import {
   exchangeGoogleCode,
+  GoogleApiError,
   googleApiRequest,
   googleEvent,
   googleEventStateHash,
   isRetryableGoogleStatus,
   lessonIdFromGoogleEvent,
   normalizeGoogleEventTiming,
+  validGoogleAccessToken,
 } from "./google-calendar";
+import { decryptSecret } from "./crypto";
 
 describe("Google Calendar outbound event", () => {
   const lesson = {
@@ -55,6 +58,54 @@ describe("Google Calendar outbound event", () => {
     expect(body.get("redirect_uri")).toBe(
       "https://easy4tutor.pl/api/integrations/google/callback",
     );
+  });
+
+  it("classifies a failed authorization-code exchange without exposing provider details", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "calendar-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "calendar-client-secret");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json(
+        { error: "invalid_grant", error_description: "sensitive detail" },
+        { status: 400 },
+      ),
+    );
+
+    const promise = exchangeGoogleCode(
+      "authorization-code",
+      "https://easy4tutor.pl/api/integrations/google/callback",
+    );
+    await expect(promise).rejects.toMatchObject({
+      message: "GOOGLE_AUTHORIZATION_CODE_INVALID",
+      status: 400,
+    });
+    await expect(promise).rejects.not.toThrow("sensitive detail");
+  });
+
+  it("marks an invalid_grant refresh response as reconnect-required", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "calendar-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "calendar-client-secret");
+    vi.mocked(decryptSecret).mockReturnValue({
+      accessToken: "expired-access-token",
+      refreshToken: "revoked-refresh-token",
+      expiresAt: 1,
+      calendarId: "primary",
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      Response.json({ error: "invalid_grant" }, { status: 400 }),
+    );
+
+    let caught: unknown;
+    try {
+      await validGoogleAccessToken("teacher-1", "encrypted-credentials");
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(GoogleApiError);
+    expect(caught).toMatchObject({
+      message: "GOOGLE_REFRESH_TOKEN_INVALID",
+      reconnectRequired: true,
+      retryable: false,
+    });
   });
 
   it("sends a provider colorId while preserving the easy4tutor event identity", () => {

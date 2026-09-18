@@ -616,8 +616,32 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
 }
 
 export async function initializeGoogleConnection(connectionId: string) {
-  await syncGoogleConnection(connectionId, true);
-  await registerGoogleWatch(connectionId);
+  const [sync, watch] = await Promise.allSettled([
+    syncGoogleConnection(connectionId, true),
+    registerGoogleWatch(connectionId),
+  ]);
+  if (watch.status === "rejected") {
+    const supabase = createSupabaseAdminClient();
+    const watchError = safeGoogleError(watch.reason);
+    await supabase
+      .from("integration_connections")
+      .update({
+        sync_state: "error",
+        sync_requested_at: new Date().toISOString(),
+        last_error: watchError,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", connectionId)
+      .eq("status", "connected");
+    logSync("watch_register", connectionId, {
+      result: "error",
+      error: watchError,
+    });
+  }
+  return {
+    sync: sync.status,
+    watch: watch.status,
+  };
 }
 
 export async function requestGoogleSyncForTeacher(
@@ -700,24 +724,31 @@ export async function maintainGoogleConnections(limit = 10) {
   let watches = 0;
   let failed = 0;
   for (const row of due) {
-    try {
-      if (
-        row.sync_requested_at ||
-        !row.last_successful_sync_at ||
-        Date.parse(row.last_successful_sync_at) < staleAt
-      ) {
+    const shouldSync =
+      row.sync_requested_at ||
+      !row.last_successful_sync_at ||
+      Date.parse(row.last_successful_sync_at) < staleAt;
+    const shouldRenewWatch =
+      !row.watch_expires_at || Date.parse(row.watch_expires_at) < watchDueAt;
+    if (shouldSync) {
+      try {
         await syncGoogleConnection(row.id);
         synced += 1;
+      } catch {
+        failed += 1;
       }
-      if (
-        !row.watch_expires_at ||
-        Date.parse(row.watch_expires_at) < watchDueAt
-      ) {
+    }
+    if (shouldRenewWatch) {
+      try {
         await registerGoogleWatch(row.id);
         watches += 1;
+      } catch (watchError) {
+        failed += 1;
+        logSync("watch_renew", row.id, {
+          result: "error",
+          error: safeGoogleError(watchError),
+        });
       }
-    } catch {
-      failed += 1;
     }
   }
   return { inspected: due.length, synced, watches, failed };

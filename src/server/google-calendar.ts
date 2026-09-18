@@ -12,6 +12,12 @@ export interface GoogleCredentials {
   calendarId: string;
 }
 
+export interface GoogleTokenResponse {
+  access_token: string;
+  refresh_token?: string;
+  expires_in: number;
+}
+
 export interface GoogleEventTime {
   date?: string;
   dateTime?: string;
@@ -83,12 +89,26 @@ export async function exchangeGoogleCode(code: string, redirectUri: string) {
       grant_type: "authorization_code",
     }),
   });
-  if (!response.ok) throw new Error("GOOGLE_TOKEN_EXCHANGE_FAILED");
-  return response.json() as Promise<{
-    access_token: string;
-    refresh_token?: string;
-    expires_in: number;
-  }>;
+  if (!response.ok) {
+    throw new GoogleApiError(
+      response.status === 400
+        ? "GOOGLE_AUTHORIZATION_CODE_INVALID"
+        : "GOOGLE_TOKEN_EXCHANGE_FAILED",
+      response.status,
+      response.status === 429 || response.status >= 500,
+    );
+  }
+  const tokens = (await response.json()) as Partial<GoogleTokenResponse>;
+  if (
+    typeof tokens.access_token !== "string" ||
+    !tokens.access_token ||
+    typeof tokens.expires_in !== "number" ||
+    !Number.isFinite(tokens.expires_in) ||
+    tokens.expires_in <= 0
+  ) {
+    throw new GoogleApiError("GOOGLE_TOKEN_RESPONSE_INVALID", 502, true);
+  }
+  return tokens as GoogleTokenResponse;
 }
 
 export async function validGoogleAccessToken(
@@ -115,8 +135,17 @@ export async function validGoogleAccessToken(
     throw new GoogleApiError("GOOGLE_TOKEN_REFRESH_UNAVAILABLE", 503, true);
   }
   if (!response.ok) {
+    const providerError = await response
+      .clone()
+      .json()
+      .then((body: unknown) =>
+        typeof body === "object" && body !== null && "error" in body
+          ? String(body.error)
+          : null,
+      )
+      .catch(() => null);
     const reconnectRequired =
-      response.status === 400 || response.status === 401;
+      response.status === 401 || providerError === "invalid_grant";
     throw new GoogleApiError(
       reconnectRequired
         ? "GOOGLE_REFRESH_TOKEN_INVALID"
@@ -146,7 +175,7 @@ export async function validGoogleAccessToken(
 }
 
 export function isRetryableGoogleStatus(status: number): boolean {
-  return status === 429 || status === 500 || status === 502 || status === 503;
+  return status === 429 || status >= 500;
 }
 
 export async function googleApiRequest(
