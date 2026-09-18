@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { after, NextResponse } from "next/server";
 import { GoogleApiError } from "@/server/google-calendar";
-import { persistGoogleCalendarConnection } from "@/server/google-calendar-oauth";
+import {
+  GoogleConnectionPersistenceError,
+  persistGoogleCalendarConnection,
+} from "@/server/google-calendar-oauth";
 import { initializeGoogleConnection } from "@/server/google-calendar-sync";
 import { createSupabaseServerClient } from "@/server/supabase";
 
@@ -34,6 +37,15 @@ function errorCategory(error: unknown): string {
   if (error instanceof Error && /^GOOGLE_[A-Z0-9_]+$/.test(error.message))
     return error.message;
   return "GOOGLE_CALLBACK_INTERNAL_ERROR";
+}
+
+function persistenceErrorDetails(error: unknown): Record<string, unknown> {
+  if (!(error instanceof GoogleConnectionPersistenceError)) return {};
+  return {
+    persistenceOperation: error.operation,
+    databaseCode: error.databaseCode,
+    databaseCategory: error.databaseCategory,
+  };
 }
 
 export async function GET(request: Request) {
@@ -110,24 +122,50 @@ export async function GET(request: Request) {
 
   try {
     const result = await persistGoogleCalendarConnection({
-      teacherId,
+      authenticatedUserId: teacherId,
       code,
       redirectUri: process.env.GOOGLE_CALENDAR_REDIRECT_URI!,
     });
     callbackLog("connection_persisted", {
-      teacherId,
+      teacherId: result.teacherId,
+      workspaceId: result.workspaceId,
       connectionId: result.connectionId,
       result: "success",
       refreshToken: result.reusedRefreshToken ? "preserved" : "received",
     });
     after(async () => {
-      await initializeGoogleConnection(result.connectionId);
+      try {
+        const initialization = await initializeGoogleConnection(
+          result.connectionId,
+        );
+        callbackLog("connection_initialize", {
+          teacherId: result.teacherId,
+          workspaceId: result.workspaceId,
+          connectionId: result.connectionId,
+          result:
+            initialization.sync === "fulfilled" &&
+            initialization.watch === "fulfilled"
+              ? "success"
+              : "retryable_error",
+          sync: initialization.sync,
+          watch: initialization.watch,
+        });
+      } catch {
+        callbackLog("connection_initialize", {
+          teacherId: result.teacherId,
+          workspaceId: result.workspaceId,
+          connectionId: result.connectionId,
+          result: "retryable_error",
+          error: "GOOGLE_CONNECTION_INITIALIZATION_RETRYABLE",
+        });
+      }
     });
   } catch (error) {
     callbackLog("connection_persist", {
       teacherId,
       result: "error",
       error: errorCategory(error),
+      ...persistenceErrorDetails(error),
       providerStatus:
         error instanceof GoogleApiError ? error.status : undefined,
     });

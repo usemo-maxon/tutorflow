@@ -43,15 +43,18 @@ vi.mock("@/server/supabase", () => ({
   }),
 }));
 
-vi.mock("@/server/google-calendar-oauth", () => ({
-  persistGoogleCalendarConnection: mocks.persist,
-}));
+vi.mock("@/server/google-calendar-oauth", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/server/google-calendar-oauth")>();
+  return { ...actual, persistGoogleCalendarConnection: mocks.persist };
+});
 
 vi.mock("@/server/google-calendar-sync", () => ({
   initializeGoogleConnection: mocks.initialize,
 }));
 
 import { GET } from "./route";
+import { GoogleConnectionPersistenceError } from "@/server/google-calendar-oauth";
 
 const callbackUrl = "https://easy4tutor.pl/api/integrations/google/callback";
 
@@ -66,6 +69,8 @@ describe("Google Calendar OAuth callback", () => {
     });
     mocks.persist.mockResolvedValue({
       connectionId: "connection-1",
+      teacherId: "teacher-1",
+      workspaceId: "workspace-1",
       reusedRefreshToken: false,
     });
     mocks.initialize.mockResolvedValue({
@@ -105,7 +110,7 @@ describe("Google Calendar OAuth callback", () => {
       ),
     ).toBe(true);
     expect(mocks.persist).toHaveBeenCalledWith({
-      teacherId: "teacher-1",
+      authenticatedUserId: "teacher-1",
       code: "authorization-code",
       redirectUri: callbackUrl,
     });
@@ -159,6 +164,37 @@ describe("Google Calendar OAuth callback", () => {
     );
     expect(response.headers.get("location")).toContain("google=error");
     expect(response.headers.get("location")).not.toContain("TOKEN_EXCHANGE");
+  });
+
+  it("logs safe database diagnostics without leaking OAuth or credential secrets", async () => {
+    mocks.persist.mockRejectedValue(
+      new GoogleConnectionPersistenceError(
+        "GOOGLE_CONNECTION_WRITE_FAILED",
+        "connection_upsert",
+        "42501",
+        "permission_denied",
+      ),
+    );
+    const response = await GET(
+      new Request(
+        `${callbackUrl}?state=valid-state&code=secret-authorization-code`,
+      ),
+    );
+
+    const logs = vi
+      .mocked(console.info)
+      .mock.calls.map(([entry]) => String(entry))
+      .join("\n");
+    expect(response.headers.get("location")).toContain("google=error");
+    expect(logs).toContain('"error":"GOOGLE_CONNECTION_WRITE_FAILED"');
+    expect(logs).toContain('"persistenceOperation":"connection_upsert"');
+    expect(logs).toContain('"databaseCode":"42501"');
+    expect(logs).toContain('"databaseCategory":"permission_denied"');
+    expect(logs).not.toContain("secret-authorization-code");
+    expect(logs).not.toContain("access-token");
+    expect(logs).not.toContain("refresh-token");
+    expect(logs).not.toContain("client-secret");
+    expect(logs).not.toContain("service-role");
   });
 
   it("keeps the successful redirect when post-persistence Google initialization is temporary unavailable", async () => {

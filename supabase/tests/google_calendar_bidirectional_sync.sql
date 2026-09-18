@@ -1,5 +1,5 @@
 begin;
-select plan(10);
+select plan(12);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
@@ -117,6 +117,23 @@ select throws_ok(
     'Forbidden', now(), now() + interval '1 hour', false, 'confirmed', 'opaque'
     from public.integration_connections limit 1$$,
   '42501', null, 'browser roles cannot mutate the provider cache'
+);
+select throws_ok(
+  $$update public.integration_connections
+    set status = 'connected'
+    where teacher_id = '91000000-0000-4000-8000-000000000001'$$,
+  '42501', null, 'browser roles cannot update integration credentials'
+);
+select throws_ok(
+  $$insert into public.integration_connections (
+      teacher_id, workspace_id, provider, status, encrypted_credentials
+    ) values (
+      '91000000-0000-4000-8000-000000000001',
+      (select workspace_id from public.tutor_profiles
+       where id = '91000000-0000-4000-8000-000000000001'),
+      'google', 'connected', 'browser-secret'
+    )$$,
+  '42501', null, 'browser roles cannot insert integration credentials'
 );
 
 reset role;
