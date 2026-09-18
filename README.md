@@ -63,7 +63,7 @@ Create a separate Google OAuth 2.0 Web Application client for Calendar and enabl
 
 `https://YOUR_DOMAIN/api/integrations/google/callback`
 
-Add the canonical origin `https://YOUR_DOMAIN` as an authorized JavaScript origin if required by the consent configuration. Request only `https://www.googleapis.com/auth/calendar.events`. Configure and publish the OAuth consent screen. `GOOGLE_CLIENT_SECRET` is used only by Vercel Route Handlers and cron processing.
+Add the canonical origin `https://YOUR_DOMAIN` as an authorized JavaScript origin if required by the consent configuration. Request only `https://www.googleapis.com/auth/calendar.events`. Configure and publish the OAuth consent screen. `GOOGLE_CALENDAR_CLIENT_SECRET` is used only by Vercel Route Handlers and cron processing. Set `GOOGLE_CALENDAR_REDIRECT_URI` to the exact callback above and `GOOGLE_CALENDAR_WEBHOOK_URL` to the exact webhook URL below.
 
 Google login through Supabase and Calendar access are intentionally separate OAuth clients/flows. The app login callback is `https://YOUR_DOMAIN/auth/callback`; Google Cloud redirects Supabase Auth through `https://PROJECT_REF.supabase.co/auth/v1/callback`.
 
@@ -163,6 +163,6 @@ After deployment verify `GET https://YOUR_DOMAIN/api/health` returns HTTP 200 an
 
 Public (included in the browser bundle): `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 
-Server-only: `SUPABASE_SECRET_KEY`, `INTEGRATION_ENCRYPTION_KEY`, `CRON_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `PAYU_POS_ID`, `PAYU_CLIENT_SECRET`, `PAYU_SECOND_KEY`, `PAYU_API_BASE_URL`.
+Server-only: `SUPABASE_SECRET_KEY`, `INTEGRATION_ENCRYPTION_KEY`, `CRON_SECRET`, `GOOGLE_CALENDAR_CLIENT_ID`, `GOOGLE_CALENDAR_CLIENT_SECRET`, `GOOGLE_CALENDAR_REDIRECT_URI`, `GOOGLE_CALENDAR_WEBHOOK_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_WEBHOOK_SECRET`, `PAYU_POS_ID`, `PAYU_CLIENT_SECRET`, `PAYU_SECOND_KEY`, `PAYU_API_BASE_URL`.
 
 Rotate a credential immediately if it has ever been committed. Rotating `INTEGRATION_ENCRYPTION_KEY` requires a planned re-encryption of stored provider credentials.

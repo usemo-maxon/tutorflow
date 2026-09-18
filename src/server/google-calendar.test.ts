@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("./crypto", () => ({
@@ -8,6 +8,7 @@ vi.mock("./crypto", () => ({
 vi.mock("./supabase", () => ({ createSupabaseAdminClient: vi.fn() }));
 
 import {
+  exchangeGoogleCode,
   googleApiRequest,
   googleEvent,
   googleEventStateHash,
@@ -28,6 +29,33 @@ describe("Google Calendar outbound event", () => {
   };
 
   beforeEach(() => vi.clearAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("uses the dedicated Calendar OAuth credentials for code exchange", async () => {
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_ID", "calendar-client-id");
+    vi.stubEnv("GOOGLE_CALENDAR_CLIENT_SECRET", "calendar-client-secret");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        Response.json({ access_token: "access", expires_in: 3600 }),
+      );
+
+    await exchangeGoogleCode(
+      "authorization-code",
+      "https://easy4tutor.pl/api/integrations/google/callback",
+    );
+
+    const request = fetchMock.mock.calls[0]?.[1];
+    const body = new URLSearchParams(request?.body as string);
+    expect(body.get("client_id")).toBe("calendar-client-id");
+    expect(body.get("client_secret")).toBe("calendar-client-secret");
+    expect(body.get("redirect_uri")).toBe(
+      "https://easy4tutor.pl/api/integrations/google/callback",
+    );
+  });
 
   it("sends a provider colorId while preserving the easy4tutor event identity", () => {
     expect(googleEvent(lesson, ["Zosia"])).toMatchObject({

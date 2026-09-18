@@ -6,7 +6,6 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
-import { siteUrl } from "./env";
 import {
   GoogleApiError,
   type GoogleEventResource,
@@ -547,6 +546,18 @@ export async function syncGoogleConnection(
 }
 
 export async function registerGoogleWatch(connectionId: string): Promise<void> {
+  const webhookUrl = process.env.GOOGLE_CALENDAR_WEBHOOK_URL;
+  if (!webhookUrl) {
+    console.error(
+      JSON.stringify({
+        scope: "google_calendar",
+        operation: "watch_register",
+        error: "missing_environment_variables",
+        missing: ["GOOGLE_CALENDAR_WEBHOOK_URL"],
+      }),
+    );
+    throw new Error("GOOGLE_CALENDAR_CONFIGURATION_MISSING");
+  }
   const connection = await connectionById(connectionId);
   const { token } = await validGoogleAccessToken(
     connection.teacher_id,
@@ -564,7 +575,7 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
       body: JSON.stringify({
         id: channelId,
         type: "web_hook",
-        address: `${siteUrl()}/api/webhooks/google-calendar`,
+        address: webhookUrl,
         token: channelToken,
         expiration: String(requestedExpiration),
       }),

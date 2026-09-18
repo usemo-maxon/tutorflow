@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { encryptSecret } from "@/server/crypto";
-import { siteUrl } from "@/server/env";
 import {
   exchangeGoogleCode,
   type GoogleCredentials,
@@ -21,6 +20,18 @@ export async function GET(request: Request) {
   const state = url.searchParams.get("state");
   const code = url.searchParams.get("code");
   if (!state || !code) redirect("/app/ustawienia/integracje?google=error");
+  const redirectUri = process.env.GOOGLE_CALENDAR_REDIRECT_URI;
+  if (!redirectUri) {
+    console.error(
+      JSON.stringify({
+        scope: "google_calendar",
+        operation: "oauth_callback",
+        error: "missing_environment_variables",
+        missing: ["GOOGLE_CALENDAR_REDIRECT_URI"],
+      }),
+    );
+    redirect("/app/ustawienia/integracje?google=error");
+  }
   const supabase = await createSupabaseServerClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) redirect("/logowanie");
@@ -39,10 +50,7 @@ export async function GET(request: Request) {
     .update({ consumed_at: new Date().toISOString() })
     .eq("token_hash", tokenHash);
   try {
-    const tokens = await exchangeGoogleCode(
-      code,
-      `${siteUrl()}/api/integrations/google/callback`,
-    );
+    const tokens = await exchangeGoogleCode(code, redirectUri);
     if (!tokens.refresh_token) throw new Error("GOOGLE_REFRESH_TOKEN_MISSING");
     const credentials: GoogleCredentials = {
       accessToken: tokens.access_token,

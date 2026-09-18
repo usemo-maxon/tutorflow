@@ -49,14 +49,36 @@ export class GoogleApiError extends Error {
 const tokenUrl = "https://oauth2.googleapis.com/token";
 const calendarApi = "https://www.googleapis.com/calendar/v3";
 
+function googleCalendarOAuthCredentials() {
+  const clientId = process.env.GOOGLE_CALENDAR_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CALENDAR_CLIENT_SECRET;
+  const missing = [
+    !clientId ? "GOOGLE_CALENDAR_CLIENT_ID" : null,
+    !clientSecret ? "GOOGLE_CALENDAR_CLIENT_SECRET" : null,
+  ].filter((name): name is string => Boolean(name));
+  if (missing.length) {
+    console.error(
+      JSON.stringify({
+        scope: "google_calendar",
+        operation: "oauth_credentials",
+        error: "missing_environment_variables",
+        missing,
+      }),
+    );
+    throw new Error("GOOGLE_CALENDAR_CONFIGURATION_MISSING");
+  }
+  return { clientId: clientId!, clientSecret: clientSecret! };
+}
+
 export async function exchangeGoogleCode(code: string, redirectUri: string) {
+  const { clientId, clientSecret } = googleCalendarOAuthCredentials();
   const response = await fetch(tokenUrl, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: process.env.GOOGLE_CLIENT_ID!,
-      client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+      client_id: clientId,
+      client_secret: clientSecret,
       redirect_uri: redirectUri,
       grant_type: "authorization_code",
     }),
@@ -76,6 +98,7 @@ export async function validGoogleAccessToken(
   const credentials = decryptSecret<GoogleCredentials>(encrypted);
   if (credentials.expiresAt > Date.now() + 60_000)
     return { token: credentials.accessToken, credentials };
+  const { clientId, clientSecret } = googleCalendarOAuthCredentials();
   let response: Response;
   try {
     response = await fetch(tokenUrl, {
@@ -83,8 +106,8 @@ export async function validGoogleAccessToken(
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         refresh_token: credentials.refreshToken,
-        client_id: process.env.GOOGLE_CLIENT_ID!,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        client_id: clientId,
+        client_secret: clientSecret,
         grant_type: "refresh_token",
       }),
     });
