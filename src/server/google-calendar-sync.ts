@@ -762,11 +762,13 @@ export async function enqueueMissingGoogleLessonsForConnection(
   return lessonIds.length;
 }
 
-export async function acceptGoogleWebhook(request: Request): Promise<boolean> {
+export async function acceptGoogleWebhook(
+  request: Request,
+): Promise<string | null> {
   const channelId = request.headers.get("x-goog-channel-id");
   const resourceId = request.headers.get("x-goog-resource-id");
   const channelToken = request.headers.get("x-goog-channel-token");
-  if (!channelId || !resourceId || !channelToken) return false;
+  if (!channelId || !resourceId || !channelToken) return null;
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("integration_connections")
@@ -776,9 +778,9 @@ export async function acceptGoogleWebhook(request: Request): Promise<boolean> {
     .eq("watch_resource_id", resourceId)
     .eq("status", "connected")
     .maybeSingle();
-  if (error || !data?.watch_token_hash) return false;
+  if (error || !data?.watch_token_hash) return null;
   if (!safeEqual(hashChannelToken(channelToken), data.watch_token_hash))
-    return false;
+    return null;
   const requestedAt = new Date().toISOString();
   const { error: updateError } = await supabase
     .from("integration_connections")
@@ -789,7 +791,7 @@ export async function acceptGoogleWebhook(request: Request): Promise<boolean> {
     })
     .eq("id", data.id)
     .eq("watch_channel_id", channelId);
-  return !updateError;
+  return updateError ? null : (data.id as string);
 }
 
 export async function maintainGoogleConnections(limit = 10) {
@@ -797,7 +799,7 @@ export async function maintainGoogleConnections(limit = 10) {
   const { data, error } = await supabase
     .from("integration_connections")
     .select(
-      "id,sync_requested_at,last_successful_sync_at,watch_expires_at,status",
+      "id,sync_state,sync_requested_at,last_attempted_sync_at,last_successful_sync_at,watch_expires_at,status",
     )
     .eq("provider", "google")
     .eq("status", "connected")
@@ -810,6 +812,9 @@ export async function maintainGoogleConnections(limit = 10) {
     .filter(
       (row) =>
         row.sync_requested_at ||
+        (row.sync_state === "syncing" &&
+          (!row.last_attempted_sync_at ||
+            Date.parse(row.last_attempted_sync_at) < staleAt)) ||
         !row.last_successful_sync_at ||
         Date.parse(row.last_successful_sync_at) < staleAt ||
         !row.watch_expires_at ||
@@ -822,6 +827,9 @@ export async function maintainGoogleConnections(limit = 10) {
   for (const row of due) {
     const shouldSync =
       row.sync_requested_at ||
+      (row.sync_state === "syncing" &&
+        (!row.last_attempted_sync_at ||
+          Date.parse(row.last_attempted_sync_at) < staleAt)) ||
       !row.last_successful_sync_at ||
       Date.parse(row.last_successful_sync_at) < staleAt;
     const shouldRenewWatch =
@@ -855,6 +863,24 @@ export async function processGoogleLessonJobs(
   options: { teacherId?: string; limit?: number } = {},
 ) {
   const supabase = createSupabaseAdminClient();
+  const staleLockCutoff = new Date(Date.now() - 15 * 60_000).toISOString();
+  let staleQuery = supabase
+    .from("google_sync_jobs")
+    .update({
+      status: "failed",
+      locked_at: null,
+      next_attempt_at: new Date().toISOString(),
+      last_error: "STALE_PROCESSING_LOCK_RECOVERED",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("status", "processing")
+    .lt("locked_at", staleLockCutoff)
+    .select("id");
+  if (options.teacherId)
+    staleQuery = staleQuery.eq("teacher_id", options.teacherId);
+  const { data: recoveredJobs, error: recoveryError } = await staleQuery;
+  if (recoveryError) throw recoveryError;
+
   let query = supabase
     .from("google_sync_jobs")
     .select("id,workspace_id,teacher_id,lesson_id,google_event_id,attempts")
@@ -869,6 +895,7 @@ export async function processGoogleLessonJobs(
   const results = [];
   for (const job of jobs ?? []) results.push(await processGoogleLessonJob(job));
   return {
+    recovered: recoveredJobs?.length ?? 0,
     processed: results.length,
     succeeded: results.filter((result) => result === "succeeded").length,
     retried: (jobs ?? []).filter((job) => job.attempts > 0).length,

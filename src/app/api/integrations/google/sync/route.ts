@@ -17,15 +17,19 @@ export async function POST(request: Request) {
   if (!teacherId) return Response.json({ ok: false }, { status: 401 });
   try {
     const connectionId = await requestGoogleSyncForTeacher(teacherId);
-    after(async () => {
-      await syncGoogleConnection(connectionId).catch(() => undefined);
-      const queued =
-        await enqueueMissingGoogleLessonsForConnection(connectionId);
-      await processGoogleLessonJobs({
-        teacherId,
-        limit: Math.max(20, queued),
-      });
-    });
+    after(() =>
+      Promise.resolve()
+        .then(async () => {
+          await syncGoogleConnection(connectionId).catch(() => undefined);
+          const queued =
+            await enqueueMissingGoogleLessonsForConnection(connectionId);
+          await processGoogleLessonJobs({
+            teacherId,
+            limit: Math.max(20, queued),
+          });
+        })
+        .catch(() => undefined),
+    );
     return Response.json({ ok: true, status: "pending" }, { status: 202 });
   } catch {
     return Response.json(

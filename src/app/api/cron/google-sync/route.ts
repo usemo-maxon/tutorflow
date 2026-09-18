@@ -14,10 +14,8 @@ export const maxDuration = 60;
 export async function GET(request: Request) {
   if (!isAuthorizedCron(request)) return schedulerUnauthorizedResponse();
   try {
-    const [outbound, connections] = await Promise.all([
-      processGoogleLessonJobs(),
-      maintainGoogleConnections(),
-    ]);
+    const connections = await maintainGoogleConnections();
+    const outbound = await processGoogleLessonJobs();
     return Response.json({ ok: true, outbound, connections });
   } catch {
     return schedulerFailureResponse();
