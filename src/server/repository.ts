@@ -1,6 +1,5 @@
 import "server-only";
 
-import { createHash } from "node:crypto";
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import type {
   AppAction,
@@ -16,6 +15,7 @@ import { createSupabaseServerClient } from "./supabase";
 import { ApiFailure } from "./errors";
 import { findProbableDuplicateIds, studentDisplayName } from "./domain/student";
 import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
+import { googleEventIdForLesson } from "./google-calendar-sync";
 
 interface StudentRow {
   id: string;
@@ -1186,10 +1186,10 @@ export async function mutateSchedulingDomain(
               workspace_id: workspaceId,
               teacher_id: teacherId,
               lesson_id: action.lessonId,
-              google_event_id: createHash("sha256")
-                .update(`${teacherId}:${action.lessonId}`)
-                .digest("hex")
-                .slice(0, 32),
+              google_event_id: googleEventIdForLesson(
+                teacherId,
+                action.lessonId,
+              ),
               status: "pending",
               attempts: 0,
               next_attempt_at: new Date().toISOString(),
@@ -1399,10 +1399,7 @@ async function saveLessonRelational(
         workspace_id: workspaceId,
         teacher_id: teacherId,
         lesson_id: action.lessonId,
-        google_event_id: createHash("sha256")
-          .update(`${teacherId}:${action.lessonId}`)
-          .digest("hex")
-          .slice(0, 32),
+        google_event_id: googleEventIdForLesson(teacherId, action.lessonId),
         status: "pending",
         attempts: 0,
         next_attempt_at: now,
@@ -1833,10 +1830,7 @@ async function enqueuePendingSync(
       workspace_id: workspaceId,
       teacher_id: teacherId,
       lesson_id: lesson.id,
-      google_event_id: createHash("sha256")
-        .update(`${teacherId}:${lesson.id}`)
-        .digest("hex")
-        .slice(0, 32),
+      google_event_id: googleEventIdForLesson(teacherId, lesson.id),
       status: "pending",
       next_attempt_at: new Date().toISOString(),
       last_error: null,

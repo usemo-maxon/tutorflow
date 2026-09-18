@@ -73,6 +73,17 @@ const reconnectMessage = "Google Calendar wymaga ponownego połączenia.";
 const syncFailureMessage =
   "Lekcja została zapisana, ale nie udało się zsynchronizować jej z Google Calendar.";
 
+export function googleEventIdForLesson(
+  teacherId: string,
+  lessonId: string,
+): string {
+  // Keep this identical to private.enqueue_lesson_side_effects in the database.
+  return createHash("md5")
+    .update(`${teacherId}:${lessonId}`)
+    .digest("hex")
+    .slice(0, 32);
+}
+
 export type LinkedChangeResolution = "noop" | "google_wins" | "local_wins";
 
 export function resolveLinkedEventChange(input: {
@@ -616,10 +627,27 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
 }
 
 export async function initializeGoogleConnection(connectionId: string) {
-  const [sync, watch] = await Promise.allSettled([
-    syncGoogleConnection(connectionId, true),
-    registerGoogleWatch(connectionId),
-  ]);
+  const watchPromise = registerGoogleWatch(connectionId);
+  const sync = await Promise.resolve()
+    .then(async () => {
+      const result = await syncGoogleConnection(connectionId, true);
+      const queued =
+        await enqueueMissingGoogleLessonsForConnection(connectionId);
+      const connection = await connectionById(connectionId);
+      await processGoogleLessonJobs({
+        teacherId: connection.teacher_id,
+        limit: Math.max(20, queued),
+      });
+      return result;
+    })
+    .then(
+      (value) => ({ status: "fulfilled" as const, value }),
+      (reason) => ({ status: "rejected" as const, reason }),
+    );
+  const watch = await watchPromise.then(
+    (value) => ({ status: "fulfilled" as const, value }),
+    (reason) => ({ status: "rejected" as const, reason }),
+  );
   if (watch.status === "rejected") {
     const supabase = createSupabaseAdminClient();
     const watchError = safeGoogleError(watch.reason);
@@ -664,6 +692,74 @@ export async function requestGoogleSyncForTeacher(
   if (error) throw error;
   if (!data) throw new Error("GOOGLE_NOT_CONNECTED");
   return data.id as string;
+}
+
+/**
+ * Adds lessons that pre-date the Google connection to the outbound queue.
+ * Existing mappings are deliberately left alone so reconnecting cannot create
+ * duplicate provider events.
+ */
+export async function enqueueMissingGoogleLessonsForConnection(
+  connectionId: string,
+): Promise<number> {
+  const supabase = createSupabaseAdminClient();
+  const connection = await connectionById(connectionId);
+  if (connection.status !== "connected")
+    throw new Error("GOOGLE_NOT_CONNECTED");
+
+  const [lessonResult, mappingResult] = await Promise.all([
+    supabase
+      .from("lessons")
+      .select("id,status")
+      .eq("workspace_id", connection.workspace_id)
+      .eq("tutor_id", connection.teacher_id)
+      .neq("status", "cancelled"),
+    supabase
+      .from("google_event_mappings")
+      .select("lesson_id")
+      .eq("connection_id", connection.id),
+  ]);
+  if (lessonResult.error) throw lessonResult.error;
+  if (mappingResult.error) throw mappingResult.error;
+
+  const mappedLessonIds = new Set(
+    (mappingResult.data ?? []).map((mapping) => mapping.lesson_id as string),
+  );
+  const lessonIds = (lessonResult.data ?? [])
+    .map((lesson) => lesson.id as string)
+    .filter((lessonId) => !mappedLessonIds.has(lessonId));
+  if (!lessonIds.length) return 0;
+
+  const queuedAt = new Date().toISOString();
+  const jobs = lessonIds.map((lessonId) => ({
+    workspace_id: connection.workspace_id,
+    teacher_id: connection.teacher_id,
+    lesson_id: lessonId,
+    google_event_id: googleEventIdForLesson(connection.teacher_id, lessonId),
+    status: "pending",
+    attempts: 0,
+    next_attempt_at: queuedAt,
+    last_error: null,
+    locked_at: null,
+    updated_at: queuedAt,
+  }));
+  const [lessonUpdate, jobUpsert] = await Promise.all([
+    supabase
+      .from("lessons")
+      .update({
+        sync_status: "pending",
+        sync_message: null,
+        updated_at: queuedAt,
+      })
+      .eq("workspace_id", connection.workspace_id)
+      .in("id", lessonIds),
+    supabase
+      .from("google_sync_jobs")
+      .upsert(jobs, { onConflict: "teacher_id,lesson_id" }),
+  ]);
+  if (lessonUpdate.error) throw lessonUpdate.error;
+  if (jobUpsert.error) throw jobUpsert.error;
+  return lessonIds.length;
 }
 
 export async function acceptGoogleWebhook(request: Request): Promise<boolean> {
@@ -733,6 +829,7 @@ export async function maintainGoogleConnections(limit = 10) {
     if (shouldSync) {
       try {
         await syncGoogleConnection(row.id);
+        await enqueueMissingGoogleLessonsForConnection(row.id);
         synced += 1;
       } catch {
         failed += 1;
@@ -752,6 +849,32 @@ export async function maintainGoogleConnections(limit = 10) {
     }
   }
   return { inspected: due.length, synced, watches, failed };
+}
+
+export async function processGoogleLessonJobs(
+  options: { teacherId?: string; limit?: number } = {},
+) {
+  const supabase = createSupabaseAdminClient();
+  let query = supabase
+    .from("google_sync_jobs")
+    .select("id,workspace_id,teacher_id,lesson_id,google_event_id,attempts")
+    .in("status", ["pending", "failed"])
+    .lt("attempts", 8)
+    .lte("next_attempt_at", new Date().toISOString())
+    .order("next_attempt_at")
+    .limit(options.limit ?? 20);
+  if (options.teacherId) query = query.eq("teacher_id", options.teacherId);
+  const { data: jobs, error } = await query;
+  if (error) throw error;
+  const results = [];
+  for (const job of jobs ?? []) results.push(await processGoogleLessonJob(job));
+  return {
+    processed: results.length,
+    succeeded: results.filter((result) => result === "succeeded").length,
+    retried: (jobs ?? []).filter((job) => job.attempts > 0).length,
+    skipped: results.filter((result) => result === "skipped").length,
+    failed: results.filter((result) => result === "failed").length,
+  };
 }
 
 export async function processGoogleLessonJob(job: {

@@ -1,10 +1,13 @@
+import { after } from "next/server";
 import { AppActionSchema, fieldErrors } from "@/lib/validation";
 import { currentTeacherId } from "@/server/auth";
 import { performAction } from "@/server/app-service";
 import { ApiFailure, errorResponse } from "@/server/errors";
-import { getAppData } from "@/server/repository";
+import { processGoogleLessonJobs } from "@/server/google-calendar-sync";
+import { getAppData, isSchedulingAction } from "@/server/repository";
 
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function GET(request: Request) {
   try {
@@ -44,7 +47,13 @@ export async function POST(request: Request) {
         fieldErrors: fieldErrors(parsed.error),
       });
     }
-    return Response.json(await performAction(teacherId, parsed.data));
+    const result = await performAction(teacherId, parsed.data);
+    if (isSchedulingAction(parsed.data)) {
+      after(() =>
+        processGoogleLessonJobs({ teacherId }).catch(() => undefined),
+      );
+    }
+    return Response.json(result);
   } catch (error) {
     return errorResponse(error);
   }

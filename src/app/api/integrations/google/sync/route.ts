@@ -1,6 +1,8 @@
 import { after } from "next/server";
 import { currentTeacherId } from "@/server/auth";
 import {
+  enqueueMissingGoogleLessonsForConnection,
+  processGoogleLessonJobs,
   requestGoogleSyncForTeacher,
   syncGoogleConnection,
 } from "@/server/google-calendar-sync";
@@ -15,7 +17,15 @@ export async function POST(request: Request) {
   if (!teacherId) return Response.json({ ok: false }, { status: 401 });
   try {
     const connectionId = await requestGoogleSyncForTeacher(teacherId);
-    after(() => syncGoogleConnection(connectionId).catch(() => undefined));
+    after(async () => {
+      await syncGoogleConnection(connectionId).catch(() => undefined);
+      const queued =
+        await enqueueMissingGoogleLessonsForConnection(connectionId);
+      await processGoogleLessonJobs({
+        teacherId,
+        limit: Math.max(20, queued),
+      });
+    });
     return Response.json({ ok: true, status: "pending" }, { status: 202 });
   } catch {
     return Response.json(

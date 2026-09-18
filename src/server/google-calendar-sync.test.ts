@@ -1,11 +1,22 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 vi.mock("./supabase", () => ({ createSupabaseAdminClient: vi.fn() }));
 
-import { resolveLinkedEventChange } from "./google-calendar-sync";
+import {
+  googleEventIdForLesson,
+  resolveLinkedEventChange,
+} from "./google-calendar-sync";
 
 describe("Google Calendar conflict and loop resolution", () => {
+  it("uses the same deterministic event ID as database-enqueued jobs", () => {
+    const source = "teacher-1:lesson-1";
+    expect(googleEventIdForLesson("teacher-1", "lesson-1")).toBe(
+      createHash("md5").update(source).digest("hex"),
+    );
+  });
+
   it("ignores the provider echo of the state easy4tutor just wrote", () => {
     expect(
       resolveLinkedEventChange({
