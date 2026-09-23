@@ -5,6 +5,7 @@ import {
   schedulerUnauthorizedResponse,
 } from "@/server/cron";
 import { createSupabaseAdminClient } from "@/server/supabase";
+import { entitledTeacherIds } from "@/server/entitlements";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -30,12 +31,26 @@ async function processReminders() {
     .order("scheduled_for")
     .limit(30);
   if (error) throw error;
+  const teacherIds = [
+    ...new Set((deliveries ?? []).map((delivery) => delivery.teacher_id)),
+  ];
+  const { data: subscriptions, error: subscriptionError } = teacherIds.length
+    ? await supabase
+        .from("subscriptions")
+        .select("teacher_id,status,tier")
+        .in("teacher_id", teacherIds)
+    : { data: [], error: null };
+  if (subscriptionError) throw subscriptionError;
+  const entitled = entitledTeacherIds(subscriptions ?? [], "telegramReminders");
   let sent = 0;
   let retried = 0;
-  let skipped = 0;
+  let skipped = (deliveries ?? []).filter(
+    (delivery) => !entitled.has(delivery.teacher_id),
+  ).length;
   let failed = 0;
   let processed = 0;
   for (const delivery of deliveries ?? []) {
+    if (!entitled.has(delivery.teacher_id)) continue;
     const { data: claimed } = await supabase
       .from("reminder_deliveries")
       .update({ status: "processing", attempts: delivery.attempts + 1 })

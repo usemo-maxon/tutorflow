@@ -1,11 +1,18 @@
 import { createHash, randomBytes } from "node:crypto";
 import { redirect } from "next/navigation";
 import { currentTeacher } from "@/server/auth";
+import { assertEntitlement } from "@/server/entitlements";
+import { errorResponse } from "@/server/errors";
 import { createSupabaseServerClient } from "@/server/supabase";
 
 export async function GET() {
   const teacher = await currentTeacher();
   if (!teacher) redirect("/logowanie");
+  try {
+    assertEntitlement(teacher.subscription, "telegramReminders");
+  } catch (error) {
+    return errorResponse(error);
+  }
   const username = process.env.TELEGRAM_BOT_USERNAME;
   if (!username) redirect("/app/ustawienia/integracje?telegram=unavailable");
   const code = randomBytes(18).toString("base64url");

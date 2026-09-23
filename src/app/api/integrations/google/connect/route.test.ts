@@ -23,7 +23,10 @@ describe("Google Calendar OAuth connect", () => {
       "GOOGLE_CALENDAR_REDIRECT_URI",
       "https://easy4tutor.pl/api/integrations/google/callback",
     );
-    mocks.currentTeacher.mockResolvedValue({ id: "teacher-1" });
+    mocks.currentTeacher.mockResolvedValue({
+      id: "teacher-1",
+      subscription: { status: "trial", tier: "free" },
+    });
     mocks.insert.mockResolvedValue({ error: null });
   });
 
@@ -71,6 +74,19 @@ describe("Google Calendar OAuth connect", () => {
     expect(response.headers.get("location")).toBe(
       "https://easy4tutor.pl/logowanie",
     );
+    expect(mocks.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects an active Free account before creating OAuth state", async () => {
+    mocks.currentTeacher.mockResolvedValue({
+      id: "teacher-1",
+      subscription: { status: "active", tier: "free" },
+    });
+    const response = await GET(
+      new Request("https://easy4tutor.pl/api/integrations/google/connect"),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "PLAN_REQUIRED" });
     expect(mocks.insert).not.toHaveBeenCalled();
   });
 });

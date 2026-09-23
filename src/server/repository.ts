@@ -12,6 +12,7 @@ import * as local from "./store";
 import type { StoreShape, TeacherRecord } from "./store";
 import { createSupabaseServerClient } from "./supabase";
 import { mapSubscriptionRow } from "./subscription";
+import { assertActiveStudentCapacity } from "./entitlements";
 import { ApiFailure } from "./errors";
 import { findProbableDuplicateIds, studentDisplayName } from "./domain/student";
 import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
@@ -848,7 +849,7 @@ async function loadWriteContext(teacherId: string) {
       .single(),
     supabase
       .from("subscriptions")
-      .select("read_only")
+      .select("status,tier,read_only")
       .eq("teacher_id", teacherId)
       .single(),
     supabase.from("profiles").select("timezone").eq("id", teacherId).single(),
@@ -873,6 +874,10 @@ async function loadWriteContext(teacherId: string) {
     supabase,
     workspaceId: tutorResult.data.workspace_id as string,
     timezone: profileResult.data.timezone as string,
+    subscription: {
+      status: subscriptionResult.data.status,
+      tier: subscriptionResult.data.tier,
+    },
   };
 }
 
@@ -1530,11 +1535,19 @@ export async function mutatePeopleDomain(
   if (localAllowed()) {
     throw new Error("LOCAL_PEOPLE_ACTION_MUST_USE_STORE");
   }
-  const { supabase, workspaceId } = await loadWriteContext(teacherId);
+  const { supabase, workspaceId, subscription } =
+    await loadWriteContext(teacherId);
   let result: MutationResponse["result"];
 
   switch (action.type) {
     case "createStudent": {
+      const { count: activeStudents, error: countError } = await supabase
+        .from("students")
+        .select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId)
+        .eq("status", "active");
+      if (countError) databaseFailure(countError);
+      assertActiveStudentCapacity(subscription, activeStudents ?? 0);
       const displayName = studentDisplayName(action.student);
       if (!action.student.allowDuplicate) {
         const { data: candidates, error } = await supabase
@@ -1620,6 +1633,28 @@ export async function mutatePeopleDomain(
       break;
     }
     case "setStudentStatus": {
+      if (action.status === "active") {
+        const [{ data: existing, error: existingError }, countResult] =
+          await Promise.all([
+            supabase
+              .from("students")
+              .select("status")
+              .eq("workspace_id", workspaceId)
+              .eq("id", action.studentId)
+              .maybeSingle(),
+            supabase
+              .from("students")
+              .select("id", { count: "exact", head: true })
+              .eq("workspace_id", workspaceId)
+              .eq("status", "active"),
+          ]);
+        if (existingError) databaseFailure(existingError);
+        if (!existing) databaseFailure({ code: "PGRST116" });
+        if (countResult.error) databaseFailure(countResult.error);
+        if (existing.status === "archived") {
+          assertActiveStudentCapacity(subscription, countResult.count ?? 0);
+        }
+      }
       const { data, error } = await supabase
         .from("students")
         .update({

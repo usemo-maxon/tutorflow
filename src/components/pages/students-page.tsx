@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppData } from "@/hooks/use-app-data";
 import { copy } from "@/lib/copy";
 import { formatMoney } from "@/lib/format";
+import { resolveEntitlements } from "@/lib/entitlements";
 import type { Lesson, Student } from "@/lib/domain";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
@@ -101,6 +102,14 @@ export function StudentsPage() {
   }, [data, debouncedSearch, status, subject, level, groupId, sort]);
 
   if (isPending || !data) return <PageLoading />;
+  const studentLimit = resolveEntitlements(
+    data.teacher.subscription,
+  ).maxActiveStudents;
+  const activeStudentCount = data.students.filter(
+    (student) => student.status === "active",
+  ).length;
+  const studentLimitReached =
+    studentLimit !== null && activeStudentCount >= studentLimit;
 
   function updateParam(key: string, value?: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -127,10 +136,20 @@ export function StudentsPage() {
           <p className="page-intro">
             Kontakty, najbliższe lekcje i rozliczenia w jednym miejscu.
           </p>
+          {studentLimit !== null && (
+            <p className="student-limit-usage">
+              <span>
+                {activeStudentCount} z {studentLimit} aktywnych uczniów
+              </span>
+              {studentLimitReached && (
+                <Link href="/app/ustawienia/subskrypcja">Zobacz plan Pro</Link>
+              )}
+            </p>
+          )}
         </div>
         <button
           className="button button--primary"
-          disabled={data.teacher.subscription.readOnly}
+          disabled={data.teacher.subscription.readOnly || studentLimitReached}
           onClick={() => openStudentComposer()}
         >
           <Plus size={18} aria-hidden="true" />
@@ -279,6 +298,7 @@ export function StudentsPage() {
             !debouncedSearch && !activeFilters.length && status === "active" ? (
               <button
                 className="button button--primary"
+                disabled={studentLimitReached}
                 onClick={() => openStudentComposer()}
               >
                 Dodaj pierwszego ucznia

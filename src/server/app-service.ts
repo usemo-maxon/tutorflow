@@ -28,6 +28,7 @@ import {
 import { findProbableDuplicateIds, studentDisplayName } from "./domain/student";
 import { appDataFromStore, type LessonRecord, type StoreShape } from "./store";
 import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
+import { assertActiveStudentCapacity } from "./entitlements";
 
 export async function performAction(
   teacherId: string,
@@ -55,6 +56,14 @@ export async function performAction(
     let result: MutationResponse["result"];
     switch (action.type) {
       case "createStudent": {
+        assertActiveStudentCapacity(
+          teacher.subscription,
+          store.students.filter(
+            (candidate) =>
+              candidate.teacherId === teacherId &&
+              candidate.status === "active",
+          ).length,
+        );
         const displayName = studentDisplayName(action.student);
         const duplicateIds = findProbableDuplicateIds(
           action.student,
@@ -133,6 +142,16 @@ export async function performAction(
       }
       case "setStudentStatus": {
         const student = ownedStudent(store, teacherId, action.studentId);
+        if (student.status === "archived" && action.status === "active") {
+          assertActiveStudentCapacity(
+            teacher.subscription,
+            store.students.filter(
+              (candidate) =>
+                candidate.teacherId === teacherId &&
+                candidate.status === "active",
+            ).length,
+          );
+        }
         student.status = action.status;
         break;
       }

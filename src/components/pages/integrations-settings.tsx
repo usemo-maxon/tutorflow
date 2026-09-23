@@ -10,6 +10,7 @@ import {
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { useAppData } from "@/hooks/use-app-data";
+import { resolveEntitlements } from "@/lib/entitlements";
 import { useSessionTeacher } from "../app-shell";
 import { PageLoading } from "../ui/loading";
 
@@ -22,6 +23,7 @@ export function IntegrationsSettings() {
   const session = useSessionTeacher();
   const { data, isPending, refetch } = useAppData(session.id);
   if (isPending || !data) return <PageLoading />;
+  const entitlements = resolveEntitlements(data.teacher.subscription);
   const failedLesson = data.lessons.find(
     (lesson) =>
       lesson.syncStatus === "failed" ||
@@ -46,8 +48,16 @@ export function IntegrationsSettings() {
           label={data.integrations.google.label}
           description="Dwukierunkowa synchronizacja lekcji i podgląd zajętości z wybranego kalendarza."
           error={data.integrations.google.lastError}
+          planLocked={!entitlements.googleCalendar}
         >
-          {data.integrations.google.status === "connected" && (
+          {!entitlements.googleCalendar ? (
+            <Link
+              className="button button--secondary"
+              href="/app/ustawienia/subskrypcja"
+            >
+              Zobacz plan Pro
+            </Link>
+          ) : data.integrations.google.status === "connected" ? (
             <>
               <button
                 type="button"
@@ -105,8 +115,7 @@ export function IntegrationsSettings() {
                 Połącz ponownie
               </a>
             </>
-          )}
-          {data.integrations.google.status !== "connected" &&
+          ) : (
             data.integrations.google.status !== "not_configured" && (
               <a
                 className="button button--secondary"
@@ -117,8 +126,9 @@ export function IntegrationsSettings() {
                   ? "Połącz ponownie"
                   : "Połącz z Google"}
               </a>
-            )}
-          {failedLesson && (
+            )
+          )}
+          {entitlements.googleCalendar && failedLesson && (
             <Link
               className="button button--secondary"
               href={`/app/lekcje/${failedLesson.id}`}
@@ -143,11 +153,20 @@ export function IntegrationsSettings() {
         </IntegrationCard>
         <IntegrationCard
           icon={<MessageCircle />}
-          name="Telegram"
+          name="Przypomnienia Telegram"
           state={data.integrations.telegram.status}
           description="Przypomnienia dla nauczyciela 24 godziny i 1 godzinę przed lekcją."
+          planLocked={!entitlements.telegramReminders}
         >
-          {data.integrations.telegram.status !== "connected" &&
+          {!entitlements.telegramReminders ? (
+            <Link
+              className="button button--secondary"
+              href="/app/ustawienia/subskrypcja"
+            >
+              Zobacz plan Pro
+            </Link>
+          ) : (
+            data.integrations.telegram.status !== "connected" &&
             data.integrations.telegram.status !== "not_configured" && (
               <a
                 className="button button--secondary"
@@ -155,7 +174,8 @@ export function IntegrationsSettings() {
               >
                 Połącz Telegram
               </a>
-            )}
+            )
+          )}
         </IntegrationCard>
         <IntegrationCard
           icon={<Settings2 />}
@@ -175,6 +195,7 @@ function IntegrationCard({
   label,
   description,
   error,
+  planLocked = false,
   children,
 }: {
   icon: ReactNode;
@@ -189,18 +210,21 @@ function IntegrationCard({
   label?: string;
   description: string;
   error?: string;
+  planLocked?: boolean;
   children?: ReactNode;
 }) {
   const hasSyncError = state === "connected" && syncState === "error";
-  const status = hasSyncError
-    ? "Błąd synchronizacji"
-    : state === "connected"
-      ? "Połączono"
-      : state === "error" || state === "reconnect_required"
-        ? "Wymaga uwagi"
-        : state === "not_configured"
-          ? "Jeszcze niedostępne"
-          : "Nie połączono";
+  const status = planLocked
+    ? "Dostępne w planie Pro"
+    : hasSyncError
+      ? "Błąd synchronizacji"
+      : state === "connected"
+        ? "Połączono"
+        : state === "error" || state === "reconnect_required"
+          ? "Wymaga uwagi"
+          : state === "not_configured"
+            ? "Jeszcze niedostępne"
+            : "Nie połączono";
   return (
     <article className="integration-card">
       <span className="integration-icon" aria-hidden="true">
@@ -210,24 +234,27 @@ function IntegrationCard({
         <div className="integration-title">
           <h3>{name}</h3>
           <span
-            className={`status-badge status-badge--integration-${hasSyncError ? "error" : state}`}
+            className={`status-badge status-badge--integration-${planLocked ? "not_connected" : hasSyncError ? "error" : state}`}
           >
-            {state === "connected" ? (
-              hasSyncError ? (
+            {!planLocked &&
+              (state === "connected" ? (
+                hasSyncError ? (
+                  <AlertTriangle size={14} aria-hidden="true" />
+                ) : (
+                  <CheckCircle2 size={14} aria-hidden="true" />
+                )
+              ) : state === "error" || state === "reconnect_required" ? (
                 <AlertTriangle size={14} aria-hidden="true" />
-              ) : (
-                <CheckCircle2 size={14} aria-hidden="true" />
-              )
-            ) : state === "error" || state === "reconnect_required" ? (
-              <AlertTriangle size={14} aria-hidden="true" />
-            ) : null}
+              ) : null)}
             {status}
           </span>
         </div>
         <p>{description}</p>
-        {label && <small>Połączenie: {label}</small>}
-        {error && <div className="integration-error">{error}</div>}
-        {state === "not_configured" && (
+        {!planLocked && label && <small>Połączenie: {label}</small>}
+        {!planLocked && error && (
+          <div className="integration-error">{error}</div>
+        )}
+        {!planLocked && state === "not_configured" && (
           <div className="integration-note">
             Połączenie nie jest jeszcze dostępne. Możesz nadal planować lekcje i
             zapisywać wyniki w easy4tutor.

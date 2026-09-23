@@ -18,6 +18,7 @@ import {
   validGoogleAccessToken,
 } from "./google-calendar";
 import { GOOGLE_EVENT_COLORS } from "./google-calendar-colors";
+import { entitledTeacherIds } from "./entitlements";
 import { createSupabaseAdminClient } from "./supabase";
 
 interface ConnectionRow {
@@ -799,7 +800,7 @@ export async function maintainGoogleConnections(limit = 10) {
   const { data, error } = await supabase
     .from("integration_connections")
     .select(
-      "id,sync_state,sync_requested_at,last_attempted_sync_at,last_successful_sync_at,watch_expires_at,status",
+      "id,teacher_id,sync_state,sync_requested_at,last_attempted_sync_at,last_successful_sync_at,watch_expires_at,status",
     )
     .eq("provider", "google")
     .eq("status", "connected")
@@ -808,7 +809,7 @@ export async function maintainGoogleConnections(limit = 10) {
   const now = Date.now();
   const staleAt = now - 15 * 60_000;
   const watchDueAt = now + 24 * 60 * 60_000;
-  const due = (data ?? [])
+  const candidates = (data ?? [])
     .filter(
       (row) =>
         row.sync_requested_at ||
@@ -821,6 +822,16 @@ export async function maintainGoogleConnections(limit = 10) {
         Date.parse(row.watch_expires_at) < watchDueAt,
     )
     .slice(0, limit);
+  const teacherIds = [...new Set(candidates.map((row) => row.teacher_id))];
+  const { data: subscriptions, error: subscriptionError } = teacherIds.length
+    ? await supabase
+        .from("subscriptions")
+        .select("teacher_id,status,tier")
+        .in("teacher_id", teacherIds)
+    : { data: [], error: null };
+  if (subscriptionError) throw subscriptionError;
+  const entitled = entitledTeacherIds(subscriptions ?? [], "googleCalendar");
+  const due = candidates.filter((row) => entitled.has(row.teacher_id));
   let synced = 0;
   let watches = 0;
   let failed = 0;
@@ -856,7 +867,13 @@ export async function maintainGoogleConnections(limit = 10) {
       }
     }
   }
-  return { inspected: due.length, synced, watches, failed };
+  return {
+    inspected: candidates.length,
+    synced,
+    watches,
+    skipped: candidates.length - due.length,
+    failed,
+  };
 }
 
 export async function processGoogleLessonJobs(
@@ -892,14 +909,32 @@ export async function processGoogleLessonJobs(
   if (options.teacherId) query = query.eq("teacher_id", options.teacherId);
   const { data: jobs, error } = await query;
   if (error) throw error;
+  const teacherIds = [
+    ...new Set((jobs ?? []).map((job) => job.teacher_id as string)),
+  ];
+  const { data: subscriptions, error: subscriptionError } = teacherIds.length
+    ? await supabase
+        .from("subscriptions")
+        .select("teacher_id,status,tier")
+        .in("teacher_id", teacherIds)
+    : { data: [], error: null };
+  if (subscriptionError) throw subscriptionError;
+  const entitled = entitledTeacherIds(subscriptions ?? [], "googleCalendar");
+  const processableJobs = (jobs ?? []).filter((job) =>
+    entitled.has(job.teacher_id),
+  );
   const results = [];
-  for (const job of jobs ?? []) results.push(await processGoogleLessonJob(job));
+  for (const job of processableJobs)
+    results.push(await processGoogleLessonJob(job));
   return {
     recovered: recoveredJobs?.length ?? 0,
     processed: results.length,
     succeeded: results.filter((result) => result === "succeeded").length,
     retried: (jobs ?? []).filter((job) => job.attempts > 0).length,
-    skipped: results.filter((result) => result === "skipped").length,
+    skipped:
+      results.filter((result) => result === "skipped").length +
+      (jobs?.length ?? 0) -
+      processableJobs.length,
     failed: results.filter((result) => result === "failed").length,
   };
 }

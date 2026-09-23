@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { currentTeacher } from "@/server/auth";
+import { assertEntitlement } from "@/server/entitlements";
+import { errorResponse } from "@/server/errors";
 import { createSupabaseServerClient } from "@/server/supabase";
 
 export const runtime = "nodejs";
@@ -17,6 +19,11 @@ function noStoreRedirect(request: Request, destination: string) {
 export async function GET(request: Request) {
   const teacher = await currentTeacher();
   if (!teacher) return noStoreRedirect(request, "/logowanie");
+  try {
+    assertEntitlement(teacher.subscription, "googleCalendar");
+  } catch (error) {
+    return errorResponse(error);
+  }
   const missingConfiguration = [
     "GOOGLE_CALENDAR_CLIENT_ID",
     "GOOGLE_CALENDAR_CLIENT_SECRET",
