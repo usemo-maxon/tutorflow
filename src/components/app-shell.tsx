@@ -12,7 +12,6 @@ import {
   Clock3,
   LogOut,
   Menu,
-  Plus,
   Settings,
   Users,
   X,
@@ -30,7 +29,12 @@ import {
 import { authRequest } from "@/lib/api-client";
 import type { Teacher } from "@/lib/domain";
 import { copy } from "@/lib/copy";
+import {
+  getGlobalCreateRoute,
+  type GlobalCreateAction,
+} from "@/lib/global-create";
 import { AppUiProvider, useAppUi } from "./app-ui-context";
+import { GlobalCreateMenu } from "./global-create-menu";
 
 const LessonComposer = dynamic(() =>
   import("./lesson-composer").then((module) => module.LessonComposer),
@@ -79,6 +83,7 @@ function ShellBody({
     lessonComposer,
     openLessonComposer,
     studentComposerOpen,
+    openStudentComposer,
     toast,
     dismissToast,
     showError,
@@ -108,15 +113,18 @@ function ShellBody({
     }
   }
   const readOnly = teacher.subscription.readOnly;
-  function startPlanning() {
+  function handleGlobalCreate(action: GlobalCreateAction) {
     setMobileMenu(false);
-    if (readOnly) {
-      router.push("/app/ustawienia/subskrypcja");
+    if (action === "lesson") {
+      openLessonComposer();
       return;
     }
-    if (!["/app/kalendarz", "/app/dzisiaj"].includes(pathname))
-      router.push("/app/kalendarz?action=lesson");
-    else openLessonComposer();
+    if (action === "student") {
+      openStudentComposer();
+      return;
+    }
+    const destination = getGlobalCreateRoute(action);
+    if (destination) router.push(destination);
   }
 
   return (
@@ -138,16 +146,11 @@ function ShellBody({
             <X size={20} />
           </button>
         </div>
-        <button
+        <GlobalCreateMenu
           className="button button--secondary sidebar-add"
-          aria-label="Dodaj lekcję"
-          title="Dodaj lekcję"
           disabled={readOnly}
-          onClick={startPlanning}
-        >
-          <Plus size={18} aria-hidden="true" />
-          {copy.actions.addLesson}
-        </button>
+          onAction={handleGlobalCreate}
+        />
         <nav className="sidebar-nav" aria-label="Główna nawigacja">
           {nav.map(({ href, label, icon: Icon }) => {
             const active =
@@ -252,13 +255,13 @@ function ShellBody({
         <Link className="brand" href="/app/dzisiaj">
           <BrandLogo />
         </Link>
-        <button
+        <GlobalCreateMenu
           className="icon-button icon-button--blue"
-          aria-label="Dodaj lekcję"
-          onClick={startPlanning}
-        >
-          <Plus size={21} />
-        </button>
+          disabled={readOnly}
+          iconOnly
+          placement="end"
+          onAction={handleGlobalCreate}
+        />
       </header>
 
       <main id="main-content" className="app-main" tabIndex={-1}>

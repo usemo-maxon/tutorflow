@@ -2,7 +2,7 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { LoaderCircle, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useFinanceMutation } from "@/hooks/use-app-data";
 import {
   parseMoneyInput,
@@ -18,10 +18,14 @@ export function RecordPaymentDialog({
   overview,
   defaultStudentId,
   triggerLabel = "Zarejestruj płatność",
+  autoOpen = false,
+  onAutoOpenConsumed,
 }: {
   overview: FinancialOverview;
   defaultStudentId?: string;
   triggerLabel?: string;
+  autoOpen?: boolean;
+  onAutoOpenConsumed?: () => void;
 }) {
   const teacher = useSessionTeacher();
   const mutation = useFinanceMutation(teacher.id);
@@ -40,6 +44,14 @@ export function RecordPaymentDialog({
   const [idempotencyKey, setIdempotencyKey] = useState(() =>
     crypto.randomUUID(),
   );
+  useEffect(() => {
+    if (!autoOpen) return;
+    const timer = window.setTimeout(() => {
+      if (overview.students.length) setOpen(true);
+      onAutoOpenConsumed?.();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [autoOpen, onAutoOpenConsumed, overview.students.length]);
   const amountMinor = parseMoneyInput(amount);
   const student = overview.students.find((item) => item.id === studentId);
   const charges = useMemo(
@@ -292,9 +304,13 @@ export function RecordPaymentDialog({
 export function CreatePackageDialog({
   overview,
   defaultStudentId,
+  autoOpen = false,
+  onAutoOpenConsumed,
 }: {
   overview: FinancialOverview;
   defaultStudentId?: string;
+  autoOpen?: boolean;
+  onAutoOpenConsumed?: () => void;
 }) {
   const teacher = useSessionTeacher();
   const mutation = useFinanceMutation(teacher.id);
@@ -310,6 +326,14 @@ export function CreatePackageDialog({
     new Date().toISOString().slice(0, 10),
   );
   const [expiresAt, setExpiresAt] = useState("");
+  useEffect(() => {
+    if (!autoOpen) return;
+    const timer = window.setTimeout(() => {
+      if (overview.students.length) setOpen(true);
+      onAutoOpenConsumed?.();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [autoOpen, onAutoOpenConsumed, overview.students.length]);
   const student = overview.students.find((item) => item.id === studentId);
 
   async function submit(event: React.FormEvent) {

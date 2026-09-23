@@ -2,7 +2,8 @@
 
 import { AlertCircle, PackageCheck, Search, WalletCards } from "lucide-react";
 import Link from "next/link";
-import { useDeferredValue, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useDeferredValue, useEffect, useState } from "react";
 import {
   CreatePackageDialog,
   RecordPaymentDialog,
@@ -11,7 +12,13 @@ import { useFinancialOverview } from "@/hooks/use-app-data";
 import { fetchFinancialOverview } from "@/lib/api-client";
 import type { FinancialPayment } from "@/lib/finance";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import {
+  parsePaymentsCreateAction,
+  removeActionFromUrl,
+  type PaymentsCreateAction,
+} from "@/lib/global-create";
 import { useSessionTeacher } from "../app-shell";
+import { useAppUi } from "../app-ui-context";
 import { EmptyState } from "../ui/empty-state";
 import { PageLoading } from "../ui/loading";
 
@@ -20,6 +27,12 @@ type View = "charges" | "payments" | "packages";
 export function PaymentsPage() {
   const teacher = useSessionTeacher();
   const { data, isPending, error } = useFinancialOverview(teacher.id);
+  const { openStudentComposer } = useAppUi();
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const requestedAction = parsePaymentsCreateAction(searchParams.get("action"));
+  const queryString = searchParams.toString();
   const [view, setView] = useState<View>("charges");
   const [search, setSearch] = useState("");
   const [chargeFilter, setChargeFilter] = useState<"all" | "overdue">("all");
@@ -29,7 +42,39 @@ export function PaymentsPage() {
   const [olderPayments, setOlderPayments] = useState<FinancialPayment[]>([]);
   const [nextCursor, setNextCursor] = useState<number | undefined>();
   const [loadingMore, setLoadingMore] = useState(false);
+  const [autoOpenAction, setAutoOpenAction] =
+    useState<PaymentsCreateAction | null>(null);
+  const [missingStudentAction, setMissingStudentAction] =
+    useState<PaymentsCreateAction | null>(null);
   const query = useDeferredValue(search.trim().toLocaleLowerCase("pl"));
+  const consumePaymentAutoOpen = useCallback(
+    () =>
+      setAutoOpenAction((current) => (current === "payment" ? null : current)),
+    [],
+  );
+  const consumePackageAutoOpen = useCallback(
+    () =>
+      setAutoOpenAction((current) => (current === "package" ? null : current)),
+    [],
+  );
+
+  useEffect(() => {
+    if (!data || !requestedAction) return;
+    const timer = window.setTimeout(() => {
+      if (data.students.length) {
+        setAutoOpenAction(requestedAction);
+        setMissingStudentAction(null);
+      } else {
+        setAutoOpenAction(null);
+        setMissingStudentAction(requestedAction);
+      }
+      router.replace(removeActionFromUrl(pathname, queryString), {
+        scroll: false,
+      });
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [data, pathname, queryString, requestedAction, router]);
+
   if (isPending) return <PageLoading />;
   if (error || !data) {
     return (
@@ -83,10 +128,44 @@ export function PaymentsPage() {
           </p>
         </div>
         <div className="finance-header-actions">
-          <CreatePackageDialog overview={data} />
-          <RecordPaymentDialog overview={data} />
+          <CreatePackageDialog
+            overview={data}
+            autoOpen={autoOpenAction === "package"}
+            onAutoOpenConsumed={consumePackageAutoOpen}
+          />
+          <RecordPaymentDialog
+            overview={data}
+            autoOpen={autoOpenAction === "payment"}
+            onAutoOpenConsumed={consumePaymentAutoOpen}
+          />
         </div>
       </header>
+
+      {missingStudentAction && (
+        <div className="finance-create-notice" role="status">
+          <AlertCircle size={20} aria-hidden="true" />
+          <div>
+            <strong>
+              {missingStudentAction === "payment"
+                ? "Najpierw dodaj ucznia, aby zarejestrować płatność."
+                : "Najpierw dodaj ucznia, aby utworzyć pakiet."}
+            </strong>
+            <p>Po utworzeniu ucznia wróć do płatności i spróbuj ponownie.</p>
+          </div>
+          {!teacher.subscription.readOnly && (
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => {
+                setMissingStudentAction(null);
+                openStudentComposer();
+              }}
+            >
+              Dodaj ucznia
+            </button>
+          )}
+        </div>
+      )}
 
       <section className="finance-metrics" aria-label="Podsumowanie rozliczeń">
         <Metric
