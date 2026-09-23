@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { authRequest, ClientApiError } from "@/lib/api-client";
-import { safeAppPath } from "@/lib/auth-redirect";
+import { authAppDestination } from "@/lib/auth-redirect";
 import { copy } from "@/lib/copy";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 
@@ -99,7 +99,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
     try {
       const supabase = await createSupabaseBrowserClient();
-      const next = safeAppPath(searchParams.get("returnTo"));
+      const next = authAppDestination(mode, searchParams.get("returnTo"));
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
@@ -130,7 +130,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         setConfirmationSent(true);
         return;
       }
-      router.push(safeAppPath(searchParams.get("returnTo")));
+      router.push(authAppDestination(mode, searchParams.get("returnTo")));
       router.refresh();
     } catch (error) {
       if (error instanceof ClientApiError) {

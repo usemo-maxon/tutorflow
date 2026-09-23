@@ -49,6 +49,7 @@ export function TodayPage() {
 
   const timezone = data.teacher.timezone;
   const isNewTutor = data.studentCount === 0;
+  const onboardingIncomplete = !session.onboardingCompletedAt;
   const nextUpcoming = data.upcomingLessons[0];
   const teacherName = data.teacher.name.trim().split(/\s+/)[0];
 
@@ -74,6 +75,28 @@ export function TodayPage() {
         )}
       </header>
 
+      {onboardingIncomplete && (
+        <section
+          className="onboarding-reminder"
+          aria-labelledby="onboarding-reminder-title"
+        >
+          <div>
+            <p className="eyebrow">Pierwsze kroki</p>
+            <h2 id="onboarding-reminder-title">
+              Dokończ konfigurację easy4tutor
+            </h2>
+            <p>
+              Dodaj ucznia i pierwszą lekcję, żeby uruchomić pełny przepływ
+              pracy.
+            </p>
+          </div>
+          <Link className="button button--secondary" href="/app/start">
+            Dokończ konfigurację
+            <ArrowRight size={17} aria-hidden="true" />
+          </Link>
+        </section>
+      )}
+
       {data.partialErrors.length > 0 && (
         <div className="dashboard-partial-error" role="status">
           <AlertTriangle size={18} aria-hidden="true" />
@@ -89,6 +112,7 @@ export function TodayPage() {
       {isNewTutor ? (
         <NewTutorState
           readOnly={data.teacher.readOnly}
+          showAction={!onboardingIncomplete}
           onAddStudent={() => openStudentComposer()}
         />
       ) : (
@@ -473,9 +497,11 @@ function TodayEmptyState({
 
 function NewTutorState({
   readOnly,
+  showAction,
   onAddStudent,
 }: {
   readOnly: boolean;
+  showAction: boolean;
   onAddStudent: () => void;
 }) {
   return (
@@ -487,14 +513,16 @@ function NewTutorState({
           Dodaj kartę ucznia, a potem od razu zaplanuj pierwszą lekcję. Resztę
           dnia ułożysz już w kalendarzu.
         </p>
-        <button
-          className="button button--primary"
-          disabled={readOnly}
-          onClick={onAddStudent}
-        >
-          <UserPlus size={18} aria-hidden="true" />
-          Dodaj pierwszego ucznia
-        </button>
+        {showAction && (
+          <button
+            className="button button--primary"
+            disabled={readOnly}
+            onClick={onAddStudent}
+          >
+            <UserPlus size={18} aria-hidden="true" />
+            Dodaj pierwszego ucznia
+          </button>
+        )}
       </div>
       <ol className="new-tutor-steps">
         <li>

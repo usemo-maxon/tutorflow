@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  authAppDestination,
   DEFAULT_APP_PATH,
   safeAppPath,
   safeRelativePath,
@@ -30,5 +31,18 @@ describe("authentication redirects", () => {
     expect(safeRelativePath("//example.com")).toBe(DEFAULT_APP_PATH);
     expect(safeRelativePath("/\\example.com")).toBe(DEFAULT_APP_PATH);
     expect(safeRelativePath("/app\ndzisiaj")).toBe(DEFAULT_APP_PATH);
+  });
+
+  it("routes registration to onboarding regardless of returnTo", () => {
+    expect(authAppDestination("register", "/app/kalendarz")).toBe("/app/start");
+  });
+
+  it("keeps safe login destinations and the normal fallback", () => {
+    expect(authAppDestination("login", "/app/kalendarz")).toBe(
+      "/app/kalendarz",
+    );
+    expect(authAppDestination("login", "https://evil.example")).toBe(
+      DEFAULT_APP_PATH,
+    );
   });
 });

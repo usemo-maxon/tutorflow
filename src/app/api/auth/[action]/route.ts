@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { z } from "zod";
+import { ONBOARDING_APP_PATH } from "@/lib/auth-redirect";
 import { SESSION_COOKIE } from "@/server/auth";
 import { isSupabaseConfigured, siteUrl } from "@/server/env";
 import { ApiFailure, errorResponse } from "@/server/errors";
@@ -123,7 +124,7 @@ export async function POST(
         password: parsed.data.password,
         options: {
           data: { full_name: parsed.data.name },
-          emailRedirectTo: `${siteUrl()}/api/auth/callback?next=${encodeURIComponent("/app/dzisiaj")}`,
+          emailRedirectTo: `${siteUrl()}/api/auth/callback?next=${encodeURIComponent(ONBOARDING_APP_PATH)}`,
         },
       });
       if (error) {

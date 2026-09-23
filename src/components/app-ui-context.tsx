@@ -10,12 +10,17 @@ import {
   type ReactNode,
 } from "react";
 import type { AppError, Student } from "@/lib/domain";
+import type {
+  LessonAfterCreate,
+  StudentComposerContext,
+} from "@/lib/composer-context";
 
 export interface LessonComposerPreset {
   studentIds?: string[];
   date?: string;
   time?: string;
   durationMinutes?: number;
+  afterCreate?: LessonAfterCreate;
 }
 
 interface ToastState {
@@ -29,11 +34,15 @@ interface ToastState {
 interface AppUiValue {
   lessonComposer: LessonComposerPreset | null;
   studentComposerOpen: boolean;
+  studentComposerContext: StudentComposerContext;
   editingStudent: Student | null;
   toast: ToastState | null;
   openLessonComposer: (preset?: LessonComposerPreset) => void;
   closeLessonComposer: () => void;
-  openStudentComposer: (student?: Student) => void;
+  openStudentComposer: (
+    student?: Student,
+    context?: StudentComposerContext,
+  ) => void;
   dismissToast: () => void;
   restoreComposerFocus: (kind: "lesson" | "student") => void;
   closeStudentComposer: () => void;
@@ -47,6 +56,8 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
   const [lessonComposer, setLessonComposer] =
     useState<LessonComposerPreset | null>(null);
   const [studentComposerOpen, setStudentComposerOpen] = useState(false);
+  const [studentComposerContext, setStudentComposerContext] =
+    useState<StudentComposerContext>("default");
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [toast, setToast] = useState<ToastState | null>(null);
   const composerTriggers = useRef<
@@ -80,6 +91,7 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
     () => ({
       lessonComposer,
       studentComposerOpen,
+      studentComposerContext,
       editingStudent,
       dismissToast: () => setToast(null),
       restoreComposerFocus: (kind) => {
@@ -92,19 +104,24 @@ export function AppUiProvider({ children }: { children: ReactNode }) {
         setLessonComposer(preset);
       },
       closeLessonComposer: () => setLessonComposer(null),
-      openStudentComposer: (student) => {
+      openStudentComposer: (student, context = "default") => {
         composerTriggers.current.student =
           document.activeElement as HTMLElement;
         setEditingStudent(student ?? null);
+        setStudentComposerContext(context);
         setStudentComposerOpen(true);
       },
-      closeStudentComposer: () => setStudentComposerOpen(false),
+      closeStudentComposer: () => {
+        setStudentComposerOpen(false);
+        setStudentComposerContext("default");
+      },
       showToast,
       showError,
     }),
     [
       lessonComposer,
       studentComposerOpen,
+      studentComposerContext,
       editingStudent,
       toast,
       showToast,

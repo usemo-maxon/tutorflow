@@ -199,6 +199,7 @@ export interface Teacher {
   name: string;
   email: string;
   timezone: string;
+  onboardingCompletedAt?: ISODateTime;
   subscription: {
     status: SubscriptionStatus;
     tier: SubscriptionTier;

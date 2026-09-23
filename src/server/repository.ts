@@ -171,7 +171,7 @@ async function loadTenantStore(
     await Promise.all([
       supabase
         .from("profiles")
-        .select("id,email,full_name,timezone")
+        .select("id,email,full_name,timezone,onboarding_completed_at")
         .eq("id", teacherId)
         .single(),
       supabase
@@ -404,6 +404,7 @@ async function loadTenantStore(
     name: profile.full_name,
     email: profile.email,
     timezone: profile.timezone,
+    onboardingCompletedAt: profile.onboarding_completed_at ?? undefined,
     passwordHash: "",
     subscription: mapSubscriptionRow(subscription),
     google: states.get("google") ?? defaultIntegration("google"),

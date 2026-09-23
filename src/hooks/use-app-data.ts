@@ -17,6 +17,7 @@ import {
   mutateApp,
   mutateLessonWorkspace,
   mutateFinancialOverview,
+  completeOnboarding,
 } from "@/lib/api-client";
 
 export function useDashboardData(teacherId: string) {
@@ -112,6 +113,29 @@ export function useAppMutation(teacherId: string) {
       void queryClient.invalidateQueries({
         queryKey: ["dashboard", teacherId],
       });
+    },
+  });
+}
+
+export function useCompleteOnboarding(teacherId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: completeOnboarding,
+    onSuccess({ completedAt }) {
+      queryClient.setQueriesData<AppData>(
+        { queryKey: ["app", teacherId] },
+        (data) =>
+          data
+            ? {
+                ...data,
+                teacher: {
+                  ...data.teacher,
+                  onboardingCompletedAt: completedAt,
+                },
+              }
+            : data,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
     },
   });
 }

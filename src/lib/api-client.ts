@@ -50,6 +50,17 @@ export async function mutateApp(action: AppAction): Promise<MutationResponse> {
   return parseResponse<MutationResponse>(response);
 }
 
+export async function completeOnboarding(): Promise<{
+  completedAt: string;
+  alreadyCompleted: boolean;
+}> {
+  const response = await fetch("/api/onboarding/complete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+  });
+  return parseResponse(response);
+}
+
 export async function fetchLessonWorkspace(
   lessonId: string,
   signal?: AbortSignal,

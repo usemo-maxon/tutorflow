@@ -19,7 +19,7 @@ export const currentTeacher = cache(async (): Promise<Teacher | null> => {
     const [profileResult, subscriptionResult] = await Promise.all([
       supabase
         .from("profiles")
-        .select("email,full_name,timezone")
+        .select("email,full_name,timezone,onboarding_completed_at")
         .eq("id", data.user.id)
         .single(),
       supabase
@@ -38,6 +38,7 @@ export const currentTeacher = cache(async (): Promise<Teacher | null> => {
       name: profile.full_name,
       email: profile.email,
       timezone: profile.timezone,
+      onboardingCompletedAt: profile.onboarding_completed_at ?? undefined,
       subscription: mapSubscriptionRow(subscription),
     };
   }

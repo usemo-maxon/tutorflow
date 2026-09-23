@@ -194,6 +194,7 @@ export async function createTeacher(input: {
       email: input.email.trim().toLowerCase(),
       passwordHash: hashPassword(input.password),
       timezone: "Europe/Warsaw",
+      onboardingCompletedAt: undefined,
       subscription: {
         status: "trial",
         tier: "free",
@@ -276,7 +277,10 @@ export async function getTeacherBySession(
 export async function ensureDemoTeacher(): Promise<Teacher> {
   return mutateStore((store) => {
     let teacher = store.teachers.find((candidate) => candidate.demo);
-    if (teacher) return publicTeacher(teacher);
+    if (teacher) {
+      teacher.onboardingCompletedAt ??= new Date().toISOString();
+      return publicTeacher(teacher);
+    }
 
     const now = new Date();
     teacher = {
@@ -285,6 +289,7 @@ export async function ensureDemoTeacher(): Promise<Teacher> {
       email: "demo@tutorflow.local",
       passwordHash: hashPassword(randomUUID()),
       timezone: "Europe/Warsaw",
+      onboardingCompletedAt: now.toISOString(),
       demo: true,
       subscription: {
         status: "trial",
@@ -477,6 +482,9 @@ function publicTeacher(teacher: TeacherRecord): Teacher {
     name: teacher.name,
     email: teacher.email,
     timezone: teacher.timezone,
+    onboardingCompletedAt:
+      teacher.onboardingCompletedAt ??
+      (teacher.demo ? "1970-01-01T00:00:00.000Z" : undefined),
     subscription: teacher.subscription,
   };
 }

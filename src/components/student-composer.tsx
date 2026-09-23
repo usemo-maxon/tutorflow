@@ -9,6 +9,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 import { copy } from "@/lib/copy";
+import { studentCreatedPath } from "@/lib/composer-context";
 import { useAppMutation } from "@/hooks/use-app-data";
 import { ClientApiError } from "@/lib/api-client";
 import { useSessionTeacher } from "./app-shell";
@@ -58,6 +59,7 @@ export function StudentComposer() {
   const [duplicateId, setDuplicateId] = useState<string | null>(null);
   const {
     studentComposerOpen,
+    studentComposerContext,
     editingStudent,
     closeStudentComposer,
     restoreComposerFocus,
@@ -149,8 +151,13 @@ export function StudentComposer() {
           ? copy.toasts.changesSaved
           : copy.toasts.studentAdded,
       });
-      if (!editingStudent && response.result?.id)
-        router.push(`/app/uczniowie/${response.result.id}`);
+      if (!editingStudent && response.result?.id) {
+        const destination = studentCreatedPath(
+          studentComposerContext,
+          response.result.id,
+        );
+        if (destination) router.push(destination);
+      }
     } catch (error) {
       if (
         error instanceof ClientApiError &&

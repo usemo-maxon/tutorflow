@@ -20,6 +20,7 @@ import { z } from "zod";
 import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 import { ClientApiError } from "@/lib/api-client";
 import { copy } from "@/lib/copy";
+import { lessonCreatedPath } from "@/lib/composer-context";
 import {
   lessonCountLabel,
   formatTime,
@@ -349,7 +350,13 @@ export function LessonComposer() {
             ? copy.toasts.lessonsCreated
             : copy.toasts.lessonCreated,
       });
-      if (response.result?.id) router.push(`/app/lekcje/${response.result.id}`);
+      if (response.result?.id) {
+        const destination = lessonCreatedPath(
+          lessonComposer?.afterCreate,
+          response.result.id,
+        );
+        if (destination) router.push(destination);
+      }
     } catch (error) {
       if (
         error instanceof ClientApiError &&
