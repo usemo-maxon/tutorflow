@@ -7,6 +7,7 @@ import { safeAppPath } from "@/lib/auth-redirect";
 import { isSupabaseConfigured } from "./env";
 import { getTeacherBySession } from "./store";
 import { createSupabaseServerClient } from "./supabase";
+import { mapSubscriptionRow } from "./subscription";
 
 export const SESSION_COOKIE = "tutorflow_session";
 
@@ -23,7 +24,9 @@ export const currentTeacher = cache(async (): Promise<Teacher | null> => {
         .single(),
       supabase
         .from("subscriptions")
-        .select("status,plan,read_only,trial_ends_at,renews_at")
+        .select(
+          "status,tier,billing_interval,read_only,trial_ends_at,renews_at",
+        )
         .eq("teacher_id", data.user.id)
         .single(),
     ]);
@@ -35,13 +38,7 @@ export const currentTeacher = cache(async (): Promise<Teacher | null> => {
       name: profile.full_name,
       email: profile.email,
       timezone: profile.timezone,
-      subscription: {
-        status: subscription.status as Teacher["subscription"]["status"],
-        plan: subscription.plan as Teacher["subscription"]["plan"],
-        readOnly: subscription.read_only,
-        trialEndsAt: subscription.trial_ends_at ?? undefined,
-        renewsAt: subscription.renews_at ?? undefined,
-      },
+      subscription: mapSubscriptionRow(subscription),
     };
   }
   const cookieStore = await cookies();

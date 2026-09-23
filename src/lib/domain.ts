@@ -10,6 +10,10 @@ export type PaymentStatus = "unpaid" | "paid" | "cancelled";
 export type AttendanceStatus =
   "unknown" | "present" | "absent" | "late" | "cancelled";
 export type LessonMode = "single" | "multiple" | "recurring";
+export type SubscriptionTier = "free" | "pro" | "founder";
+export type BillingInterval = "monthly" | "annual";
+export type SubscriptionStatus =
+  "trial" | "active" | "past_due" | "read_only" | "cancelled";
 
 export interface Student {
   id: EntityId;
@@ -196,8 +200,9 @@ export interface Teacher {
   email: string;
   timezone: string;
   subscription: {
-    status: "trial" | "active" | "past_due" | "read_only" | "cancelled";
-    plan: "trial" | "monthly" | "annual" | "founder";
+    status: SubscriptionStatus;
+    tier: SubscriptionTier;
+    billingInterval?: BillingInterval;
     readOnly: boolean;
     trialEndsAt?: ISODateTime;
     renewsAt?: ISODateTime;

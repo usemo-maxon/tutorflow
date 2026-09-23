@@ -6,12 +6,12 @@ import type {
   AppData,
   IntegrationState,
   MutationResponse,
-  Teacher,
 } from "@/lib/domain";
 import { isSupabaseConfigured } from "./env";
 import * as local from "./store";
 import type { StoreShape, TeacherRecord } from "./store";
 import { createSupabaseServerClient } from "./supabase";
+import { mapSubscriptionRow } from "./subscription";
 import { ApiFailure } from "./errors";
 import { findProbableDuplicateIds, studentDisplayName } from "./domain/student";
 import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
@@ -180,7 +180,9 @@ async function loadTenantStore(
         .single(),
       supabase
         .from("subscriptions")
-        .select("status,plan,read_only,trial_ends_at,renews_at")
+        .select(
+          "status,tier,billing_interval,read_only,trial_ends_at,renews_at",
+        )
         .eq("teacher_id", teacherId)
         .single(),
       supabase
@@ -402,13 +404,7 @@ async function loadTenantStore(
     email: profile.email,
     timezone: profile.timezone,
     passwordHash: "",
-    subscription: {
-      status: subscription.status as Teacher["subscription"]["status"],
-      plan: subscription.plan as Teacher["subscription"]["plan"],
-      readOnly: subscription.read_only,
-      trialEndsAt: subscription.trial_ends_at ?? undefined,
-      renewsAt: subscription.renews_at ?? undefined,
-    },
+    subscription: mapSubscriptionRow(subscription),
     google: states.get("google") ?? defaultIntegration("google"),
     telegram: states.get("telegram") ?? defaultIntegration("telegram"),
     payu: states.get("payu") ?? defaultIntegration("payu"),

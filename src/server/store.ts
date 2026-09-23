@@ -196,7 +196,7 @@ export async function createTeacher(input: {
       timezone: "Europe/Warsaw",
       subscription: {
         status: "trial",
-        plan: "trial",
+        tier: "free",
         readOnly: false,
         trialEndsAt: addDays(now, 14).toISOString(),
       },
@@ -288,7 +288,7 @@ export async function ensureDemoTeacher(): Promise<Teacher> {
       demo: true,
       subscription: {
         status: "trial",
-        plan: "trial",
+        tier: "free",
         readOnly: false,
         trialEndsAt: addDays(now, 11).toISOString(),
       },

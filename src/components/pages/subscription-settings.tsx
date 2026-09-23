@@ -77,7 +77,7 @@ export function SubscriptionSettings() {
                 }).format(new Date(subscription.renewsAt))}
               </p>
             )}
-            {subscription.plan === "founder" && (
+            {subscription.tier === "founder" && (
               <p>Plan Founder · 29 zł / miesiąc</p>
             )}
           </span>
