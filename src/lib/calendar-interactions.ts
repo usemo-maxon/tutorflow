@@ -5,9 +5,13 @@ import type {
   Lesson,
   RecurrenceMutationScope,
 } from "./domain";
+import { formatInTimeZone } from "date-fns-tz";
+import { getWeekDays, localDateKey, localInputToUtc } from "./format";
 
 export const CALENDAR_SNAP_MINUTES = 30;
 export const CALENDAR_SELECTION_THRESHOLD_PX = 6;
+
+export type CalendarView = "day" | "week" | "month" | "agenda";
 
 export type CalendarLessonDragEntry = {
   kind: "lesson";
@@ -74,6 +78,109 @@ export function dragDurationMinutes(entry: CalendarDragEntry): number {
     (new Date(entry.endsAt).getTime() - new Date(entry.startsAt).getTime()) /
       60_000,
   );
+}
+
+export function canDragCalendarLesson(
+  lesson: Pick<Lesson, "mode" | "status">,
+  readOnly: boolean,
+): boolean {
+  return (
+    !readOnly &&
+    lesson.status !== "cancelled" &&
+    (lesson.status !== "completed" || lesson.mode === "recurring")
+  );
+}
+
+export function isCalendarRangeDrag(startY: number, currentY: number): boolean {
+  return Math.abs(currentY - startY) >= CALENDAR_SELECTION_THRESHOLD_PX;
+}
+
+export function calendarBounds(
+  lessons: Lesson[],
+  timezone: string,
+  data?: AppData,
+): { startHour: number; endHour: number } {
+  const starts = lessons.map(
+    (lesson) =>
+      Number(formatInTimeZone(lesson.startsAt, timezone, "H")) +
+      Number(formatInTimeZone(lesson.startsAt, timezone, "m")) / 60,
+  );
+  const available = (data?.availability ?? [])
+    .filter((rule) => rule.isAvailable && !rule.allDay)
+    .flatMap((rule) => [
+      Number(formatInTimeZone(rule.start, timezone, "H")),
+      Number(formatInTimeZone(rule.end, timezone, "H")),
+    ]);
+  const blockStarts = (data?.calendarBlocks ?? []).map((block) =>
+    Number(formatInTimeZone(block.startsAt, timezone, "H")),
+  );
+  const blockEnds = (data?.calendarBlocks ?? []).map(
+    (block) => Number(formatInTimeZone(block.endsAt, timezone, "H")) + 1,
+  );
+  const externalStarts = (data?.externalGoogleEvents ?? [])
+    .filter((event) => !event.allDay && event.startsAt)
+    .map(
+      (event) =>
+        Number(formatInTimeZone(event.startsAt!, timezone, "H")) +
+        Number(formatInTimeZone(event.startsAt!, timezone, "m")) / 60,
+    );
+  const externalEnds = (data?.externalGoogleEvents ?? [])
+    .filter((event) => !event.allDay && event.endsAt)
+    .map(
+      (event) =>
+        Number(formatInTimeZone(event.endsAt!, timezone, "H")) +
+        Number(formatInTimeZone(event.endsAt!, timezone, "m")) / 60,
+    );
+  return {
+    startHour: Math.floor(
+      Math.min(7, ...starts, ...available, ...blockStarts, ...externalStarts),
+    ),
+    endHour: Math.min(
+      24,
+      Math.ceil(
+        Math.max(
+          22,
+          ...available,
+          ...blockEnds,
+          ...externalEnds,
+          ...lessons.map(
+            (lesson, index) => starts[index] + lesson.durationMinutes / 60,
+          ),
+        ),
+      ),
+    ),
+  };
+}
+
+export function calendarQueryRange(
+  anchor: Date,
+  view: CalendarView,
+  timezone: string,
+): { start: string; end: string } {
+  const anchorKey = localDateKey(anchor, timezone);
+  const shiftDateKey = (dateKey: string, days: number) => {
+    const date = new Date(`${dateKey}T00:00:00.000Z`);
+    date.setUTCDate(date.getUTCDate() + days);
+    return date.toISOString().slice(0, 10);
+  };
+  const monthStart = `${anchorKey.slice(0, 7)}-01`;
+  const [year, month] = monthStart.split("-").map(Number);
+  const nextMonth = new Date(Date.UTC(year, month, 1))
+    .toISOString()
+    .slice(0, 10);
+  const weekStart = localDateKey(getWeekDays(anchor, timezone)[0], timezone);
+  const startDate =
+    view === "day" ? anchorKey : view === "month" ? monthStart : weekStart;
+  const endDate =
+    view === "day"
+      ? shiftDateKey(anchorKey, 1)
+      : view === "month"
+        ? nextMonth
+        : shiftDateKey(weekStart, 7);
+  return {
+    start: localInputToUtc(startDate, "00:00", timezone),
+    end: localInputToUtc(endDate, "00:00", timezone),
+  };
 }
 
 export function calendarMinuteFromPointer({

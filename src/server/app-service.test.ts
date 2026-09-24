@@ -559,6 +559,8 @@ describe("refined user journeys preserve the existing domain rules", () => {
       type: "rescheduleLesson",
       lessonId: firstId,
       startsAt: "2036-05-12T19:00:00.000Z",
+      expectedUpdatedAt: first.data.lessons.find((item) => item.id === firstId)
+        ?.updatedAt,
     });
     expect(
       moved.data.lessons.find((item) => item.id === firstId),
@@ -569,6 +571,19 @@ describe("refined user journeys preserve the existing domain rules", () => {
     expect(
       moved.data.lessons.find((item) => item.id === secondId)?.startsAt,
     ).toBe("2036-05-12T18:00:00.000Z");
+    await expect(
+      perform(calendarTeacher.id, {
+        type: "rescheduleLesson",
+        lessonId: firstId,
+        startsAt: "2036-05-12T20:00:00.000Z",
+        expectedUpdatedAt: "2000-01-01T00:00:00.000Z",
+      }),
+    ).rejects.toMatchObject({ body: { code: "STALE_WRITE" } });
+    expect(
+      (await storage.getAppData(calendarTeacher.id)).lessons.find(
+        (item) => item.id === firstId,
+      )?.startsAt,
+    ).toBe("2036-05-12T19:00:00.000Z");
 
     const createdBlock = await perform(calendarTeacher.id, {
       type: "createCalendarBlock",
@@ -601,6 +616,25 @@ describe("refined user journeys preserve the existing domain rules", () => {
       endsAt: "2036-05-12T22:30:00.000Z",
     });
     expect(movedBlock.data.lessons).toHaveLength(2);
+
+    await expect(
+      perform(calendarTeacher.id, {
+        type: "updateCalendarBlock",
+        blockId,
+        block: {
+          title: block.title,
+          startsAt: "2036-05-12T22:00:00.000Z",
+          endsAt: "2036-05-12T23:30:00.000Z",
+          timezone: block.timezone,
+        },
+        expectedUpdatedAt: "2000-01-01T00:00:00.000Z",
+      }),
+    ).rejects.toMatchObject({ body: { code: "STALE_WRITE" } });
+    expect(
+      (await storage.getAppData(calendarTeacher.id)).calendarBlocks.find(
+        (item) => item.id === blockId,
+      )?.startsAt,
+    ).toBe("2036-05-12T21:00:00.000Z");
 
     await expect(
       perform(calendarTeacher.id, {

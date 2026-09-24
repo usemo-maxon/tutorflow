@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   formatMoney,
+  getWeekDays,
   lessonCountLabel,
+  localDateKey,
   localInputToUtc,
   recurrencePreview,
 } from "./format";
@@ -55,6 +57,22 @@ describe("timezone conversion", () => {
     ]);
   });
 
+  it("keeps recurring wall time stable across the autumn DST transition", () => {
+    expect(
+      recurrencePreview({
+        date: "2026-10-18",
+        time: "18:00",
+        timezone: "Europe/Warsaw",
+        frequency: "weekly",
+        count: 3,
+      }),
+    ).toEqual([
+      "2026-10-18T16:00:00.000Z",
+      "2026-10-25T17:00:00.000Z",
+      "2026-11-01T17:00:00.000Z",
+    ]);
+  });
+
   it("rejects nonexistent and ambiguous Warsaw wall-clock times", () => {
     expect(() =>
       localInputToUtc("2026-03-29", "02:30", "Europe/Warsaw"),
@@ -62,6 +80,41 @@ describe("timezone conversion", () => {
     expect(() =>
       localInputToUtc("2026-10-25", "02:30", "Europe/Warsaw"),
     ).toThrow("AMBIGUOUS_LOCAL_TIME");
+  });
+
+  it("accepts valid times adjacent to Warsaw DST transitions", () => {
+    expect(localInputToUtc("2026-03-29", "01:30", "Europe/Warsaw")).toBe(
+      "2026-03-29T00:30:00.000Z",
+    );
+    expect(localInputToUtc("2026-03-29", "03:30", "Europe/Warsaw")).toBe(
+      "2026-03-29T01:30:00.000Z",
+    );
+    expect(localInputToUtc("2026-10-25", "01:30", "Europe/Warsaw")).toBe(
+      "2026-10-24T23:30:00.000Z",
+    );
+    expect(localInputToUtc("2026-10-25", "03:30", "Europe/Warsaw")).toBe(
+      "2026-10-25T02:30:00.000Z",
+    );
+  });
+
+  it("uses the selected IANA timezone instead of hardcoding Warsaw", () => {
+    expect(localInputToUtc("2026-07-15", "18:00", "Europe/London")).toBe(
+      "2026-07-15T17:00:00.000Z",
+    );
+    expect(localInputToUtc("2026-07-15", "18:00", "America/New_York")).toBe(
+      "2026-07-15T22:00:00.000Z",
+    );
+  });
+});
+
+describe("Monday-first calendar weeks", () => {
+  it.each([
+    ["2026-01-04T12:00:00.000Z", "2025-12-29", "2026-01-04"],
+    ["2026-12-31T12:00:00.000Z", "2026-12-28", "2027-01-03"],
+  ])("maps %s to its Polish week", (anchor, first, last) => {
+    const days = getWeekDays(new Date(anchor), "Europe/Warsaw");
+    expect(localDateKey(days[0], "Europe/Warsaw")).toBe(first);
+    expect(localDateKey(days[6], "Europe/Warsaw")).toBe(last);
   });
 });
 

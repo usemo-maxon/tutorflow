@@ -41,12 +41,15 @@ import {
   blockDragEntry,
   blockPresetFromCalendarRange,
   buildCalendarMoveAction,
+  calendarBounds,
   calendarMinuteFromPointer,
   calendarMinuteFromTime,
+  calendarQueryRange,
   calendarRangeFromMinutes,
   calendarTimeFromMinute,
-  CALENDAR_SELECTION_THRESHOLD_PX,
+  canDragCalendarLesson,
   dragDurationMinutes,
+  isCalendarRangeDrag,
   lessonDragEntry,
   lessonPresetFromCalendarRange,
   moveCalendarEntryOptimistically,
@@ -54,6 +57,7 @@ import {
   type CalendarDragEntry,
   type CalendarLessonDragEntry,
   type CalendarRangeSelection,
+  type CalendarView,
 } from "@/lib/calendar-interactions";
 import { copy } from "@/lib/copy";
 import {
@@ -78,58 +82,6 @@ import { useAppUi } from "../app-ui-context";
 import { PageLoading } from "../ui/loading";
 import { LessonStatusBadge } from "../ui/status-badge";
 import { CalendarColorPicker } from "../calendar-color-picker";
-
-type CalendarView = "day" | "week" | "month" | "agenda";
-function calendarBounds(lessons: Lesson[], timezone: string, data?: AppData) {
-  const starts = lessons.map(
-    (l) =>
-      Number(formatInTimeZone(l.startsAt, timezone, "H")) +
-      Number(formatInTimeZone(l.startsAt, timezone, "m")) / 60,
-  );
-  const available = (data?.availability ?? [])
-    .filter((rule) => rule.isAvailable && !rule.allDay)
-    .flatMap((rule) => [
-      Number(formatInTimeZone(rule.start, timezone, "H")),
-      Number(formatInTimeZone(rule.end, timezone, "H")),
-    ]);
-  const blockStarts = (data?.calendarBlocks ?? []).map((block) =>
-    Number(formatInTimeZone(block.startsAt, timezone, "H")),
-  );
-  const blockEnds = (data?.calendarBlocks ?? []).map(
-    (block) => Number(formatInTimeZone(block.endsAt, timezone, "H")) + 1,
-  );
-  const externalStarts = (data?.externalGoogleEvents ?? [])
-    .filter((event) => !event.allDay && event.startsAt)
-    .map(
-      (event) =>
-        Number(formatInTimeZone(event.startsAt!, timezone, "H")) +
-        Number(formatInTimeZone(event.startsAt!, timezone, "m")) / 60,
-    );
-  const externalEnds = (data?.externalGoogleEvents ?? [])
-    .filter((event) => !event.allDay && event.endsAt)
-    .map(
-      (event) =>
-        Number(formatInTimeZone(event.endsAt!, timezone, "H")) +
-        Number(formatInTimeZone(event.endsAt!, timezone, "m")) / 60,
-    );
-  return {
-    startHour: Math.floor(
-      Math.min(7, ...starts, ...available, ...blockStarts, ...externalStarts),
-    ),
-    endHour: Math.min(
-      24,
-      Math.ceil(
-        Math.max(
-          22,
-          ...available,
-          ...blockEnds,
-          ...externalEnds,
-          ...lessons.map((l, i) => starts[i] + l.durationMinutes / 60),
-        ),
-      ),
-    ),
-  };
-}
 
 function externalEventOccursOn(
   event: ExternalGoogleEvent,
@@ -169,33 +121,10 @@ export function CalendarPage() {
   const session = useSessionTeacher();
   const [view, setView] = useState<CalendarView>("week");
   const [anchor, setAnchor] = useState(new Date());
-  const queryRange = useMemo(() => {
-    const days = getWeekDays(anchor, session.timezone);
-    const startDay =
-      view === "day"
-        ? anchor
-        : view === "month"
-          ? startOfMonth(anchor)
-          : days[0];
-    const endDay =
-      view === "day"
-        ? addDays(anchor, 1)
-        : view === "month"
-          ? addDays(endOfMonth(anchor), 1)
-          : addDays(days[0], 7);
-    return {
-      start: localInputToUtc(
-        localDateKey(startDay, session.timezone),
-        "00:00",
-        session.timezone,
-      ),
-      end: localInputToUtc(
-        localDateKey(endDay, session.timezone),
-        "00:00",
-        session.timezone,
-      ),
-    };
-  }, [anchor, session.timezone, view]);
+  const queryRange = useMemo(
+    () => calendarQueryRange(anchor, view, session.timezone),
+    [anchor, session.timezone, view],
+  );
   const { data, isPending } = useAppData(session.id, queryRange);
   const mutation = useAppMutation(session.id);
   const queryClient = useQueryClient();
@@ -1229,8 +1158,7 @@ function CalendarGrid({
                   !gesture ||
                   gesture.day !== dayKey ||
                   gesture.pointerId !== event.pointerId ||
-                  Math.abs(event.clientY - gesture.startY) <
-                    CALENDAR_SELECTION_THRESHOLD_PX
+                  !isCalendarRangeDrag(gesture.startY, event.clientY)
                 )
                   return;
                 const currentMinute = calendarMinuteFromPointer({
@@ -1260,10 +1188,7 @@ function CalendarGrid({
                 selectionGesture.current = null;
                 if (event.currentTarget.hasPointerCapture(event.pointerId))
                   event.currentTarget.releasePointerCapture(event.pointerId);
-                if (
-                  Math.abs(event.clientY - gesture.startY) <
-                  CALENDAR_SELECTION_THRESHOLD_PX
-                ) {
+                if (!isCalendarRangeDrag(gesture.startY, event.clientY)) {
                   suppressClick.current = true;
                   setSelectionDraft(null);
                   onSlot(day, calendarTimeFromMinute(gesture.anchorMinute));
@@ -1518,12 +1443,7 @@ function CalendarGrid({
                     data-compact={lesson.durationMinutes < 60 || undefined}
                     href={`/app/lekcje/${lesson.id}`}
                     key={lesson.id}
-                    draggable={
-                      !readOnly &&
-                      (lesson.status !== "completed" ||
-                        lesson.mode === "recurring") &&
-                      lesson.status !== "cancelled"
-                    }
+                    draggable={canDragCalendarLesson(lesson, readOnly)}
                     onDragEnd={() => {
                       setDragHover(null);
                       onDragEnd();

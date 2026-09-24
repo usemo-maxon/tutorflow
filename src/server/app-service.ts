@@ -602,6 +602,7 @@ export async function performAction(
       }
       case "rescheduleLesson": {
         const lesson = ownedLesson(store, teacherId, action.lessonId);
+        assertExpectedUpdatedAt(lesson.updatedAt, action.expectedUpdatedAt);
         if (
           (lesson.status === "completed" || lesson.status === "cancelled") &&
           !(
@@ -756,12 +757,14 @@ export async function performAction(
             message: "Ten termin jest poza Twoją regularną dostępnością.",
           });
         }
+        const updatedAt = new Date().toISOString();
         proposed.forEach(({ target, startsAt }) => {
           target.startsAt = startsAt;
           target.durationMinutes =
             action.durationMinutes ?? target.durationMinutes;
           target.syncStatus =
             teacher.google.status === "connected" ? "pending" : "disabled";
+          target.updatedAt = updatedAt;
         });
         break;
       }
@@ -926,6 +929,7 @@ export async function performAction(
           (item) => item.id === action.blockId && item.teacherId === teacherId,
         );
         if (!block) unauthorized();
+        assertExpectedUpdatedAt(block.updatedAt, action.expectedUpdatedAt);
         const start = new Date(action.block.startsAt);
         const end = new Date(action.block.endsAt);
         const blockDuration = Math.round(
@@ -1305,6 +1309,19 @@ function ownedLesson(store: StoreShape, teacherId: string, lessonId: string) {
   );
   if (!lesson) unauthorized();
   return lesson;
+}
+
+function assertExpectedUpdatedAt(
+  actual: string | undefined,
+  expected: string | undefined,
+): void {
+  if (expected && actual && actual !== expected) {
+    throw new ApiFailure(409, {
+      code: "STALE_WRITE",
+      message:
+        "Ten termin został zmieniony w innym miejscu. Odśwież kalendarz i spróbuj ponownie.",
+    });
+  }
 }
 
 function isValidMeetingLocation(value: string): boolean {

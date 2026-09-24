@@ -1,5 +1,4 @@
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import { addDays } from "date-fns";
 import type { LessonStatus, Money } from "./domain";
 import { copy } from "./copy";
 
@@ -86,8 +85,17 @@ export function recurrencePreview({
 
 export function getWeekDays(anchor: Date, timezone: string): Date[] {
   const weekday = Number(formatInTimeZone(anchor, timezone, "i"));
-  const start = addDays(anchor, 1 - weekday);
-  return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+  const anchorKey = localDateKey(anchor, timezone);
+  const start = new Date(`${anchorKey}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() + 1 - weekday);
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + index);
+    return fromZonedTime(
+      `${date.toISOString().slice(0, 10)}T12:00:00`,
+      timezone,
+    );
+  });
 }
 
 export function statusLabel(status: LessonStatus): string {
