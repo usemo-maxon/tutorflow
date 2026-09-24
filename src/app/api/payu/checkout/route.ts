@@ -1,33 +1,53 @@
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { FOUNDER_SLOT_LIMIT } from "@/lib/pricing";
 import { currentTeacher } from "@/server/auth";
 import { siteUrl } from "@/server/env";
 import { ApiFailure, errorResponse } from "@/server/errors";
-import { createSupabaseServerClient } from "@/server/supabase";
+import {
+  parseCheckoutProduct,
+  payuAmountForProduct,
+} from "@/server/payu-pricing";
+import {
+  createSupabaseAdminClient,
+  createSupabaseServerClient,
+} from "@/server/supabase";
 
-const schema = z.object({ plan: z.enum(["monthly", "annual"]) });
+export async function GET() {
+  try {
+    const teacher = await currentTeacher();
+    if (!teacher) throw unauthenticated();
+    return Response.json({
+      founderAvailable:
+        teacher.subscription.tier === "founder" ||
+        (await hasFounderAvailability(createSupabaseAdminClient())),
+    });
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
 
 export async function POST(request: Request) {
   try {
     const teacher = await currentTeacher();
-    if (!teacher)
-      throw new ApiFailure(401, {
-        code: "UNAUTHENTICATED",
-        message: "Zaloguj się ponownie.",
-      });
-    const parsed = schema.safeParse(await request.json());
-    if (!parsed.success)
+    if (!teacher) throw unauthenticated();
+    const plan = parseCheckoutProduct(await request.json());
+    if (!plan)
       throw new ApiFailure(422, {
         code: "VALIDATION_ERROR",
         message: "Wybierz okres rozliczeniowy.",
       });
     const extOrderId = randomUUID();
-    const amount = parsed.data.plan === "annual" ? 39000 : 3900;
     const supabase = await createSupabaseServerClient();
+    const founderEligible =
+      plan === "monthly" &&
+      teacher.subscription.tier !== "founder" &&
+      (await hasFounderAvailability(createSupabaseAdminClient()));
+    const amount = payuAmountForProduct(plan, founderEligible);
     const { error: insertError } = await supabase.from("payu_orders").insert({
       teacher_id: teacher.id,
       ext_order_id: extOrderId,
-      plan: parsed.data.plan,
+      plan,
       amount_grosz: amount,
     });
     if (insertError) throw insertError;
@@ -62,9 +82,11 @@ export async function POST(request: Request) {
         customerIp: ip,
         merchantPosId: process.env.PAYU_POS_ID,
         description:
-          parsed.data.plan === "annual"
+          plan === "annual"
             ? "easy4tutor — plan roczny"
-            : "easy4tutor — plan miesięczny",
+            : founderEligible
+              ? "easy4tutor — oferta Founder"
+              : "easy4tutor — plan miesięczny",
         currencyCode: "PLN",
         totalAmount: String(amount),
         extOrderId,
@@ -97,4 +119,23 @@ export async function POST(request: Request) {
   } catch (error) {
     return errorResponse(error);
   }
+}
+
+function unauthenticated() {
+  return new ApiFailure(401, {
+    code: "UNAUTHENTICATED",
+    message: "Zaloguj się ponownie.",
+  });
+}
+
+async function hasFounderAvailability(
+  supabase: SupabaseClient,
+): Promise<boolean> {
+  const { count, error } = await supabase
+    .from("subscriptions")
+    .select("teacher_id", { count: "exact", head: true })
+    .eq("tier", "founder")
+    .eq("status", "active");
+  if (error) throw error;
+  return (count ?? FOUNDER_SLOT_LIMIT) < FOUNDER_SLOT_LIMIT;
 }

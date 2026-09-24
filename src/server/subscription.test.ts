@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { createTeacher } from "./store";
-import { mapSubscriptionRow } from "./subscription";
+import { mapSubscriptionRow, resolveExpiredTrial } from "./subscription";
 
 describe("subscription mapping", () => {
   it("maps a Supabase row to the canonical Teacher subscription", () => {
@@ -59,5 +59,32 @@ describe("subscription mapping", () => {
     });
     expect(teacher.subscription.billingInterval).toBeUndefined();
     expect(teacher.subscription).not.toHaveProperty("plan");
+  });
+
+  it("falls an expired trial back to active Free without read-only mode", () => {
+    expect(
+      resolveExpiredTrial(
+        {
+          status: "trial",
+          tier: "free",
+          readOnly: false,
+          trialEndsAt: "2026-09-20T12:00:00.000Z",
+        },
+        new Date("2026-09-24T12:00:00.000Z"),
+      ),
+    ).toEqual({ status: "active", tier: "free", readOnly: false });
+  });
+
+  it("does not alter paid subscription expiration semantics", () => {
+    const subscription = {
+      status: "active" as const,
+      tier: "pro" as const,
+      billingInterval: "monthly" as const,
+      readOnly: false,
+      renewsAt: "2026-09-20T12:00:00.000Z",
+    };
+    expect(
+      resolveExpiredTrial(subscription, new Date("2026-09-24T12:00:00.000Z")),
+    ).toBe(subscription);
   });
 });

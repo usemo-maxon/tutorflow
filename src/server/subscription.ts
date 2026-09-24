@@ -27,3 +27,22 @@ export function mapSubscriptionRow(
     renewsAt: row.renews_at ?? undefined,
   };
 }
+
+export function resolveExpiredTrial(
+  subscription: Teacher["subscription"],
+  now = new Date(),
+): Teacher["subscription"] {
+  if (
+    subscription.status !== "trial" ||
+    !subscription.trialEndsAt ||
+    Date.parse(subscription.trialEndsAt) > now.getTime()
+  ) {
+    return subscription;
+  }
+
+  return {
+    status: "active",
+    tier: "free",
+    readOnly: false,
+  };
+}

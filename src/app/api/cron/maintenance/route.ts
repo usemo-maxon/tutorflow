@@ -23,8 +23,11 @@ async function runMaintenance() {
   const { error: trialError } = await supabase
     .from("subscriptions")
     .update({
-      status: "read_only",
-      read_only: true,
+      status: "active",
+      plan: "trial",
+      tier: "free",
+      billing_interval: null,
+      read_only: false,
       updated_at: now.toISOString(),
     })
     .eq("status", "trial")

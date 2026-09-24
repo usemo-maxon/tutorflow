@@ -19,11 +19,12 @@ const literata = localFont({
 
 export const metadata: Metadata = {
   title: {
-    default: "easy4tutor — mniej organizacji, więcej uczenia",
+    default: "easy4tutor — kalendarz i organizacja pracy korepetytora",
     template: "%s · easy4tutor",
   },
   applicationName: "easy4tutor",
-  description: "Lekcje, postępy i płatności w jednym spokojnym miejscu.",
+  description:
+    "Kalendarz, uczniowie, lekcje, notatki i płatności w jednym miejscu dla korepetytora.",
 };
 
 export default function RootLayout({

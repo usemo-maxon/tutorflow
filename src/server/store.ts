@@ -33,6 +33,7 @@ import type {
   StudentStatImport,
   Teacher,
 } from "@/lib/domain";
+import { resolveExpiredTrial } from "./subscription";
 import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
 
 export interface TeacherRecord extends Teacher {
@@ -145,6 +146,9 @@ export async function mutateStore<T>(
 ): Promise<T> {
   const run = mutationQueue.then(async () => {
     const store = await readStore();
+    store.teachers.forEach((teacher) => {
+      teacher.subscription = resolveExpiredTrial(teacher.subscription);
+    });
     const result = await operation(store);
     await writeStore(store);
     return result;
@@ -485,7 +489,7 @@ function publicTeacher(teacher: TeacherRecord): Teacher {
     onboardingCompletedAt:
       teacher.onboardingCompletedAt ??
       (teacher.demo ? "1970-01-01T00:00:00.000Z" : undefined),
-    subscription: teacher.subscription,
+    subscription: resolveExpiredTrial(teacher.subscription),
   };
 }
 

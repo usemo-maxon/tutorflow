@@ -2,12 +2,25 @@ import { BrandLogo } from "@/components/brand-logo";
 import Link from "next/link";
 import {
   ArrowRight,
+  BookOpenText,
   CalendarDays,
   Check,
   Circle,
   Diamond,
   ShieldCheck,
+  UsersRound,
+  WalletCards,
 } from "lucide-react";
+import {
+  ANNUAL_SAVING_GROSZ,
+  formatPrice,
+  FREE_FEATURES,
+  monthlyAnnualEquivalentGrosz,
+  PRO_ANNUAL_PRICE_GROSZ,
+  PRO_FEATURES,
+  PRO_MONTHLY_PRICE_GROSZ,
+  TRIAL_DAYS,
+} from "@/lib/pricing";
 import { currentTeacher } from "@/server/auth";
 
 export default async function LandingPage() {
@@ -24,7 +37,7 @@ export default async function LandingPage() {
         </Link>
         <nav aria-label="Nawigacja publiczna">
           <a href="#jak-dziala">Jak działa</a>
-          <a href="#cena">Cena</a>
+          <a href="#cena">Cennik</a>
           <Link className="button button--quiet" href="/logowanie">
             Zaloguj się
           </Link>
@@ -32,40 +45,43 @@ export default async function LandingPage() {
             className="button button--primary"
             href={teacher ? "/app/dzisiaj" : "/rejestracja"}
           >
-            {teacher ? "Przejdź do aplikacji" : "Wypróbuj przez 14 dni"}
+            {teacher
+              ? "Przejdź do aplikacji"
+              : `Wypróbuj Pro przez ${TRIAL_DAYS} dni`}
           </Link>
         </nav>
       </header>
 
       <section className="landing-hero">
         <div className="hero-copy">
-          <p className="eyebrow">Planer pracy prywatnego nauczyciela</p>
+          <p className="eyebrow">easy4tutor pamięta każdego ucznia za Ciebie</p>
           <h1>
-            Mniej organizacji.
+            Pamiętaj każdego ucznia.
             <br />
-            <em>Więcej uczenia.</em>
+            <em>Skup się na nauczaniu.</em>
           </h1>
           <p className="hero-lead">
-            Twój kalendarz, postępy uczniów i rozliczenia w jednym miejscu.
-            Przygotuj kolejną lekcję, pamiętając o poprzedniej.
+            Kalendarz, historia lekcji, notatki, zadania i płatności w jednym
+            miejscu dla korepetytora.
           </p>
           <div className="hero-actions">
             <Link
               className="button button--primary button--large"
               href="/rejestracja"
             >
-              Wypróbuj przez 14 dni <ArrowRight size={18} aria-hidden="true" />
+              Wypróbuj Pro przez {TRIAL_DAYS} dni{" "}
+              <ArrowRight size={18} aria-hidden="true" />
             </Link>
             <Link
               className="button button--quiet button--large"
               href="/logowanie"
             >
-              Poznaj swój obszar pracy
+              Zaloguj się
             </Link>
           </div>
           <p className="hero-note">
             <ShieldCheck size={16} aria-hidden="true" /> Bez karty płatniczej ·
-            dane uczniów pozostają prywatne
+            potem możesz zostać na Free
           </p>
         </div>
 
@@ -122,10 +138,10 @@ export default async function LandingPage() {
               </div>
             </div>
             <Link
-              href="/logowanie"
+              href="/rejestracja"
               className="button button--primary hero-open"
             >
-              Otwórz lekcję
+              Zacznij bezpłatnie
             </Link>
           </div>
         </div>
@@ -137,43 +153,75 @@ export default async function LandingPage() {
         aria-label="Najważniejsze możliwości"
       >
         <article>
-          <span>01</span>
-          <h2>Plan bez przepisywania</h2>
-          <p>
-            Domyślny czas, format i cena przechodzą z karty ucznia do
-            kalendarza.
-          </p>
+          <BookOpenText size={22} aria-hidden="true" />
+          <h2>Wszystko przed lekcją</h2>
+          <p>Od razu widzisz, gdzie skończyliście i co jest następne.</p>
         </article>
         <article>
-          <span>02</span>
-          <h2>Wątek, nie archiwum</h2>
-          <p>
-            Nitka postępu łączy ostatnią lekcję, bieżący plan i kolejny temat.
-          </p>
+          <CalendarDays size={22} aria-hidden="true" />
+          <h2>Kalendarz bez chaosu</h2>
+          <p>Lekcje, dostępność i Google Calendar w jednym widoku.</p>
         </article>
         <article>
-          <span>03</span>
-          <h2>Jasne rozliczenia</h2>
-          <p>Status płatności należy do konkretnego ucznia, także w grupie.</p>
+          <WalletCards size={22} aria-hidden="true" />
+          <h2>Rozliczenia pod kontrolą</h2>
+          <p>Wiesz, kto zapłacił, kto zalega i ile zajęć zostało w pakiecie.</p>
+        </article>
+        <article>
+          <UsersRound size={22} aria-hidden="true" />
+          <h2>Uczniowie w jednym miejscu</h2>
+          <p>
+            Historia, notatki, cele i zadania bez szukania w kilku aplikacjach.
+          </p>
         </article>
       </section>
 
       <section className="pricing-section" id="cena">
-        <div>
-          <p className="eyebrow">Jedna pełna wersja</p>
-          <h2>Prosto od pierwszej lekcji.</h2>
+        <div className="pricing-intro">
+          <p className="eyebrow">Prosty cennik</p>
+          <h2>Zacznij od Free. Pro włącz wtedy, gdy go potrzebujesz.</h2>
           <p>
-            14 dni bezpłatnie. Potem wybierasz miesięczne lub roczne
-            rozliczenie.
+            Na początek otrzymujesz {TRIAL_DAYS} dni Pro za darmo, bez karty
+            płatniczej. Potem możesz zostać na Free.
           </p>
         </div>
-        <div className="pricing-card">
-          <span className="pricing-amount">39 zł</span>
-          <span>/ miesiąc</span>
-          <p>albo 390 zł za rok</p>
-          <Link href="/rejestracja" className="button button--primary">
-            Rozpocznij okres próbny
-          </Link>
+        <div className="landing-pricing-grid">
+          <article className="pricing-card">
+            <span className="plan-card-label">Free</span>
+            <strong className="pricing-amount">0 zł</strong>
+            <p>Dla korepetytorów, którzy chcą uporządkować codzienną pracę.</p>
+            <ul>
+              {FREE_FEATURES.slice(0, 4).map((feature) => (
+                <li key={feature}>
+                  <Check size={15} aria-hidden="true" /> {feature}
+                </li>
+              ))}
+            </ul>
+          </article>
+          <article className="pricing-card pricing-card--pro">
+            <span className="plan-card-label">Pro</span>
+            <strong className="pricing-amount">
+              {formatPrice(PRO_MONTHLY_PRICE_GROSZ)}
+            </strong>
+            <span>/ miesiąc</span>
+            <p>
+              {formatPrice(PRO_ANNUAL_PRICE_GROSZ)} / rok · od{" "}
+              {formatPrice(monthlyAnnualEquivalentGrosz())} / mies.
+            </p>
+            <p className="pricing-saving">
+              Rocznie oszczędzasz {formatPrice(ANNUAL_SAVING_GROSZ)}.
+            </p>
+            <ul>
+              {PRO_FEATURES.slice(0, 4).map((feature) => (
+                <li key={feature}>
+                  <Check size={15} aria-hidden="true" /> {feature}
+                </li>
+              ))}
+            </ul>
+            <Link href="/rejestracja" className="button button--primary">
+              Wypróbuj Pro przez {TRIAL_DAYS} dni
+            </Link>
+          </article>
         </div>
       </section>
       <footer className="landing-footer">

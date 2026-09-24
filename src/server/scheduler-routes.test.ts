@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
-  function chain(result: { data: unknown[]; error: null }) {
+  const updates: Array<[string, Record<string, unknown>]> = [];
+  function chain(result: { data: unknown[]; error: null }, table: string) {
     const proxy: Record<string, unknown> = new Proxy(
       {
         then(resolve: (value: unknown) => unknown) {
@@ -12,6 +13,12 @@ const mocks = vi.hoisted(() => {
         get(target, property) {
           if (property in target)
             return target[property as keyof typeof target];
+          if (property === "update") {
+            return (value: Record<string, unknown>) => {
+              updates.push([table, value]);
+              return proxy;
+            };
+          }
           return () => proxy;
         },
       },
@@ -19,9 +26,12 @@ const mocks = vi.hoisted(() => {
     return proxy;
   }
 
-  const from = vi.fn(() => chain({ data: [], error: null }));
+  const from = vi.fn((table: string) =>
+    chain({ data: [], error: null }, table),
+  );
   return {
     from,
+    updates,
     client: {
       from,
       storage: {
@@ -46,6 +56,7 @@ const handlers = [telegramReminders, googleSync, maintenance];
 afterEach(() => {
   delete process.env.CRON_SECRET;
   mocks.from.mockClear();
+  mocks.updates.length = 0;
 });
 
 describe("external scheduler endpoints", () => {
@@ -82,4 +93,27 @@ describe("external scheduler endpoints", () => {
       expect(mocks.from).toHaveBeenCalled();
     });
   }
+
+  it("moves expired trials to active Free without touching students", async () => {
+    process.env.CRON_SECRET = "scheduler-secret-at-least-16-chars";
+    const response = await maintenance(
+      new Request("https://example.test", {
+        headers: {
+          authorization: "Bearer scheduler-secret-at-least-16-chars",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.updates).toContainEqual([
+      "subscriptions",
+      expect.objectContaining({
+        status: "active",
+        tier: "free",
+        billing_interval: null,
+        read_only: false,
+      }),
+    ]);
+    expect(mocks.from).not.toHaveBeenCalledWith("students");
+  });
 });
