@@ -94,6 +94,10 @@ export interface GoogleOAuthPersistenceDependencies {
   storeConnection: (
     values: Record<string, unknown>,
   ) => Promise<StoredConnection>;
+  recoverAfterReconnect: (
+    teacherId: string,
+    workspaceId: string,
+  ) => Promise<void>;
   encrypt: (value: GoogleCredentials) => string;
   decrypt: (value: string) => GoogleCredentials;
   now: () => Date;
@@ -204,6 +208,48 @@ export function createGoogleOAuthPersistenceDependencies(): GoogleOAuthPersisten
       }
       return { id: data.id as string };
     },
+    async recoverAfterReconnect(teacherId, workspaceId) {
+      const recoveredAt = new Date().toISOString();
+      const { data: jobs, error: jobsError } = await admin
+        .from("google_sync_jobs")
+        .update({
+          status: "pending",
+          attempts: 0,
+          next_attempt_at: recoveredAt,
+          last_error: null,
+          locked_at: null,
+          updated_at: recoveredAt,
+        })
+        .eq("teacher_id", teacherId)
+        .eq("workspace_id", workspaceId)
+        .in("status", ["failed", "processing"])
+        .select("lesson_id");
+      if (jobsError) {
+        throw persistenceDatabaseError(
+          "GOOGLE_RECONNECT_JOB_RECOVERY_FAILED",
+          "connection_upsert",
+          jobsError,
+        );
+      }
+      const lessonIds = [
+        ...new Set((jobs ?? []).map((job) => job.lesson_id as string)),
+      ];
+      if (!lessonIds.length) return;
+      const { error: lessonsError } = await admin
+        .from("lessons")
+        .update({ sync_status: "pending", sync_message: null })
+        .eq("workspace_id", workspaceId)
+        .eq("tutor_id", teacherId)
+        .eq("sync_status", "failed")
+        .in("id", lessonIds);
+      if (lessonsError) {
+        throw persistenceDatabaseError(
+          "GOOGLE_RECONNECT_LESSON_RECOVERY_FAILED",
+          "connection_upsert",
+          lessonsError,
+        );
+      }
+    },
     encrypt: encryptSecret,
     decrypt: decryptSecret,
     now: () => new Date(),
@@ -267,6 +313,11 @@ export async function persistGoogleCalendarConnection(
     created_at: existing?.created_at ?? timestamp,
     updated_at: timestamp,
   });
+  if (existing)
+    await persistence.recoverAfterReconnect(
+      teacher.teacherId,
+      teacher.workspaceId,
+    );
   return {
     connectionId: connection.id,
     teacherId: teacher.teacherId,

@@ -73,6 +73,79 @@ interface GoogleEventsPage {
 const reconnectMessage = "Google Calendar wymaga ponownego połączenia.";
 const syncFailureMessage =
   "Lekcja została zapisana, ale nie udało się zsynchronizować jej z Google Calendar.";
+export const GOOGLE_OUTBOUND_BATCH_LIMIT = 20;
+export const GOOGLE_WEBHOOK_REPAIR_BATCH_LIMIT = 10;
+export const GOOGLE_WATCH_RENEWAL_WINDOW_MS = 48 * 60 * 60_000;
+const GOOGLE_MAINTENANCE_SCAN_LIMIT = 200;
+
+export function shouldRenewGoogleWatch(
+  expiresAt: string | null,
+  now = Date.now(),
+): boolean {
+  if (!expiresAt) return true;
+  const expiration = Date.parse(expiresAt);
+  return (
+    !Number.isFinite(expiration) ||
+    expiration <= now + GOOGLE_WATCH_RENEWAL_WINDOW_MS
+  );
+}
+
+interface MaintenanceCandidate {
+  id: string;
+  teacher_id: string;
+  sync_state: string;
+  sync_requested_at: string | null;
+  last_attempted_sync_at: string | null;
+  last_successful_sync_at: string | null;
+  watch_expires_at: string | null;
+  status: string;
+}
+
+export function prioritizeGoogleMaintenanceCandidates(
+  rows: MaintenanceCandidate[],
+  now = Date.now(),
+): MaintenanceCandidate[] {
+  const staleAt = now - 15 * 60_000;
+  const priority = (row: MaintenanceCandidate) => {
+    if (shouldRenewGoogleWatch(row.watch_expires_at, now)) return 0;
+    if (row.sync_requested_at) return 1;
+    if (
+      row.sync_state === "syncing" &&
+      (!row.last_attempted_sync_at ||
+        Date.parse(row.last_attempted_sync_at) < staleAt)
+    )
+      return 2;
+    return 3;
+  };
+  return rows
+    .filter(
+      (row) =>
+        shouldRenewGoogleWatch(row.watch_expires_at, now) ||
+        row.sync_requested_at ||
+        (row.sync_state === "syncing" &&
+          (!row.last_attempted_sync_at ||
+            Date.parse(row.last_attempted_sync_at) < staleAt)) ||
+        !row.last_successful_sync_at ||
+        Date.parse(row.last_successful_sync_at) < staleAt,
+    )
+    .toSorted((left, right) => {
+      const difference = priority(left) - priority(right);
+      if (difference) return difference;
+      const leftTime = Date.parse(
+        left.sync_requested_at ??
+          left.last_attempted_sync_at ??
+          left.last_successful_sync_at ??
+          "1970-01-01T00:00:00.000Z",
+      );
+      const rightTime = Date.parse(
+        right.sync_requested_at ??
+          right.last_attempted_sync_at ??
+          right.last_successful_sync_at ??
+          "1970-01-01T00:00:00.000Z",
+      );
+      return leftTime - rightTime || left.id.localeCompare(right.id);
+    });
+}
 
 export function googleEventIdForLesson(
   teacherId: string,
@@ -83,6 +156,23 @@ export function googleEventIdForLesson(
     .update(`${teacherId}:${lessonId}`)
     .digest("hex")
     .slice(0, 32);
+}
+
+export function googleReplacementEventId(
+  teacherId: string,
+  lessonId: string,
+  providerDeletionIdentity: string,
+): string {
+  return createHash("sha256")
+    .update(`${teacherId}:${lessonId}:restore:${providerDeletionIdentity}`)
+    .digest("hex")
+    .slice(0, 32);
+}
+
+export function shouldRecreateDeletedProviderEvent(
+  lessonStatus: LessonRow["status"],
+): boolean {
+  return lessonStatus !== "cancelled";
 }
 
 export type LinkedChangeResolution = "noop" | "google_wins" | "local_wins";
@@ -130,6 +220,26 @@ function safeEqual(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+export function googleWebhookHeaders(request: Request): {
+  channelId: string;
+  resourceId: string;
+  channelToken: string;
+} | null {
+  const channelId = request.headers.get("x-goog-channel-id");
+  const resourceId = request.headers.get("x-goog-resource-id");
+  const channelToken = request.headers.get("x-goog-channel-token");
+  return channelId && resourceId && channelToken
+    ? { channelId, resourceId, channelToken }
+    : null;
+}
+
+export function isValidGoogleChannelToken(
+  channelToken: string,
+  expectedHash: string,
+): boolean {
+  return safeEqual(hashChannelToken(channelToken), expectedHash);
+}
+
 async function connectionById(connectionId: string): Promise<ConnectionRow> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -166,11 +276,8 @@ async function listChanges(
   syncToken: string;
   full: boolean;
 }> {
-  const events: GoogleEventResource[] = [];
   const full = forceFull || !connection.sync_token;
-  let pageToken: string | undefined;
-  let nextSyncToken: string | undefined;
-  do {
+  return collectGoogleEventPages(async (pageToken) => {
     const query = new URLSearchParams({
       singleEvents: "true",
       showDeleted: "true",
@@ -190,13 +297,61 @@ async function listChanges(
     );
     if (response.status === 410)
       throw new GoogleApiError("GOOGLE_SYNC_TOKEN_EXPIRED", 410, false);
-    const page = await responseJson<GoogleEventsPage>(response);
+    return responseJson<GoogleEventsPage>(response);
+  }, full);
+}
+
+export async function collectGoogleEventPages(
+  fetchPage: (pageToken?: string) => Promise<GoogleEventsPage>,
+  full: boolean,
+): Promise<{
+  events: GoogleEventResource[];
+  syncToken: string;
+  full: boolean;
+}> {
+  const events: GoogleEventResource[] = [];
+  let pageToken: string | undefined;
+  let finalSyncToken: string | undefined;
+  do {
+    const page = await fetchPage(pageToken);
     events.push(...(page.items ?? []));
     pageToken = page.nextPageToken;
-    nextSyncToken = page.nextSyncToken ?? nextSyncToken;
+    if (!pageToken) finalSyncToken = page.nextSyncToken;
   } while (pageToken);
-  if (!nextSyncToken) throw new Error("GOOGLE_NEXT_SYNC_TOKEN_MISSING");
-  return { events, syncToken: nextSyncToken, full };
+  if (!finalSyncToken) throw new Error("GOOGLE_NEXT_SYNC_TOKEN_MISSING");
+  return { events, syncToken: finalSyncToken, full };
+}
+
+export async function recoverInvalidGoogleSyncToken<T>(
+  incremental: () => Promise<T>,
+  clearInvalidToken: () => Promise<void>,
+  fullSync: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await incremental();
+  } catch (error) {
+    if (!(error instanceof GoogleApiError) || error.status !== 410) throw error;
+    await clearInvalidToken();
+    return fullSync();
+  }
+}
+
+export function googleWatchExpiration(
+  providerExpiration: string | undefined,
+  requestedExpiration: number,
+): string {
+  const milliseconds = Number(providerExpiration ?? requestedExpiration);
+  if (!Number.isFinite(milliseconds))
+    throw new Error("GOOGLE_WATCH_EXPIRATION_INVALID");
+  return new Date(milliseconds).toISOString();
+}
+
+export async function replaceGoogleWatchSafely(
+  persistReplacement: () => Promise<void>,
+  stopPrevious: () => Promise<void>,
+): Promise<void> {
+  await persistReplacement();
+  await stopPrevious().catch(() => undefined);
 }
 
 function eventOriginalStart(event: GoogleEventResource): string | null {
@@ -284,7 +439,7 @@ async function reconcileLinkedEvent(
   const lesson = lessonData as LessonRow;
   const incomingHash = googleEventStateHash(event);
   if (event.status === "cancelled") {
-    if (lesson.status === "cancelled") {
+    if (!shouldRecreateDeletedProviderEvent(lesson.status)) {
       await supabase
         .from("google_event_mappings")
         .update({
@@ -297,12 +452,11 @@ async function reconcileLinkedEvent(
         .eq("lesson_id", lesson.id);
       return true;
     }
-    const replacementId = createHash("sha256")
-      .update(
-        `${connection.teacher_id}:${lesson.id}:restore:${event.updated ?? event.id}`,
-      )
-      .digest("hex")
-      .slice(0, 32);
+    const replacementId = googleReplacementEventId(
+      connection.teacher_id,
+      lesson.id,
+      event.updated ?? event.id,
+    );
     await supabase
       .from("lessons")
       .update({
@@ -496,22 +650,17 @@ export async function syncGoogleConnection(
       connection.teacher_id,
       connection.encrypted_credentials,
     );
-    let result;
-    try {
-      result = await listChanges(connection, token, forceFull);
-    } catch (error) {
-      if (!(error instanceof GoogleApiError) || error.status !== 410)
-        throw error;
-      await supabase
-        .from("integration_connections")
-        .update({ sync_token: null })
-        .eq("id", connection.id);
-      result = await listChanges(
-        { ...connection, sync_token: null },
-        token,
-        true,
-      );
-    }
+    const result = await recoverInvalidGoogleSyncToken(
+      () => listChanges(connection, token, forceFull),
+      async () => {
+        const { error } = await supabase
+          .from("integration_connections")
+          .update({ sync_token: null })
+          .eq("id", connection.id);
+        if (error) throw error;
+      },
+      () => listChanges({ ...connection, sync_token: null }, token, true),
+    );
     const syncRunId = randomUUID();
     const counters: Record<string, number> = {};
     for (const event of result.events) {
@@ -570,6 +719,9 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
     );
     throw new Error("GOOGLE_CALENDAR_CONFIGURATION_MISSING");
   }
+  const parsedWebhookUrl = new URL(webhookUrl);
+  if (parsedWebhookUrl.protocol !== "https:")
+    throw new Error("GOOGLE_CALENDAR_WEBHOOK_HTTPS_REQUIRED");
   const connection = await connectionById(connectionId);
   const { token } = await validGoogleAccessToken(
     connection.teacher_id,
@@ -601,26 +753,33 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
   const supabase = createSupabaseAdminClient();
   const oldChannel = connection.watch_channel_id;
   const oldResource = connection.watch_resource_id;
-  const { error } = await supabase
-    .from("integration_connections")
-    .update({
-      watch_channel_id: channel.id,
-      watch_resource_id: channel.resourceId,
-      watch_token_hash: hashChannelToken(channelToken),
-      watch_expires_at: new Date(
-        Number(channel.expiration ?? requestedExpiration),
-      ).toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", connection.id);
-  if (error) throw error;
-  if (oldChannel && oldResource) {
-    await googleApiRequest(token, "/channels/stop", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: oldChannel, resourceId: oldResource }),
-    }).catch(() => undefined);
-  }
+  await replaceGoogleWatchSafely(
+    async () => {
+      const { error } = await supabase
+        .from("integration_connections")
+        .update({
+          watch_channel_id: channel.id,
+          watch_resource_id: channel.resourceId,
+          watch_token_hash: hashChannelToken(channelToken),
+          watch_expires_at: googleWatchExpiration(
+            channel.expiration,
+            requestedExpiration,
+          ),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", connection.id);
+      if (error) throw error;
+    },
+    async () => {
+      if (!oldChannel || !oldResource) return;
+      const stopResponse = await googleApiRequest(token, "/channels/stop", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: oldChannel, resourceId: oldResource }),
+      });
+      if (!stopResponse.ok) await responseJson(stopResponse);
+    },
+  );
   logSync("watch_register", connection.id, {
     calendarId: connection.selected_calendar_id,
     result: "success",
@@ -632,12 +791,11 @@ export async function initializeGoogleConnection(connectionId: string) {
   const sync = await Promise.resolve()
     .then(async () => {
       const result = await syncGoogleConnection(connectionId, true);
-      const queued =
-        await enqueueMissingGoogleLessonsForConnection(connectionId);
+      await enqueueMissingGoogleLessonsForConnection(connectionId);
       const connection = await connectionById(connectionId);
       await processGoogleLessonJobs({
         teacherId: connection.teacher_id,
-        limit: Math.max(20, queued),
+        limit: GOOGLE_OUTBOUND_BATCH_LIMIT,
       });
       return result;
     })
@@ -763,25 +921,41 @@ export async function enqueueMissingGoogleLessonsForConnection(
   return lessonIds.length;
 }
 
+export type GoogleWebhookDecision =
+  | { kind: "invalid" }
+  | { kind: "skipped_not_entitled" }
+  | { kind: "accepted"; connectionId: string; teacherId: string };
+
 export async function acceptGoogleWebhook(
   request: Request,
-): Promise<string | null> {
-  const channelId = request.headers.get("x-goog-channel-id");
-  const resourceId = request.headers.get("x-goog-resource-id");
-  const channelToken = request.headers.get("x-goog-channel-token");
-  if (!channelId || !resourceId || !channelToken) return null;
+): Promise<GoogleWebhookDecision> {
+  const headers = googleWebhookHeaders(request);
+  if (!headers) return { kind: "invalid" };
+  const { channelId, resourceId, channelToken } = headers;
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("integration_connections")
-    .select("id,watch_token_hash")
+    .select("id,teacher_id,watch_token_hash")
     .eq("provider", "google")
     .eq("watch_channel_id", channelId)
     .eq("watch_resource_id", resourceId)
     .eq("status", "connected")
     .maybeSingle();
-  if (error || !data?.watch_token_hash) return null;
-  if (!safeEqual(hashChannelToken(channelToken), data.watch_token_hash))
-    return null;
+  if (error) throw error;
+  if (!data?.watch_token_hash) return { kind: "invalid" };
+  if (!isValidGoogleChannelToken(channelToken, data.watch_token_hash))
+    return { kind: "invalid" };
+  const { data: subscription, error: subscriptionError } = await supabase
+    .from("subscriptions")
+    .select("teacher_id,status,tier")
+    .eq("teacher_id", data.teacher_id)
+    .maybeSingle();
+  if (subscriptionError) throw subscriptionError;
+  const entitled = entitledTeacherIds(
+    subscription ? [subscription] : [],
+    "googleCalendar",
+  );
+  if (!entitled.has(data.teacher_id)) return { kind: "skipped_not_entitled" };
   const requestedAt = new Date().toISOString();
   const { error: updateError } = await supabase
     .from("integration_connections")
@@ -792,11 +966,26 @@ export async function acceptGoogleWebhook(
     })
     .eq("id", data.id)
     .eq("watch_channel_id", channelId);
-  return updateError ? null : (data.id as string);
+  if (updateError) throw updateError;
+  return {
+    kind: "accepted",
+    connectionId: data.id as string,
+    teacherId: data.teacher_id as string,
+  };
 }
 
 export async function maintainGoogleConnections(limit = 10) {
   const supabase = createSupabaseAdminClient();
+  const { data: subscriptions, error: subscriptionError } = await supabase
+    .from("subscriptions")
+    .select("teacher_id,status,tier")
+    .or("status.eq.trial,tier.neq.free")
+    .limit(GOOGLE_MAINTENANCE_SCAN_LIMIT);
+  if (subscriptionError) throw subscriptionError;
+  const entitled = entitledTeacherIds(subscriptions ?? [], "googleCalendar");
+  const teacherIds = [...entitled];
+  if (!teacherIds.length)
+    return { inspected: 0, synced: 0, watches: 0, skipped: 0, failed: 0 };
   const { data, error } = await supabase
     .from("integration_connections")
     .select(
@@ -804,34 +993,16 @@ export async function maintainGoogleConnections(limit = 10) {
     )
     .eq("provider", "google")
     .eq("status", "connected")
-    .limit(50);
+    .in("teacher_id", teacherIds)
+    .order("watch_expires_at", { ascending: true, nullsFirst: true })
+    .limit(GOOGLE_MAINTENANCE_SCAN_LIMIT);
   if (error) throw error;
   const now = Date.now();
   const staleAt = now - 15 * 60_000;
-  const watchDueAt = now + 24 * 60 * 60_000;
-  const candidates = (data ?? [])
-    .filter(
-      (row) =>
-        row.sync_requested_at ||
-        (row.sync_state === "syncing" &&
-          (!row.last_attempted_sync_at ||
-            Date.parse(row.last_attempted_sync_at) < staleAt)) ||
-        !row.last_successful_sync_at ||
-        Date.parse(row.last_successful_sync_at) < staleAt ||
-        !row.watch_expires_at ||
-        Date.parse(row.watch_expires_at) < watchDueAt,
-    )
-    .slice(0, limit);
-  const teacherIds = [...new Set(candidates.map((row) => row.teacher_id))];
-  const { data: subscriptions, error: subscriptionError } = teacherIds.length
-    ? await supabase
-        .from("subscriptions")
-        .select("teacher_id,status,tier")
-        .in("teacher_id", teacherIds)
-    : { data: [], error: null };
-  if (subscriptionError) throw subscriptionError;
-  const entitled = entitledTeacherIds(subscriptions ?? [], "googleCalendar");
-  const due = candidates.filter((row) => entitled.has(row.teacher_id));
+  const due = prioritizeGoogleMaintenanceCandidates(
+    (data ?? []) as MaintenanceCandidate[],
+    now,
+  ).slice(0, limit);
   let synced = 0;
   let watches = 0;
   let failed = 0;
@@ -843,8 +1014,7 @@ export async function maintainGoogleConnections(limit = 10) {
           Date.parse(row.last_attempted_sync_at) < staleAt)) ||
       !row.last_successful_sync_at ||
       Date.parse(row.last_successful_sync_at) < staleAt;
-    const shouldRenewWatch =
-      !row.watch_expires_at || Date.parse(row.watch_expires_at) < watchDueAt;
+    const shouldRenewWatch = shouldRenewGoogleWatch(row.watch_expires_at, now);
     if (shouldSync) {
       try {
         await syncGoogleConnection(row.id);
@@ -868,10 +1038,10 @@ export async function maintainGoogleConnections(limit = 10) {
     }
   }
   return {
-    inspected: candidates.length,
+    inspected: due.length,
     synced,
     watches,
-    skipped: candidates.length - due.length,
+    skipped: 0,
     failed,
   };
 }
@@ -905,7 +1075,7 @@ export async function processGoogleLessonJobs(
     .lt("attempts", 8)
     .lte("next_attempt_at", new Date().toISOString())
     .order("next_attempt_at")
-    .limit(options.limit ?? 20);
+    .limit(Math.min((options.limit ?? GOOGLE_OUTBOUND_BATCH_LIMIT) * 5, 100));
   if (options.teacherId) query = query.eq("teacher_id", options.teacherId);
   const { data: jobs, error } = await query;
   if (error) throw error;
@@ -920,9 +1090,9 @@ export async function processGoogleLessonJobs(
     : { data: [], error: null };
   if (subscriptionError) throw subscriptionError;
   const entitled = entitledTeacherIds(subscriptions ?? [], "googleCalendar");
-  const processableJobs = (jobs ?? []).filter((job) =>
-    entitled.has(job.teacher_id),
-  );
+  const processableJobs = (jobs ?? [])
+    .filter((job) => entitled.has(job.teacher_id))
+    .slice(0, options.limit ?? GOOGLE_OUTBOUND_BATCH_LIMIT);
   const results = [];
   for (const job of processableJobs)
     results.push(await processGoogleLessonJob(job));

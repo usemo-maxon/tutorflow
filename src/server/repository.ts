@@ -158,6 +158,18 @@ function defaultIntegration(
   return { status: configured(provider) ? "not_connected" : "not_configured" };
 }
 
+function safeIntegrationError(
+  provider: string,
+  status: string,
+  value: string | null,
+): string | undefined {
+  if (!value) return undefined;
+  if (provider !== "google") return value;
+  if (status === "reconnect_required")
+    return "Google Calendar wymaga ponownego połączenia.";
+  return "Nie udało się zsynchronizować Google Calendar. Spróbuj ponownie.";
+}
+
 async function loadTenantStore(
   teacherId: string,
   range?: { start: string; end: string },
@@ -189,7 +201,7 @@ async function loadTenantStore(
       supabase
         .from("integration_connections")
         .select(
-          "provider,status,label,last_error,sync_state,last_successful_sync_at",
+          "provider,status,label,last_error,sync_state,last_attempted_sync_at,last_successful_sync_at",
         )
         .eq("teacher_id", teacherId),
     ]);
@@ -393,8 +405,13 @@ async function loadTenantStore(
       {
         status: row.status,
         label: row.label ?? undefined,
-        lastError: row.last_error ?? undefined,
+        lastError: safeIntegrationError(
+          row.provider,
+          row.status,
+          row.last_error,
+        ),
         syncState: row.sync_state ?? undefined,
+        lastAttemptedSyncAt: row.last_attempted_sync_at ?? undefined,
         lastSuccessfulSyncAt: row.last_successful_sync_at ?? undefined,
       } as IntegrationState,
     ]),

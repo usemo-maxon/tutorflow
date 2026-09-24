@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   persist: vi.fn(),
   initialize: vi.fn(),
+  currentTeacher: vi.fn(),
   stateResult: {
     data: { teacher_id: "teacher-1" } as { teacher_id: string } | null,
     error: null as Error | null,
@@ -52,6 +53,7 @@ vi.mock("@/server/google-calendar-oauth", async (importOriginal) => {
 vi.mock("@/server/google-calendar-sync", () => ({
   initializeGoogleConnection: mocks.initialize,
 }));
+vi.mock("@/server/auth", () => ({ currentTeacher: mocks.currentTeacher }));
 
 import { GET } from "./route";
 import { GoogleConnectionPersistenceError } from "@/server/google-calendar-oauth";
@@ -66,6 +68,10 @@ describe("Google Calendar OAuth callback", () => {
     mocks.getUser.mockResolvedValue({
       data: { user: { id: "teacher-1" } },
       error: null,
+    });
+    mocks.currentTeacher.mockResolvedValue({
+      id: "teacher-1",
+      subscription: { status: "trial", tier: "free" },
     });
     mocks.persist.mockResolvedValue({
       connectionId: "connection-1",
@@ -154,6 +160,18 @@ describe("Google Calendar OAuth callback", () => {
   it("rejects a missing code after consuming the valid state", async () => {
     const response = await GET(new Request(`${callbackUrl}?state=valid-state`));
     expect(response.headers.get("location")).toContain("google=error");
+    expect(mocks.persist).not.toHaveBeenCalled();
+  });
+
+  it("rechecks entitlement before exchanging the authorization code", async () => {
+    mocks.currentTeacher.mockResolvedValue({
+      id: "teacher-1",
+      subscription: { status: "active", tier: "free" },
+    });
+    const response = await GET(
+      new Request(`${callbackUrl}?state=valid-state&code=authorization-code`),
+    );
+    expect(response.headers.get("location")).toContain("google=plan_required");
     expect(mocks.persist).not.toHaveBeenCalled();
   });
 

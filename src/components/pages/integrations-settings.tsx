@@ -14,6 +14,13 @@ import { resolveEntitlements } from "@/lib/entitlements";
 import { useSessionTeacher } from "../app-shell";
 import { PageLoading } from "../ui/loading";
 
+const syncDateFormatter = new Intl.DateTimeFormat("pl-PL", {
+  day: "numeric",
+  month: "short",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
 export function IntegrationsSettings() {
   const [syncing, setSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<{
@@ -48,6 +55,8 @@ export function IntegrationsSettings() {
           label={data.integrations.google.label}
           description="Dwukierunkowa synchronizacja lekcji i podgląd zajętości z wybranego kalendarza."
           error={data.integrations.google.lastError}
+          lastAttemptedSyncAt={data.integrations.google.lastAttemptedSyncAt}
+          lastSuccessfulSyncAt={data.integrations.google.lastSuccessfulSyncAt}
           planLocked={!entitlements.googleCalendar}
         >
           {!entitlements.googleCalendar ? (
@@ -62,7 +71,11 @@ export function IntegrationsSettings() {
               <button
                 type="button"
                 className="button button--secondary"
-                disabled={syncing}
+                disabled={
+                  syncing ||
+                  data.integrations.google.syncState === "pending" ||
+                  data.integrations.google.syncState === "syncing"
+                }
                 aria-describedby={
                   syncFeedback ? "google-sync-feedback" : undefined
                 }
@@ -106,7 +119,11 @@ export function IntegrationsSettings() {
                   }
                 }}
               >
-                {syncing ? "Synchronizuję…" : "Synchronizuj teraz"}
+                {syncing || data.integrations.google.syncState === "syncing"
+                  ? "Synchronizacja trwa"
+                  : data.integrations.google.syncState === "pending"
+                    ? "Synchronizacja oczekuje"
+                    : "Synchronizuj teraz"}
               </button>
               <a
                 className="button button--secondary"
@@ -195,6 +212,8 @@ function IntegrationCard({
   label,
   description,
   error,
+  lastAttemptedSyncAt,
+  lastSuccessfulSyncAt,
   planLocked = false,
   children,
 }: {
@@ -210,21 +229,36 @@ function IntegrationCard({
   label?: string;
   description: string;
   error?: string;
+  lastAttemptedSyncAt?: string;
+  lastSuccessfulSyncAt?: string;
   planLocked?: boolean;
   children?: ReactNode;
 }) {
   const hasSyncError = state === "connected" && syncState === "error";
+  const displayedError =
+    name === "Google Calendar" &&
+    (state === "reconnect_required" || syncState === "reconnect_required")
+      ? "Google Calendar wymaga ponownego połączenia."
+      : name === "Google Calendar" && error
+        ? "Nie udało się zsynchronizować Google Calendar. Spróbuj ponownie."
+        : error;
   const status = planLocked
     ? "Dostępne w planie Pro"
-    : hasSyncError
-      ? "Błąd synchronizacji"
-      : state === "connected"
-        ? "Połączono"
-        : state === "error" || state === "reconnect_required"
-          ? "Wymaga uwagi"
-          : state === "not_configured"
-            ? "Jeszcze niedostępne"
-            : "Nie połączono";
+    : state === "reconnect_required" || syncState === "reconnect_required"
+      ? "Wymaga ponownego połączenia"
+      : syncState === "pending"
+        ? "Synchronizacja oczekuje"
+        : syncState === "syncing"
+          ? "Synchronizacja trwa"
+          : hasSyncError
+            ? "Błąd synchronizacji"
+            : state === "connected"
+              ? "Połączono"
+              : state === "error"
+                ? "Wymaga uwagi"
+                : state === "not_configured"
+                  ? "Jeszcze niedostępne"
+                  : "Nie połączono";
   return (
     <article className="integration-card">
       <span className="integration-icon" aria-hidden="true">
@@ -251,9 +285,22 @@ function IntegrationCard({
         </div>
         <p>{description}</p>
         {!planLocked && label && <small>Połączenie: {label}</small>}
-        {!planLocked && error && (
-          <div className="integration-error">{error}</div>
+        {!planLocked && state === "connected" && (
+          <small>
+            {lastSuccessfulSyncAt
+              ? `Ostatnia synchronizacja: ${syncDateFormatter.format(new Date(lastSuccessfulSyncAt))}`
+              : lastAttemptedSyncAt
+                ? "Oczekuje na pierwszą udaną synchronizację"
+                : "Oczekuje na pierwszą synchronizację"}
+          </small>
         )}
+        {!planLocked &&
+          displayedError &&
+          (hasSyncError ||
+            state === "error" ||
+            state === "reconnect_required") && (
+            <div className="integration-error">{displayedError}</div>
+          )}
         {!planLocked && state === "not_configured" && (
           <div className="integration-note">
             Połączenie nie jest jeszcze dostępne. Możesz nadal planować lekcje i

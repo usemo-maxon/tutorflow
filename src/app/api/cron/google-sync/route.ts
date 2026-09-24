@@ -16,8 +16,24 @@ export async function GET(request: Request) {
   try {
     const connections = await maintainGoogleConnections();
     const outbound = await processGoogleLessonJobs();
+    console.info(
+      JSON.stringify({
+        scope: "google_calendar",
+        operation: "daily_maintenance",
+        result: "success",
+        connections,
+        outbound,
+      }),
+    );
     return Response.json({ ok: true, outbound, connections });
   } catch {
+    console.error(
+      JSON.stringify({
+        scope: "google_calendar",
+        operation: "daily_maintenance",
+        result: "error",
+      }),
+    );
     return schedulerFailureResponse();
   }
 }

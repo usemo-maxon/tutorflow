@@ -4792,7 +4792,9 @@ h3 {
   font-size: 12px;
 }
 .integration-card small {
+  display: block;
   color: var(--muted);
+  line-height: 1.5;
 }
 .integration-note {
   margin: 12px 0;

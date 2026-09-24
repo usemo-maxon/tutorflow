@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { after, NextResponse } from "next/server";
 import { GoogleApiError } from "@/server/google-calendar";
+import { currentTeacher } from "@/server/auth";
+import { assertEntitlement } from "@/server/entitlements";
 import {
   GoogleConnectionPersistenceError,
   persistGoogleCalendarConnection,
@@ -118,6 +120,25 @@ export async function GET(request: Request) {
       error: "missing_code",
     });
     return redirectResponse(request, "/app/ustawienia/integracje?google=error");
+  }
+
+  const teacher = await currentTeacher();
+  if (!teacher || teacher.id !== teacherId) {
+    callbackLog("entitlement_validation", { teacherId, result: "rejected" });
+    return redirectResponse(request, "/logowanie");
+  }
+  try {
+    assertEntitlement(teacher.subscription, "googleCalendar");
+  } catch {
+    callbackLog("entitlement_validation", {
+      teacherId,
+      result: "rejected",
+      error: "plan_required",
+    });
+    return redirectResponse(
+      request,
+      "/app/ustawienia/integracje?google=plan_required",
+    );
   }
 
   try {

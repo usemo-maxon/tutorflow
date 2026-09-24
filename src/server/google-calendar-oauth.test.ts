@@ -24,6 +24,7 @@ function dependencies(
       stored.push(values);
       return { id: "connection-1" };
     }),
+    recoverAfterReconnect: vi.fn(async () => undefined),
     encrypt: vi.fn((value) => JSON.stringify(value)),
     decrypt: vi.fn((value) => JSON.parse(value) as GoogleCredentials),
     now: () => new Date("2035-01-10T10:00:00.000Z"),
@@ -119,6 +120,10 @@ describe("Google Calendar OAuth connection persistence", () => {
       created_at: "2034-12-01T10:00:00.000Z",
     });
     expect(result.reusedRefreshToken).toBe(true);
+    expect(setup.dependencies.recoverAfterReconnect).toHaveBeenCalledWith(
+      "teacher-1",
+      "workspace-1",
+    );
   });
 
   it("rejects a first connection when Google supplies no refresh token", async () => {

@@ -220,6 +220,7 @@ export interface IntegrationState {
   label?: string;
   lastError?: string;
   syncState?: "idle" | "pending" | "syncing" | "error" | "reconnect_required";
+  lastAttemptedSyncAt?: ISODateTime;
   lastSuccessfulSyncAt?: ISODateTime;
 }
 

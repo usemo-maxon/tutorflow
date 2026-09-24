@@ -26,6 +26,7 @@ vi.mock("@/server/auth", () => ({
 }));
 
 vi.mock("@/server/google-calendar-sync", () => ({
+  GOOGLE_OUTBOUND_BATCH_LIMIT: 20,
   requestGoogleSyncForTeacher: mocks.requestSync,
   syncGoogleConnection: mocks.syncConnection,
   enqueueMissingGoogleLessonsForConnection: mocks.enqueueMissing,
@@ -70,6 +71,21 @@ describe("manual Google Calendar synchronization", () => {
     expect(mocks.enqueueMissing.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.processJobs.mock.invocationCallOrder[0],
     );
+  });
+
+  it("keeps manual outbound work bounded when many lessons are queued", async () => {
+    mocks.enqueueMissing.mockResolvedValue(300);
+    const response = await POST(
+      new Request("https://easy4tutor.pl/api/integrations/google/sync", {
+        method: "POST",
+      }),
+    );
+    expect(response.status).toBe(202);
+    await mocks.background?.();
+    expect(mocks.processJobs).toHaveBeenCalledWith({
+      teacherId: "teacher-1",
+      limit: 20,
+    });
   });
 
   it("rejects an unauthenticated request", async () => {

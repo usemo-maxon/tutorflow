@@ -4,6 +4,7 @@ import { assertEntitlement } from "@/server/entitlements";
 import { ApiFailure, errorResponse } from "@/server/errors";
 import {
   enqueueMissingGoogleLessonsForConnection,
+  GOOGLE_OUTBOUND_BATCH_LIMIT,
   processGoogleLessonJobs,
   requestGoogleSyncForTeacher,
   syncGoogleConnection,
@@ -24,11 +25,10 @@ export async function POST(request: Request) {
       Promise.resolve()
         .then(async () => {
           await syncGoogleConnection(connectionId).catch(() => undefined);
-          const queued =
-            await enqueueMissingGoogleLessonsForConnection(connectionId);
+          await enqueueMissingGoogleLessonsForConnection(connectionId);
           await processGoogleLessonJobs({
             teacherId: teacher.id,
-            limit: Math.max(20, queued),
+            limit: GOOGLE_OUTBOUND_BATCH_LIMIT,
           });
         })
         .catch(() => undefined),
