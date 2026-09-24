@@ -12,6 +12,7 @@ import {
   Clock3,
   LogOut,
   Menu,
+  Search,
   Settings,
   Users,
   X,
@@ -35,6 +36,10 @@ import {
 } from "@/lib/global-create";
 import { AppUiProvider, useAppUi } from "./app-ui-context";
 import { GlobalCreateMenu } from "./global-create-menu";
+import {
+  GlobalCommandPalette,
+  type GlobalCommandPaletteHandle,
+} from "./global-command-palette";
 
 const LessonComposer = dynamic(() =>
   import("./lesson-composer").then((module) => module.LessonComposer),
@@ -91,6 +96,7 @@ function ShellBody({
   const [online, setOnline] = useState(true);
   const [mobileMenu, setMobileMenu] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement | null>(null);
+  const commandPalette = useRef<GlobalCommandPaletteHandle | null>(null);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
@@ -146,6 +152,15 @@ function ShellBody({
             <X size={20} />
           </button>
         </div>
+        <button
+          type="button"
+          className="sidebar-search"
+          onClick={(event) => commandPalette.current?.open(event.currentTarget)}
+        >
+          <Search size={18} aria-hidden="true" />
+          <span>Szukaj</span>
+          <kbd>Ctrl K</kbd>
+        </button>
         <GlobalCreateMenu
           className="button button--secondary sidebar-add"
           disabled={readOnly}
@@ -255,13 +270,25 @@ function ShellBody({
         <Link className="brand" href="/app/dzisiaj">
           <BrandLogo />
         </Link>
-        <GlobalCreateMenu
-          className="icon-button icon-button--blue"
-          disabled={readOnly}
-          iconOnly
-          placement="end"
-          onAction={handleGlobalCreate}
-        />
+        <div className="mobile-header__actions">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Szukaj"
+            onClick={(event) =>
+              commandPalette.current?.open(event.currentTarget)
+            }
+          >
+            <Search size={21} aria-hidden="true" />
+          </button>
+          <GlobalCreateMenu
+            className="icon-button icon-button--blue"
+            disabled={readOnly}
+            iconOnly
+            placement="end"
+            onAction={handleGlobalCreate}
+          />
+        </div>
       </header>
 
       <main id="main-content" className="app-main" tabIndex={-1}>
@@ -306,6 +333,12 @@ function ShellBody({
 
       {lessonComposer && <LessonComposer />}
       {studentComposerOpen && <StudentComposer />}
+      <GlobalCommandPalette
+        ref={commandPalette}
+        readOnly={readOnly}
+        timezone={teacher.timezone}
+        onCreate={handleGlobalCreate}
+      />
       {toast && (
         <div
           className={`toast toast--${toast.tone ?? "success"}`}
