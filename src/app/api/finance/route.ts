@@ -24,6 +24,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const teacherId = await currentTeacherId();
     if (!teacherId) throw unauthenticated();
     const parsed = FinanceActionSchema.safeParse(await request.json());
@@ -41,6 +42,15 @@ export async function POST(request: Request) {
     return Response.json(await mutateFinance(teacherId, parsed.data));
   } catch (error) {
     return errorResponse(error);
+  }
+}
+
+function assertSameOrigin(request: Request): void {
+  if (request.headers.get("sec-fetch-site") === "cross-site") {
+    throw new ApiFailure(403, {
+      code: "CROSS_SITE_REQUEST",
+      message: "Żądanie zostało odrzucone.",
+    });
   }
 }
 

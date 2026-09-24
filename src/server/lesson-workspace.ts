@@ -1049,6 +1049,15 @@ function databaseFailure(error: unknown): never {
     });
   }
   if (
+    message.includes("PACKAGE_REQUIRES_SINGLE_STUDENT") ||
+    message.includes("PER_LESSON_REQUIRES_SINGLE_STUDENT")
+  ) {
+    throw new ApiFailure(422, {
+      code: "UNSUPPORTED_BILLING_CONFIGURATION",
+      message: "Ten sposób rozliczenia nie obsługuje lekcji grupowej.",
+    });
+  }
+  if (
     message.includes("CANCELLED_LESSON") ||
     message.includes("LESSON_NOT_EDITABLE") ||
     message.includes("NO_SHOW")

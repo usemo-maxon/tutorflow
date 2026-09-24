@@ -94,6 +94,23 @@ values (
   (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
   '12000000-0000-4000-8000-000000000001', 'One lesson', 1, 8000, 'PLN', 'active'
 );
+insert into public.lessons (
+  id, workspace_id, tutor_id, student_id, title, starts_at, ends_at, timezone,
+  status, format, currency, billing_type, creation_mode
+) values (
+  '14000000-0000-4000-8000-000000000002',
+  (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
+  '11000000-0000-4000-8000-000000000001',
+  '12000000-0000-4000-8000-000000000001', 'Individual package lesson',
+  '2030-01-02T09:00:00Z', '2030-01-02T10:00:00Z', 'Europe/Warsaw',
+  'scheduled', 'online', 'PLN', 'package', 'single'
+);
+insert into public.lesson_participants (workspace_id, lesson_id, student_id)
+values (
+  (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
+  '14000000-0000-4000-8000-000000000002',
+  '12000000-0000-4000-8000-000000000001'
+);
 insert into public.payments (workspace_id, student_id, amount_grosz, currency, status, paid_at)
 values (
   (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
@@ -102,18 +119,18 @@ values (
 select is((select count(*)::integer from public.payments), 1, 'member sees own workspace payment');
 select is(public.complete_lesson_with_package(
   (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
-  '14000000-0000-4000-8000-000000000001', '12000000-0000-4000-8000-000000000001',
+  '14000000-0000-4000-8000-000000000002', '12000000-0000-4000-8000-000000000001',
   '15000000-0000-4000-8000-000000000001', 'complete-group-zosia'
 ), 0, 'lesson completion consumes one package unit');
 select is(public.complete_lesson_with_package(
   (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
-  '14000000-0000-4000-8000-000000000001', '12000000-0000-4000-8000-000000000001',
+  '14000000-0000-4000-8000-000000000002', '12000000-0000-4000-8000-000000000001',
   '15000000-0000-4000-8000-000000000001', 'complete-group-retry'
 ), 0, 'repeated completion is idempotent');
 select is((select count(*)::integer from public.package_usages where kind = 'consumption'), 1, 'retry creates no second consumption');
 select is(public.reverse_lesson_package_usage(
   (select id from public.workspaces where owner_user_id = '11000000-0000-4000-8000-000000000001'),
-  '14000000-0000-4000-8000-000000000001',
+  '14000000-0000-4000-8000-000000000002',
   '15000000-0000-4000-8000-000000000001', 'reverse-group-zosia'
 ), 1, 'undoing completion restores the package unit');
 select is((select remaining_lessons from public.package_balances where package_id = '15000000-0000-4000-8000-000000000001'), 1, 'balance view derives remaining lessons from ledger');

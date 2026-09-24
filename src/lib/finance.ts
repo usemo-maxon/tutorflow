@@ -64,7 +64,13 @@ export interface FinancialPackage {
 
 export interface FinancialOverview {
   workspace: { currency: string; timezone: string; dueDays: number };
-  students: Array<{ id: string; name: string; currency: string }>;
+  students: Array<{
+    id: string;
+    name: string;
+    currency: string;
+    status: "active" | "archived";
+    canRecordPayment: boolean;
+  }>;
   summary: {
     outstanding: number;
     overdue: number;
@@ -82,7 +88,8 @@ const entityId = z.string().uuid();
 const currency = z.string().regex(/^[A-Z]{3}$/);
 const minorUnits = z.number().int().safe().positive();
 
-export const FinanceActionSchema = z.discriminatedUnion("type", [
+export const FinanceActionSchema = z
+  .discriminatedUnion("type", [
   z.object({
     type: z.literal("recordPayment"),
     studentId: entityId,
@@ -112,7 +119,20 @@ export const FinanceActionSchema = z.discriminatedUnion("type", [
     expiresAt: z.string().datetime().nullable().optional(),
     idempotencyKey: z.string().trim().min(8).max(200),
   }),
-]);
+  ])
+  .superRefine((action, context) => {
+    if (
+      action.type === "createPackage" &&
+      action.expiresAt &&
+      Date.parse(action.expiresAt) < Date.parse(action.purchasedAt)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["expiresAt"],
+        message: "Data ważności nie może poprzedzać daty zakupu.",
+      });
+    }
+  });
 
 export type FinanceAction = z.infer<typeof FinanceActionSchema>;
 
@@ -156,4 +176,25 @@ export function parseMoneyInput(value: string): number | null {
   const fraction = Number((match[2] ?? "").padEnd(2, "0"));
   const amount = whole * 100 + fraction;
   return Number.isSafeInteger(amount) ? amount : null;
+}
+
+export function paymentPage<T>(
+  rawRows: T[],
+  cursor: number,
+  pageSize = 20,
+) {
+  const hasMore = rawRows.length > pageSize;
+  return {
+    items: rawRows.slice(0, pageSize),
+    nextCursor: hasMore ? cursor + pageSize : undefined,
+  };
+}
+
+export function paymentStudentCandidates(
+  overview: Pick<
+    FinancialOverview,
+    "students" | "openCharges" | "recentPayments" | "packages"
+  >,
+) {
+  return overview.students.filter((student) => student.canRecordPayment);
 }

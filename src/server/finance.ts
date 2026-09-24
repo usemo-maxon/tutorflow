@@ -8,6 +8,7 @@ import type {
   FinancialPackage,
   FinancialPayment,
 } from "@/lib/finance";
+import { paymentPage } from "@/lib/finance";
 import { ApiFailure } from "./errors";
 import { getAppData, localAllowed } from "./repository";
 import { createSupabaseServerClient } from "./supabase";
@@ -42,6 +43,8 @@ export async function getFinancialOverview(
     )
     .eq("workspace_id", workspaceId)
     .order("paid_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .order("payment_id", { ascending: false })
     .range(cursor, cursor + PAYMENT_PAGE_SIZE);
   let packagesQuery = supabase
     .from("packages")
@@ -50,6 +53,8 @@ export async function getFinancialOverview(
     )
     .eq("workspace_id", workspaceId)
     .order("purchased_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(100);
   if (options.studentId) {
     chargesQuery = chargesQuery.eq("student_id", options.studentId);
@@ -67,7 +72,8 @@ export async function getFinancialOverview(
     chargesResult,
     paymentsResult,
     packagesResult,
-    receivedResult,
+    summaryResult,
+    debtStudentsResult,
   ] = await Promise.all([
     supabase
       .from("students")
@@ -78,30 +84,45 @@ export async function getFinancialOverview(
     chargesQuery,
     paymentsQuery,
     packagesQuery,
+    supabase.rpc("finance_summary", {
+      p_workspace_id: workspaceId,
+      p_currency: currency,
+      p_month_start: monthStart,
+      p_student_id: options.studentId ?? null,
+    }),
     supabase
-      .from("payments")
-      .select("amount_grosz,currency")
+      .from("charge_balances")
+      .select("student_id")
       .eq("workspace_id", workspaceId)
-      .eq("status", "paid")
-      .gte("paid_at", monthStart)
-      .limit(5000),
+      .gt("outstanding_grosz", 0)
+      .neq("status", "cancelled")
+      .limit(1000),
   ]);
   const failure = [
     studentsResult,
     chargesResult,
     paymentsResult,
     packagesResult,
-    receivedResult,
+    summaryResult,
+    debtStudentsResult,
   ].find((result) => result.error);
   if (failure?.error) databaseFailure(failure.error);
 
   const students = new Map(
     (studentsResult.data ?? []).map((row) => [row.id as string, row]),
   );
+  const debtStudentIds = new Set(
+    (debtStudentsResult.data ?? []).map((row) => row.student_id as string),
+  );
   const chargeRows = chargesResult.data ?? [];
+  const paymentPageResult = paymentPage(
+    paymentsResult.data ?? [],
+    cursor,
+    PAYMENT_PAGE_SIZE,
+  );
   const packageRows = packagesResult.data ?? [];
   const packageIds = packageRows.map((row) => row.id as string);
-  const [balancesResult, usagesResult] = await Promise.all([
+  const [balancesResult, usagesResult, packageChargesResult] = await Promise.all([
     packageIds.length
       ? supabase
           .from("package_balances")
@@ -116,11 +137,20 @@ export async function getFinancialOverview(
           .eq("workspace_id", workspaceId)
           .in("package_id", packageIds)
           .order("created_at", { ascending: false })
+          .order("id", { ascending: false })
           .limit(300)
+      : Promise.resolve({ data: [], error: null }),
+    packageIds.length
+      ? supabase
+          .from("charge_balances")
+          .select("package_id,outstanding_grosz")
+          .eq("workspace_id", workspaceId)
+          .in("package_id", packageIds)
       : Promise.resolve({ data: [], error: null }),
   ]);
   if (balancesResult.error) databaseFailure(balancesResult.error);
   if (usagesResult.error) databaseFailure(usagesResult.error);
+  if (packageChargesResult.error) databaseFailure(packageChargesResult.error);
   const lessonIds = [
     ...new Set((usagesResult.data ?? []).map((row) => row.lesson_id as string)),
   ];
@@ -140,7 +170,7 @@ export async function getFinancialOverview(
     (balancesResult.data ?? []).map((row) => [row.package_id as string, row]),
   );
   const outstandingByPackage = new Map(
-    chargeRows
+    (packageChargesResult.data ?? [])
       .filter((row) => row.package_id)
       .map((row) => [row.package_id as string, Number(row.outstanding_grosz)]),
   );
@@ -181,9 +211,8 @@ export async function getFinancialOverview(
     settledAt: (row.settled_at as string | null) ?? undefined,
     overdue: Boolean(row.is_overdue),
   }));
-  const recentPayments: FinancialPayment[] = (paymentsResult.data ?? [])
-    .slice(0, PAYMENT_PAGE_SIZE)
-    .map((row) => ({
+  const recentPayments: FinancialPayment[] = paymentPageResult.items.map(
+    (row) => ({
       id: row.payment_id as string,
       studentId: row.student_id as string,
       studentName:
@@ -199,12 +228,17 @@ export async function getFinancialOverview(
       note: (row.note as string | null) ?? undefined,
       paidAt: (row.paid_at as string | null) ?? undefined,
       createdAt: row.created_at as string,
-    }));
+    }),
+  );
   const packages: FinancialPackage[] = packageRows.map((row) => {
     const balance = balanceByPackage.get(row.id as string);
+    const remainingLessons = Number(
+      balance?.remaining_lessons ?? row.total_lessons,
+    );
     const expired = Boolean(
       row.expires_at && Date.parse(row.expires_at as string) < Date.now(),
     );
+    const storedStatus = row.status as FinancialPackage["status"];
     return {
       id: row.id as string,
       studentId: row.student_id as string,
@@ -214,10 +248,17 @@ export async function getFinancialOverview(
       name: row.name as string,
       totalLessons: Number(row.total_lessons),
       usedLessons: Number(balance?.used_lessons ?? 0),
-      remainingLessons: Number(balance?.remaining_lessons ?? row.total_lessons),
+      remainingLessons,
       price: Number(row.price_grosz),
       currency: row.currency as string,
-      status: expired ? "expired" : (row.status as FinancialPackage["status"]),
+      status:
+        storedStatus === "cancelled"
+          ? "cancelled"
+          : expired
+            ? "expired"
+            : remainingLessons <= 0
+              ? "exhausted"
+              : storedStatus,
       purchasedAt: row.purchased_at as string,
       expiresAt: (row.expires_at as string | null) ?? undefined,
       paymentOutstanding: outstandingByPackage.get(row.id as string) ?? 0,
@@ -227,32 +268,28 @@ export async function getFinancialOverview(
 
   return {
     workspace: { currency, timezone, dueDays },
-    students: (studentsResult.data ?? [])
-      .filter((row) => row.status === "active")
-      .map((row) => ({
+    students: (studentsResult.data ?? []).map((row) => ({
         id: row.id as string,
         name: row.display_name as string,
         currency: (row.currency as string | null) ?? currency,
+        status: row.status as "active" | "archived",
+        canRecordPayment:
+          row.status === "active" || debtStudentIds.has(row.id as string),
       })),
     summary: {
-      outstanding: openCharges
-        .filter((charge) => charge.currency === currency)
-        .reduce((sum, charge) => sum + charge.outstanding, 0),
-      overdue: openCharges
-        .filter((charge) => charge.currency === currency && charge.overdue)
-        .reduce((sum, charge) => sum + charge.outstanding, 0),
-      receivedThisMonth: (receivedResult.data ?? [])
-        .filter((payment) => payment.currency === currency)
-        .reduce((sum, payment) => sum + Number(payment.amount_grosz), 0),
+      outstanding: databaseMinorUnits(
+        summaryResult.data?.[0]?.outstanding_grosz,
+      ),
+      overdue: databaseMinorUnits(summaryResult.data?.[0]?.overdue_grosz),
+      receivedThisMonth: databaseMinorUnits(
+        summaryResult.data?.[0]?.received_this_month_grosz,
+      ),
       currency,
     },
     openCharges,
     recentPayments,
     packages,
-    nextPaymentCursor:
-      recentPayments.length > PAYMENT_PAGE_SIZE
-        ? cursor + PAYMENT_PAGE_SIZE
-        : undefined,
+    nextPaymentCursor: paymentPageResult.nextCursor,
     scopeStudentId: options.studentId,
   };
 }
@@ -379,12 +416,18 @@ async function localFinancialOverview(
           }))
       : [],
   );
+  const debtStudentIds = new Set(
+    openCharges.map((charge) => charge.studentId),
+  );
   return {
     workspace: { currency: "PLN", timezone: data.teacher.timezone, dueDays: 7 },
     students: students.map((student) => ({
       id: student.id,
       name: student.name,
       currency: student.defaultPrice?.currency ?? "PLN",
+      status: student.status,
+      canRecordPayment:
+        student.status === "active" || debtStudentIds.has(student.id),
     })),
     summary: {
       outstanding: openCharges.reduce(
@@ -418,6 +461,31 @@ function databaseFailure(error: { message?: string; code?: string }): never {
       retryable: true,
     });
   }
+  if (message.includes("IDEMPOTENCY_CONFLICT")) {
+    throw new ApiFailure(409, {
+      code: "IDEMPOTENCY_CONFLICT",
+      message:
+        "Ten identyfikator operacji został już użyty z innymi danymi. Odśwież widok i spróbuj ponownie.",
+    });
+  }
+  if (message.includes("PACKAGE_EXHAUSTED")) {
+    throw new ApiFailure(409, {
+      code: "PACKAGE_EXHAUSTED",
+      message: "Brak aktywnego pakietu z wolnymi zajęciami.",
+    });
+  }
+  if (message.includes("STUDENT_NOT_ACTIVE")) {
+    throw new ApiFailure(422, {
+      code: "STUDENT_NOT_ACTIVE",
+      message: "Nowy pakiet można utworzyć tylko dla aktywnego ucznia.",
+    });
+  }
+  if (message.includes("STUDENT_NOT_FOUND")) {
+    throw new ApiFailure(404, {
+      code: "STUDENT_NOT_FOUND",
+      message: "Nie znaleziono ucznia.",
+    });
+  }
   if (error.code === "42501" || message.includes("ACCESS_DENIED")) {
     throw new ApiFailure(403, {
       code: "FORBIDDEN",
@@ -430,6 +498,17 @@ function databaseFailure(error: { message?: string; code?: string }): never {
       "Nie udało się zapisać płatności. Żadne środki nie zostały przypisane.",
     retryable: true,
   });
+}
+
+function databaseMinorUnits(value: unknown): number {
+  const amount = Number(value ?? 0);
+  if (!Number.isSafeInteger(amount)) {
+    throw new ApiFailure(500, {
+      code: "UNSAFE_MONEY_TOTAL",
+      message: "Suma rozliczeń przekracza obsługiwany zakres.",
+    });
+  }
+  return amount;
 }
 
 function notFound(): never {

@@ -946,6 +946,21 @@ function databaseFailure(error: { code?: string; message?: string }): never {
         "Wybrana godzina nie istnieje albo jest niejednoznaczna przy zmianie czasu.",
     });
   }
+  if (message.includes("PACKAGE_EXHAUSTED")) {
+    throw new ApiFailure(409, {
+      code: "PACKAGE_EXHAUSTED",
+      message: "Pakiet nie ma wolnej lekcji. Zajęcia nie zostały zakończone.",
+    });
+  }
+  if (
+    message.includes("PACKAGE_REQUIRES_SINGLE_STUDENT") ||
+    message.includes("PER_LESSON_REQUIRES_SINGLE_STUDENT")
+  ) {
+    throw new ApiFailure(422, {
+      code: "UNSUPPORTED_BILLING_CONFIGURATION",
+      message: "Ten sposób rozliczenia nie obsługuje lekcji grupowej.",
+    });
+  }
   if (message.includes("TARGET_NOT_ACTIVE")) {
     throw new ApiFailure(422, {
       code: "TARGET_NOT_ACTIVE",
@@ -1369,43 +1384,13 @@ async function saveLessonRelational(
     });
   }
   const now = new Date().toISOString();
-  if (
-    action.complete &&
-    lesson.billing_type === "package" &&
-    lesson.student_id
-  ) {
-    const { data: packageRow, error: packageError } = await supabase
-      .from("packages")
-      .select("id")
-      .eq("workspace_id", workspaceId)
-      .eq("student_id", lesson.student_id)
-      .in("status", ["active", "exhausted"])
-      .order("purchased_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (packageError) databaseFailure(packageError);
-    if (packageRow) {
-      const { error: usageError } = await supabase.rpc(
-        "complete_lesson_with_package",
-        {
-          p_workspace_id: workspaceId,
-          p_lesson_id: action.lessonId,
-          p_student_id: lesson.student_id,
-          p_package_id: packageRow.id,
-          p_idempotency_key: `complete:${action.lessonId}:${lesson.student_id}`,
-        },
-      );
-      if (usageError) databaseFailure(usageError);
-    }
-  }
   const nextSyncStatus =
     lesson.sync_status === "disabled" ? "disabled" : "pending";
   const { error: updateError } = await supabase
     .from("lessons")
     .update({
       title: action.topic,
-      status: action.complete ? "completed" : lesson.status,
-      completed_at: action.complete ? now : null,
+      status: lesson.status,
       sync_status: nextSyncStatus,
       updated_at: now,
     })
@@ -1428,16 +1413,6 @@ async function saveLessonRelational(
     );
     if (jobError) databaseFailure(jobError);
   }
-  if (action.complete) {
-    const { error: reminderError } = await supabase
-      .from("reminder_deliveries")
-      .delete()
-      .eq("workspace_id", workspaceId)
-      .eq("lesson_id", action.lessonId)
-      .in("status", ["pending", "failed"]);
-    if (reminderError) databaseFailure(reminderError);
-  }
-
   const keepPlanIds = action.planItems
     .filter((item) => item.text.trim())
     .map((item) => item.id);
@@ -1544,6 +1519,24 @@ async function saveLessonRelational(
     { onConflict: "lesson_id" },
   );
   if (homeworkError) databaseFailure(homeworkError);
+  if (action.complete) {
+    const { error: completionError } = await supabase.rpc(
+      "complete_lesson_workspace",
+      {
+        p_workspace_id: workspaceId,
+        p_lesson_id: action.lessonId,
+        p_idempotency_key: `complete:${action.lessonId}`,
+      },
+    );
+    if (completionError) databaseFailure(completionError);
+    const { error: reminderError } = await supabase
+      .from("reminder_deliveries")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("lesson_id", action.lessonId)
+      .in("status", ["pending", "failed"]);
+    if (reminderError) databaseFailure(reminderError);
+  }
 }
 
 export async function mutatePeopleDomain(

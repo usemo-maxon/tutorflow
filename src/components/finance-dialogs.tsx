@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useFinanceMutation } from "@/hooks/use-app-data";
 import {
   parseMoneyInput,
+  paymentStudentCandidates,
   suggestedAllocations,
   type FinancialOverview,
   type FinancialPaymentMethod,
@@ -30,9 +31,13 @@ export function RecordPaymentDialog({
   const teacher = useSessionTeacher();
   const mutation = useFinanceMutation(teacher.id);
   const { showToast, showError } = useAppUi();
+  const paymentStudents = useMemo(
+    () => paymentStudentCandidates(overview),
+    [overview],
+  );
   const [open, setOpen] = useState(false);
   const [studentId, setStudentId] = useState(
-    defaultStudentId ?? overview.students[0]?.id ?? "",
+    defaultStudentId ?? paymentStudents[0]?.id ?? "",
   );
   const [amount, setAmount] = useState("");
   const [paidAt, setPaidAt] = useState(new Date().toISOString().slice(0, 10));
@@ -47,13 +52,13 @@ export function RecordPaymentDialog({
   useEffect(() => {
     if (!autoOpen) return;
     const timer = window.setTimeout(() => {
-      if (overview.students.length) setOpen(true);
+      if (paymentStudents.length) setOpen(true);
       onAutoOpenConsumed?.();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [autoOpen, onAutoOpenConsumed, overview.students.length]);
+  }, [autoOpen, onAutoOpenConsumed, paymentStudents.length]);
   const amountMinor = parseMoneyInput(amount);
-  const student = overview.students.find((item) => item.id === studentId);
+  const student = paymentStudents.find((item) => item.id === studentId);
   const charges = useMemo(
     () =>
       overview.openCharges.filter(
@@ -116,7 +121,7 @@ export function RecordPaymentDialog({
       <Dialog.Trigger asChild>
         <button
           className="button button--primary"
-          disabled={!overview.students.length}
+          disabled={!paymentStudents.length}
         >
           {triggerLabel}
         </button>
@@ -149,9 +154,10 @@ export function RecordPaymentDialog({
                 }}
                 required
               >
-                {overview.students.map((item) => (
+                {paymentStudents.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
+                    {item.status === "archived" ? " (Archiwalny)" : ""}
                   </option>
                 ))}
               </select>
@@ -315,9 +321,13 @@ export function CreatePackageDialog({
   const teacher = useSessionTeacher();
   const mutation = useFinanceMutation(teacher.id);
   const { showToast, showError } = useAppUi();
+  const activeStudents = useMemo(
+    () => overview.students.filter((student) => student.status === "active"),
+    [overview.students],
+  );
   const [open, setOpen] = useState(false);
   const [studentId, setStudentId] = useState(
-    defaultStudentId ?? overview.students[0]?.id ?? "",
+    defaultStudentId ?? activeStudents[0]?.id ?? "",
   );
   const [name, setName] = useState("Pakiet 8 zajęć");
   const [lessons, setLessons] = useState("8");
@@ -326,15 +336,19 @@ export function CreatePackageDialog({
     new Date().toISOString().slice(0, 10),
   );
   const [expiresAt, setExpiresAt] = useState("");
+  const [idempotencyKey, setIdempotencyKey] = useState(() =>
+    crypto.randomUUID(),
+  );
   useEffect(() => {
     if (!autoOpen) return;
     const timer = window.setTimeout(() => {
-      if (overview.students.length) setOpen(true);
+      if (activeStudents.length) setOpen(true);
       onAutoOpenConsumed?.();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [autoOpen, onAutoOpenConsumed, overview.students.length]);
-  const student = overview.students.find((item) => item.id === studentId);
+  }, [activeStudents.length, autoOpen, onAutoOpenConsumed]);
+  const student = activeStudents.find((item) => item.id === studentId);
+  const invalidDates = Boolean(expiresAt && expiresAt < purchasedAt);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -342,9 +356,11 @@ export function CreatePackageDialog({
     const totalLessons = Number(lessons);
     if (
       !student ||
+      !name.trim() ||
       priceGrosz === null ||
       !Number.isInteger(totalLessons) ||
-      totalLessons <= 0
+      totalLessons <= 0 ||
+      invalidDates
     )
       return;
     try {
@@ -357,13 +373,14 @@ export function CreatePackageDialog({
         currency: student.currency,
         purchasedAt: `${purchasedAt}T12:00:00.000Z`,
         expiresAt: expiresAt ? `${expiresAt}T23:59:59.000Z` : null,
-        idempotencyKey: crypto.randomUUID(),
+        idempotencyKey,
       });
       showToast({
         message:
           "Pakiet został utworzony. Płatność nadal trzeba zarejestrować.",
       });
       setOpen(false);
+      setIdempotencyKey(crypto.randomUUID());
     } catch (error) {
       showError(error);
     }
@@ -374,7 +391,7 @@ export function CreatePackageDialog({
       <Dialog.Trigger asChild>
         <button
           className="button button--secondary"
-          disabled={!overview.students.length}
+          disabled={!activeStudents.length}
         >
           Utwórz pakiet
         </button>
@@ -404,7 +421,7 @@ export function CreatePackageDialog({
                 value={studentId}
                 onChange={(event) => setStudentId(event.target.value)}
               >
-                {overview.students.map((item) => (
+                {activeStudents.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
@@ -464,7 +481,13 @@ export function CreatePackageDialog({
                   value={expiresAt}
                   onChange={(event) => setExpiresAt(event.target.value)}
                   min={purchasedAt}
+                  aria-invalid={invalidDates}
                 />
+                {invalidDates && (
+                  <small className="field-error">
+                    Data ważności nie może poprzedzać daty zakupu.
+                  </small>
+                )}
               </label>
             </div>
             <footer className="dialog-actions">
@@ -474,7 +497,15 @@ export function CreatePackageDialog({
               <button
                 className="button button--primary"
                 type="submit"
-                disabled={mutation.isPending}
+                disabled={
+                  mutation.isPending ||
+                  !student ||
+                  !name.trim() ||
+                  parseMoneyInput(price) === null ||
+                  !Number.isInteger(Number(lessons)) ||
+                  Number(lessons) <= 0 ||
+                  invalidDates
+                }
               >
                 {mutation.isPending && (
                   <LoaderCircle className="spin" size={17} />

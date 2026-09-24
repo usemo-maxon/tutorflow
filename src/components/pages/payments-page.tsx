@@ -61,7 +61,11 @@ export function PaymentsPage() {
   useEffect(() => {
     if (!data || !requestedAction) return;
     const timer = window.setTimeout(() => {
-      if (data.students.length) {
+      const hasCandidate =
+        requestedAction === "payment"
+          ? data.students.some((student) => student.canRecordPayment)
+          : data.students.some((student) => student.status === "active");
+      if (hasCandidate) {
         setAutoOpenAction(requestedAction);
         setMissingStudentAction(null);
       } else {
