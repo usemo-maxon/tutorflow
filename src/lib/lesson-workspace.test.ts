@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { LessonWorkspaceActionSchema } from "./lesson-workspace";
+import {
+  LessonStudentOutcomeUpsertSchema,
+  LessonWorkspaceActionSchema,
+} from "./lesson-workspace";
 
 const lessonUpdatedAt = "2026-09-16T12:00:00.000Z";
 
@@ -97,5 +100,33 @@ describe("LessonWorkspaceActionSchema", () => {
       scope: "single",
       expectedUpdatedAt: "2026-09-16T12:00:00.123456+00:00",
     });
+  });
+
+  it("validates, trims and null-normalizes student outcome input", () => {
+    expect(
+      LessonStudentOutcomeUpsertSchema.parse({
+        lessonId: "10000000-0000-4000-8000-000000000001",
+        studentId: "10000000-0000-4000-8000-000000000002",
+        progressSummary: "  Opanowała pytania.  ",
+        difficultyLevel: "mixed",
+        difficultyNote: "   ",
+        nextStep: "  Powtórzyć did. ",
+      }),
+    ).toEqual({
+      lessonId: "10000000-0000-4000-8000-000000000001",
+      studentId: "10000000-0000-4000-8000-000000000002",
+      progressSummary: "Opanowała pytania.",
+      difficultyLevel: "mixed",
+      difficultyNote: undefined,
+      nextStep: "Powtórzyć did.",
+    });
+    expect(
+      LessonStudentOutcomeUpsertSchema.safeParse({
+        lessonId: "not-a-uuid",
+        studentId: "10000000-0000-4000-8000-000000000002",
+        difficultyLevel: "medium",
+        progressSummary: "x".repeat(2_001),
+      }).success,
+    ).toBe(false);
   });
 });

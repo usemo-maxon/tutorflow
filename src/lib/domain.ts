@@ -149,6 +149,20 @@ export interface PlanItemResult {
   note?: string;
 }
 
+export type StudentOutcomeDifficulty = "easy" | "mixed" | "hard";
+
+export interface LessonStudentOutcome {
+  id: EntityId;
+  lessonId: EntityId;
+  studentId: EntityId;
+  progressSummary?: string;
+  difficultyLevel?: StudentOutcomeDifficulty;
+  difficultyNote?: string;
+  nextStep?: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
 export interface LessonParticipant {
   studentId: EntityId;
   attendanceStatus: AttendanceStatus;

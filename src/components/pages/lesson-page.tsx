@@ -46,6 +46,8 @@ import {
   getCalendarTint,
 } from "@/lib/calendar-colors";
 import type { RecurrenceMutationScope } from "@/lib/domain";
+import { difficultyLabel } from "@/lib/lesson-completion";
+import { LessonCompletionDialog } from "../lesson-completion-dialog";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -117,6 +119,9 @@ function LessonWorkspaceView({
     useState<RecurrenceMutationScope>("single");
   const [saveStates, setSaveStates] = useState<Record<string, SaveState>>({});
   const [error, setError] = useState("");
+  const [completionMode, setCompletionMode] = useState<
+    "complete" | "edit" | undefined
+  >();
   const dirty =
     topic !== data.lesson.topic ||
     objectives !== data.lesson.objectives ||
@@ -341,6 +346,16 @@ function LessonWorkspaceView({
       </header>
 
       <LessonStateBanner data={data} />
+      {lesson.status === "completed" && (
+        <CompletedOutcomes
+          data={data}
+          onEdit={
+            data.teacher.readOnly
+              ? undefined
+              : () => setCompletionMode("edit")
+          }
+        />
+      )}
       {!data.teacher.readOnly && (
         <section className="lesson-color-panel" aria-label="Kolor zajęć">
           <div className="lesson-color-panel__intro">
@@ -769,7 +784,7 @@ function LessonWorkspaceView({
           >
             <div>
               <span className="eyebrow">Ostatni krok</span>
-              <h2 id="completion-title">Zakończ zajęcia</h2>
+              <h2 id="completion-title">Zakończ lekcję</h2>
               <p>
                 {unresolved
                   ? `Pozostało do oznaczenia: ${unresolved}.`
@@ -789,20 +804,14 @@ function LessonWorkspaceView({
                     beforeStart ||
                     data.teacher.readOnly
                   }
-                  onClick={() =>
-                    void run(
-                      "complete",
-                      { type: "completeLesson" },
-                      "Zajęcia zakończone",
-                    )
-                  }
+                  onClick={() => setCompletionMode("complete")}
                 >
                   {mutation.isPending ? (
                     <LoaderCircle className="spin" size={18} />
                   ) : (
                     <CheckCircle2 size={18} />
                   )}{" "}
-                  Zakończ zajęcia
+                  Zakończ lekcję
                 </button>
                 <button
                   className="button button--quiet"
@@ -855,7 +864,75 @@ function LessonWorkspaceView({
           }}
         />
       </div>
+      {completionMode && (
+        <LessonCompletionDialog
+          data={data}
+          mode={completionMode}
+          onOpenChange={(open) => {
+            if (!open) setCompletionMode(undefined);
+          }}
+          onMutate={mutation.mutateAsync}
+          onSuccess={(message, result) => {
+            showToast({ message });
+            setHomeworkTitle(result.homework?.title ?? "");
+            setHomeworkDescription(result.homework?.description ?? "");
+            setHomeworkDue(result.homework?.dueAt?.slice(0, 10) ?? "");
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+function CompletedOutcomes({
+  data,
+  onEdit,
+}: {
+  data: LessonWorkspaceData;
+  onEdit?: () => void;
+}) {
+  return (
+    <section className="completed-outcomes" aria-labelledby="completed-outcomes-title">
+      <header>
+        <div>
+          <span className="eyebrow">Ciągłość nauki</span>
+          <h2 id="completed-outcomes-title">Podsumowanie ucznia</h2>
+        </div>
+        {onEdit && (
+          <button className="button button--secondary" type="button" onClick={onEdit}>
+            Edytuj podsumowanie
+          </button>
+        )}
+      </header>
+      <div className="completed-outcomes__list">
+        {data.participants.map((participant) => {
+          const outcome = participant.outcome;
+          return (
+            <article key={participant.studentId}>
+              {data.participants.length > 1 && <h3>{participant.name}</h3>}
+              {!outcome ? (
+                <p className="lesson-quiet-empty">Brak podsumowania ucznia.</p>
+              ) : (
+                <dl>
+                  {outcome.progressSummary && (
+                    <div><dt>Co udało się zrobić</dt><dd>{outcome.progressSummary}</dd></div>
+                  )}
+                  {outcome.difficultyLevel && (
+                    <div><dt>Jak poszło</dt><dd>{difficultyLabel(outcome.difficultyLevel)}</dd></div>
+                  )}
+                  {outcome.difficultyNote && (
+                    <div><dt>Problem</dt><dd>{outcome.difficultyNote}</dd></div>
+                  )}
+                  {outcome.nextStep && (
+                    <div><dt>Następny krok</dt><dd>{outcome.nextStep}</dd></div>
+                  )}
+                </dl>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 

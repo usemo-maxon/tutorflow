@@ -12,6 +12,10 @@ import { ApiFailure } from "./errors";
 import * as local from "./store";
 import { createSupabaseServerClient } from "./supabase";
 import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
+import {
+  getLessonStudentOutcomes,
+  upsertLessonStudentOutcome,
+} from "./student-outcomes";
 
 const localAdapterEnabled = () =>
   process.env.NODE_ENV !== "production" &&
@@ -34,6 +38,18 @@ export async function mutateLessonWorkspace(
   lessonId: string,
   action: LessonWorkspaceAction,
 ): Promise<LessonWorkspaceData> {
+  if (action.type === "saveStudentOutcome") {
+    await upsertLessonStudentOutcome({
+      teacherId,
+      lessonId,
+      studentId: action.studentId,
+      progressSummary: action.progressSummary,
+      difficultyLevel: action.difficultyLevel,
+      difficultyNote: action.difficultyNote,
+      nextStep: action.nextStep,
+    });
+    return getLessonWorkspace(teacherId, lessonId);
+  }
   if (localAdapterEnabled()) {
     await local.mutateStore((store) =>
       mutateLocalWorkspace(store, teacherId, lessonId, action),
@@ -107,6 +123,7 @@ async function getRelationalWorkspace(
   const targetId = (lesson.student_id ?? lesson.group_id) as string;
   const [
     participantsResult,
+    outcomesResult,
     planResult,
     notesResult,
     homeworkResult,
@@ -122,6 +139,10 @@ async function getRelationalWorkspace(
       .eq("workspace_id", workspaceId)
       .eq("lesson_id", lessonId)
       .order("created_at"),
+    getLessonStudentOutcomes(supabase, workspaceId, lessonId).then(
+      (data) => ({ data, error: null }),
+      (error) => ({ data: null, error }),
+    ),
     supabase
       .from("lesson_plan_items")
       .select("id,position,content")
@@ -183,6 +204,7 @@ async function getRelationalWorkspace(
   ]);
   const failure = [
     participantsResult,
+    outcomesResult,
     planResult,
     notesResult,
     homeworkResult,
@@ -287,6 +309,9 @@ async function getRelationalWorkspace(
   const attendance = new Map(
     (attendanceResult.data ?? []).map((row) => [row.student_id, row.status]),
   );
+  const outcomes = new Map(
+    (outcomesResult.data ?? []).map((outcome) => [outcome.studentId, outcome]),
+  );
   const notes = new Map(
     (notesResult.data ?? []).map((note) => [note.note_type, note]),
   );
@@ -310,6 +335,7 @@ async function getRelationalWorkspace(
           : ("archived" as const),
       attendanceStatus: (attendance.get(row.student_id) ??
         "unknown") as LessonWorkspaceData["participants"][number]["attendanceStatus"],
+      outcome: outcomes.get(row.student_id as string),
     };
   });
   const group = groupResult.data;
@@ -691,13 +717,24 @@ async function mutateRelationalWorkspace(
   if (action.type === "completeLesson" || action.type === "markNoShow") {
     const rpc =
       action.type === "completeLesson"
-        ? "complete_lesson_workspace"
+        ? "complete_lesson_workspace_v2"
         : "mark_lesson_no_show";
-    const { error: lifecycleError } = await supabase.rpc(rpc, {
-      p_workspace_id: workspaceId,
-      p_lesson_id: lessonId,
-      p_idempotency_key: `${action.type}:${lessonId}`,
-    });
+    const { error: lifecycleError } = await supabase.rpc(
+      rpc,
+      action.type === "completeLesson"
+        ? {
+            p_workspace_id: workspaceId,
+            p_lesson_id: lessonId,
+            p_idempotency_key: `${action.type}:${lessonId}`,
+            p_expected_updated_at: action.expectedUpdatedAt,
+            p_outcomes: action.outcomes,
+          }
+        : {
+            p_workspace_id: workspaceId,
+            p_lesson_id: lessonId,
+            p_idempotency_key: `${action.type}:${lessonId}`,
+          },
+    );
     if (lifecycleError) databaseFailure(lifecycleError);
     try {
       await refreshCompletionHooks(
@@ -836,6 +873,14 @@ function workspaceFromLocalStore(
   const endsAt = new Date(
     Date.parse(lesson.startsAt) + lesson.durationMinutes * 60_000,
   ).toISOString();
+  const outcomes = new Map(
+    (store.lessonStudentOutcomes ?? [])
+      .filter(
+        (outcome) =>
+          outcome.teacherId === teacherId && outcome.lessonId === lessonId,
+      )
+      .map((outcome) => [outcome.studentId, outcome]),
+  );
   return {
     teacher: {
       timezone: teacher.timezone,
@@ -878,6 +923,7 @@ function workspaceFromLocalStore(
       const student = students.find(
         (item) => item.id === participant.studentId,
       );
+      const outcome = outcomes.get(participant.studentId);
       return {
         id: `${lesson.id}:${participant.studentId}`,
         studentId: participant.studentId,
@@ -886,6 +932,19 @@ function workspaceFromLocalStore(
         level: student?.level ?? "",
         status: student?.status ?? "archived",
         attendanceStatus: participant.attendanceStatus,
+        outcome: outcome
+          ? {
+              id: outcome.id,
+              lessonId: outcome.lessonId,
+              studentId: outcome.studentId,
+              progressSummary: outcome.progressSummary,
+              difficultyLevel: outcome.difficultyLevel,
+              difficultyNote: outcome.difficultyNote,
+              nextStep: outcome.nextStep,
+              createdAt: outcome.createdAt,
+              updatedAt: outcome.updatedAt,
+            }
+          : undefined,
       };
     }),
     homework: lesson.homework
@@ -1017,10 +1076,50 @@ function mutateLocalWorkspace(
     lesson.participants.forEach((item) => (item.attendanceStatus = "present"));
   } else if (action.type === "completeLesson") {
     if (lesson.status === "cancelled") lifecycleConflict();
+    if (lesson.status === "completed") return;
+    if (lesson.updatedAt && lesson.updatedAt !== action.expectedUpdatedAt)
+      staleWrite();
     if (
       lesson.participants.some((item) => item.attendanceStatus === "unknown")
     ) {
       attendanceRequired();
+    }
+    const participantIds = new Set(
+      lesson.participants.map((participant) => participant.studentId),
+    );
+    if (
+      action.outcomes.some(
+        (outcome) => !participantIds.has(outcome.studentId),
+      )
+    ) {
+      invalidCompletionParticipant();
+    }
+    store.lessonStudentOutcomes ??= [];
+    for (const outcome of action.outcomes) {
+      const existing = store.lessonStudentOutcomes.find(
+        (item) =>
+          item.teacherId === teacherId &&
+          item.lessonId === lessonId &&
+          item.studentId === outcome.studentId,
+      );
+      const values = {
+        progressSummary: outcome.progressSummary,
+        difficultyLevel: outcome.difficultyLevel,
+        difficultyNote: outcome.difficultyNote,
+        nextStep: outcome.nextStep,
+      };
+      if (existing) Object.assign(existing, values, { updatedAt: now });
+      else {
+        store.lessonStudentOutcomes.push({
+          id: randomUUID(),
+          teacherId,
+          lessonId,
+          studentId: outcome.studentId,
+          ...values,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
     }
     lesson.status = "completed";
   } else if (action.type === "markNoShow") {
@@ -1042,6 +1141,12 @@ function databaseFailure(error: unknown): never {
     (error as { message?: string; details?: string })?.message ?? error,
   );
   if (message.includes("ATTENDANCE_REQUIRED")) attendanceRequired();
+  if (
+    message.includes("INVALID_OUTCOME_PARTICIPANT") ||
+    message.includes("INVALID_OUTCOME_PAYLOAD") ||
+    message.includes("DUPLICATE_OUTCOME_PARTICIPANT")
+  )
+    invalidCompletionParticipant();
   if (message.includes("PACKAGE_EXHAUSTED")) {
     throw new ApiFailure(409, {
       code: "PACKAGE_EXHAUSTED",
@@ -1071,6 +1176,13 @@ function attendanceRequired(): never {
   throw new ApiFailure(422, {
     code: "ATTENDANCE_REQUIRED",
     message: "Oznacz obecność wszystkich uczestników przed zakończeniem zajęć.",
+  });
+}
+
+function invalidCompletionParticipant(): never {
+  throw new ApiFailure(422, {
+    code: "INVALID_PARTICIPANT",
+    message: "Podsumowanie zawiera ucznia spoza listy uczestników lekcji.",
   });
 }
 

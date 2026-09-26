@@ -1,5 +1,10 @@
 import { z } from "zod";
-import type { AttendanceStatus, LessonStatus, SyncStatus } from "./domain";
+import type {
+  AttendanceStatus,
+  LessonStatus,
+  LessonStudentOutcome,
+  SyncStatus,
+} from "./domain";
 import { CalendarColorSchema } from "./validation";
 
 export interface LessonWorkspaceParticipant {
@@ -10,6 +15,7 @@ export interface LessonWorkspaceParticipant {
   level: string;
   status: "active" | "archived";
   attendanceStatus: AttendanceStatus;
+  outcome?: LessonStudentOutcome;
 }
 
 export interface LessonWorkspaceMaterial {
@@ -99,6 +105,24 @@ const entityId = z.string().uuid();
 const isoDateTime = z.iso.datetime({ offset: true });
 const optionalTimestamp = isoDateTime.optional();
 const attendanceStatus = z.enum(["present", "absent", "late"]);
+const outcomeText = z
+  .string()
+  .trim()
+  .max(2_000)
+  .transform((value) => value || undefined)
+  .optional();
+
+export const LessonStudentOutcomeUpsertSchema = z.object({
+  lessonId: entityId,
+  studentId: entityId,
+  progressSummary: outcomeText,
+  difficultyLevel: z.enum(["easy", "mixed", "hard"]).optional(),
+  difficultyNote: outcomeText,
+  nextStep: outcomeText,
+});
+
+export const LessonCompletionOutcomeSchema =
+  LessonStudentOutcomeUpsertSchema.omit({ lessonId: true });
 
 export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
   z.object({
@@ -147,12 +171,34 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("markAllPresent") }),
   z.object({
+    type: z.literal("saveStudentOutcome"),
+    ...LessonStudentOutcomeUpsertSchema.omit({ lessonId: true }).shape,
+  }),
+  z.object({
     type: z.literal("updateColor"),
     color: CalendarColorSchema,
     scope: z.enum(["single", "future", "series"]),
     expectedUpdatedAt: isoDateTime,
   }),
-  z.object({ type: z.literal("completeLesson") }),
+  z
+    .object({
+      type: z.literal("completeLesson"),
+      expectedUpdatedAt: isoDateTime,
+      outcomes: z.array(LessonCompletionOutcomeSchema).max(100),
+    })
+    .superRefine((value, context) => {
+      const seen = new Set<string>();
+      value.outcomes.forEach((outcome, index) => {
+        if (seen.has(outcome.studentId)) {
+          context.addIssue({
+            code: "custom",
+            message: "Każdy uczeń może wystąpić tylko raz.",
+            path: ["outcomes", index, "studentId"],
+          });
+        }
+        seen.add(outcome.studentId);
+      });
+    }),
   z.object({ type: z.literal("markNoShow") }),
   z.object({
     type: z.literal("cancelLesson"),

@@ -26,6 +26,7 @@ import type {
   ExternalGoogleEvent,
   Lesson,
   LessonParticipant,
+  LessonStudentOutcome,
   PlanItem,
   Student,
   StudentContact,
@@ -57,6 +58,10 @@ export interface StudentGroupRecord extends StudentGroup {
 }
 
 export interface LessonRecord extends Lesson {
+  teacherId: string;
+}
+
+export interface LessonStudentOutcomeRecord extends LessonStudentOutcome {
   teacherId: string;
 }
 
@@ -93,6 +98,7 @@ export interface StoreShape {
   contacts: StudentContactRecord[];
   groups: StudentGroupRecord[];
   lessons: LessonRecord[];
+  lessonStudentOutcomes?: LessonStudentOutcomeRecord[];
   studentStatImports: StudentStatImportRecord[];
   availability: AvailabilityRecord[];
   availabilityExceptions?: AvailabilityExceptionRecord[];
@@ -120,6 +126,7 @@ async function ensureStore(): Promise<void> {
       contacts: [],
       groups: [],
       lessons: [],
+      lessonStudentOutcomes: [],
       studentStatImports: [],
       availability: [],
       availabilityExceptions: [],
