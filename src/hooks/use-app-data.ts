@@ -13,6 +13,7 @@ import {
   fetchAppData,
   fetchDashboardData,
   fetchLessonWorkspace,
+  fetchStudentMemory,
   fetchFinancialOverview,
   mutateApp,
   mutateLessonWorkspace,
@@ -57,6 +58,24 @@ export function useLessonWorkspace(teacherId: string, lessonId: string) {
   });
 }
 
+export function useStudentMemory(teacherId: string, studentId: string) {
+  const router = useRouter();
+  return useQuery({
+    queryKey: ["student-memory", teacherId, studentId],
+    queryFn: ({ signal }) => fetchStudentMemory(studentId, signal),
+    retry(failureCount, error) {
+      if (error instanceof ClientApiError && error.status < 500) return false;
+      return failureCount < 2;
+    },
+    throwOnError(error) {
+      if (error instanceof ClientApiError && error.status === 401) {
+        router.push("/logowanie");
+      }
+      return false;
+    },
+  });
+}
+
 export function useLessonWorkspaceMutation(
   teacherId: string,
   lessonId: string,
@@ -74,6 +93,9 @@ export function useLessonWorkspaceMutation(
         queryKey: ["dashboard", teacherId],
       });
       void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
+      void queryClient.invalidateQueries({
+        queryKey: ["student-memory", teacherId],
+      });
     },
   });
 }
@@ -112,6 +134,9 @@ export function useAppMutation(teacherId: string) {
       void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
       void queryClient.invalidateQueries({
         queryKey: ["dashboard", teacherId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["student-memory", teacherId],
       });
     },
   });
