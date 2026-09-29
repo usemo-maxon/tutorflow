@@ -48,6 +48,7 @@ import {
 import type { RecurrenceMutationScope } from "@/lib/domain";
 import { difficultyLabel } from "@/lib/lesson-completion";
 import { LessonCompletionDialog } from "../lesson-completion-dialog";
+import { NextLessonBriefingPanel } from "../next-lesson-briefing";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -346,6 +347,13 @@ function LessonWorkspaceView({
       </header>
 
       <LessonStateBanner data={data} />
+      {(lesson.status === "scheduled" || lesson.status === "needs_completion") && (
+        <NextLessonBriefingPanel
+          teacherId={teacherId}
+          lessonId={lessonId}
+          timezone={data.teacher.timezone}
+        />
+      )}
       {lesson.status === "completed" && (
         <CompletedOutcomes
           data={data}

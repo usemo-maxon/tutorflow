@@ -6,6 +6,7 @@ import type {
 } from "./lesson-workspace";
 import type { AppAction, AppData, AppError, MutationResponse } from "./domain";
 import type { StudentMemory } from "./student-memory";
+import type { NextLessonBriefing } from "./next-lesson-briefing";
 
 export class ClientApiError extends Error {
   constructor(
@@ -90,6 +91,21 @@ export async function fetchStudentMemory(
     },
   );
   return parseResponse<StudentMemory>(response);
+}
+
+export async function fetchNextLessonBriefing(
+  lessonId: string,
+  signal?: AbortSignal,
+): Promise<NextLessonBriefing> {
+  const timeout = AbortSignal.timeout(20_000);
+  const response = await fetch(
+    `/api/lessons/${encodeURIComponent(lessonId)}/briefing`,
+    {
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      cache: "no-store",
+    },
+  );
+  return parseResponse<NextLessonBriefing>(response);
 }
 
 export async function mutateLessonWorkspace(

@@ -14,6 +14,7 @@ import {
   fetchDashboardData,
   fetchLessonWorkspace,
   fetchStudentMemory,
+  fetchNextLessonBriefing,
   fetchFinancialOverview,
   mutateApp,
   mutateLessonWorkspace,
@@ -58,11 +59,40 @@ export function useLessonWorkspace(teacherId: string, lessonId: string) {
   });
 }
 
-export function useStudentMemory(teacherId: string, studentId: string) {
+export function useStudentMemory(
+  teacherId: string,
+  studentId: string,
+  enabled = true,
+) {
   const router = useRouter();
   return useQuery({
     queryKey: ["student-memory", teacherId, studentId],
     queryFn: ({ signal }) => fetchStudentMemory(studentId, signal),
+    enabled,
+    retry(failureCount, error) {
+      if (error instanceof ClientApiError && error.status < 500) return false;
+      return failureCount < 2;
+    },
+    throwOnError(error) {
+      if (error instanceof ClientApiError && error.status === 401) {
+        router.push("/logowanie");
+      }
+      return false;
+    },
+  });
+}
+
+export function useNextLessonBriefing(
+  teacherId: string,
+  lessonId: string,
+  enabled = true,
+) {
+  const router = useRouter();
+  return useQuery({
+    queryKey: ["lesson-briefing", teacherId, lessonId],
+    queryFn: ({ signal }) => fetchNextLessonBriefing(lessonId, signal),
+    enabled: enabled && Boolean(lessonId),
+    staleTime: 30_000,
     retry(failureCount, error) {
       if (error instanceof ClientApiError && error.status < 500) return false;
       return failureCount < 2;
@@ -95,6 +125,9 @@ export function useLessonWorkspaceMutation(
       void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
       void queryClient.invalidateQueries({
         queryKey: ["student-memory", teacherId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["lesson-briefing", teacherId],
       });
     },
   });
@@ -138,6 +171,9 @@ export function useAppMutation(teacherId: string) {
       void queryClient.invalidateQueries({
         queryKey: ["student-memory", teacherId],
       });
+      void queryClient.invalidateQueries({
+        queryKey: ["lesson-briefing", teacherId],
+      });
     },
   });
 }
@@ -165,11 +201,16 @@ export function useCompleteOnboarding(teacherId: string) {
   });
 }
 
-export function useFinancialOverview(teacherId: string, studentId?: string) {
+export function useFinancialOverview(
+  teacherId: string,
+  studentId?: string,
+  enabled = true,
+) {
   const router = useRouter();
   return useQuery({
     queryKey: ["finance", teacherId, studentId ?? "workspace"],
     queryFn: ({ signal }) => fetchFinancialOverview({ studentId }, signal),
+    enabled,
     retry(failureCount, error) {
       if (error instanceof ClientApiError && error.status < 500) return false;
       return failureCount < 2;

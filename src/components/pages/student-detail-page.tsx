@@ -3,8 +3,10 @@
 import {
   Archive,
   ArrowLeft,
-  BookOpen,
   CalendarDays,
+  CircleDollarSign,
+  Clock3,
+  GraduationCap,
   Mail,
   Pencil,
   Phone,
@@ -23,10 +25,19 @@ import {
   useAppData,
   useAppMutation,
   useFinancialOverview,
+  useStudentMemory,
 } from "@/hooks/use-app-data";
-import type { StudentContact } from "@/lib/domain";
+import type { Money, StudentContact } from "@/lib/domain";
 import { copy } from "@/lib/copy";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import {
+  AttendanceSection,
+  ContinuitySection,
+  MemoryErrorState,
+  MemoryLoadingState,
+  NextLessonSection,
+  RecentLessonsSection,
+} from "../student-memory-sections";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
 import { ContactComposer } from "../contact-composer";
@@ -49,9 +60,18 @@ export function StudentDetailPage() {
   const { studentId } = useParams<{ studentId: string }>();
   const session = useSessionTeacher();
   const { data, isPending } = useAppData(session.id);
-  const financeQuery = useFinancialOverview(session.id, studentId);
+  const student = data?.students.find(
+    (candidate) => candidate.id === studentId,
+  );
+  const memoryQuery = useStudentMemory(session.id, studentId, Boolean(student));
+  const financeQuery = useFinancialOverview(
+    session.id,
+    studentId,
+    Boolean(student),
+  );
   const mutation = useAppMutation(session.id);
-  const { openStudentComposer, showToast, showError } = useAppUi();
+  const { openLessonComposer, openStudentComposer, showToast, showError } =
+    useAppUi();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -63,7 +83,6 @@ export function StudentDetailPage() {
   );
   const [groupDialogOpen, setGroupDialogOpen] = useState(false);
   if (isPending || !data) return <PageLoading />;
-  const student = data.students.find((candidate) => candidate.id === studentId);
   if (!student)
     return (
       <div className="not-found">
@@ -78,7 +97,6 @@ export function StudentDetailPage() {
   const related = data.lessons.filter((lesson) =>
     lesson.participantIds.includes(student.id),
   );
-  const upcoming = related.filter((lesson) => lesson.status === "scheduled");
   const completed = related
     .filter((lesson) => lesson.status === "completed")
     .reverse();
@@ -124,6 +142,9 @@ export function StudentDetailPage() {
       scroll: false,
     });
   }
+  function scheduleLesson() {
+    openLessonComposer({ studentIds: [safeStudent.id] });
+  }
   return (
     <div className="student-detail page-enter">
       <Link className="back-link" href="/app/uczniowie">
@@ -150,6 +171,12 @@ export function StudentDetailPage() {
               {[student.subject, student.level].filter(Boolean).join(" · ") ||
                 "Profil do uzupełnienia"}
             </p>
+            <div className="student-goal">
+              <span>Cel</span>
+              <strong>
+                {student.goal || "Nie określono jeszcze celu nauki."}
+              </strong>
+            </div>
           </div>
         </div>
         <div className="student-hero-actions">
@@ -157,9 +184,7 @@ export function StudentDetailPage() {
             <button
               className="button button--primary"
               disabled={data.teacher.subscription.readOnly}
-              onClick={() =>
-                router.push(`/app/kalendarz?student=${student.id}`)
-              }
+              onClick={scheduleLesson}
             >
               <CalendarDays size={18} />
               {copy.actions.planLesson}
@@ -171,7 +196,7 @@ export function StudentDetailPage() {
             onClick={() => openStudentComposer(student)}
           >
             <Pencil size={17} />
-            Edytuj
+            Edytuj ucznia
           </button>
           <details className="context-actions">
             <summary aria-label="Więcej działań ucznia">Więcej</summary>
@@ -197,36 +222,6 @@ export function StudentDetailPage() {
           </details>
         </div>
       </header>
-      <section
-        className="profile-summary-strip"
-        aria-label="Najważniejsze informacje"
-      >
-        <div>
-          <span>Następna lekcja</span>
-          <strong>
-            {upcoming[0]
-              ? formatDateTime(upcoming[0].startsAt, data.teacher.timezone)
-              : "Nie zaplanowano"}
-          </strong>
-        </div>
-        <div>
-          <span>Pakiet</span>
-          <strong>
-            {student.packageRemainingLessons === null
-              ? "Brak pakietu"
-              : `${student.packageRemainingLessons} lekcji`}
-          </strong>
-        </div>
-        <div>
-          <span>Rozliczenie</span>
-          <strong>
-            {(financeQuery.data?.summary.outstanding ??
-              student.balanceDue.amount) > 0
-              ? `${formatMoney({ amount: financeQuery.data?.summary.outstanding ?? student.balanceDue.amount, currency: financeQuery.data?.summary.currency ?? student.balanceDue.currency })} do zapłaty`
-              : "Rozliczone"}
-          </strong>
-        </div>
-      </section>
       <nav className="tabs" aria-label="Sekcje karty ucznia">
         {tabs.map(([key, label]) => (
           <button
@@ -240,31 +235,121 @@ export function StudentDetailPage() {
         ))}
       </nav>
       {activeTab === "overview" && (
-        <div className="student-overview">
-          <section className="progress-panel panel">
+        <div className="student-360-overview">
+          {memoryQuery.isPending ? (
+            <MemoryLoadingState />
+          ) : memoryQuery.isError || !memoryQuery.data ? (
+            <MemoryErrorState onRetry={() => void memoryQuery.refetch()} />
+          ) : (
+            <>
+              <NextLessonSection
+                memory={memoryQuery.data}
+                timezone={data.teacher.timezone}
+                canSchedule={
+                  student.status === "active" &&
+                  !data.teacher.subscription.readOnly
+                }
+                onSchedule={scheduleLesson}
+              />
+              <ContinuitySection
+                memory={memoryQuery.data}
+                timezone={data.teacher.timezone}
+                canSchedule={
+                  student.status === "active" &&
+                  !data.teacher.subscription.readOnly
+                }
+                onSchedule={scheduleLesson}
+              />
+              <div className="student-360-columns">
+                <RecentLessonsSection
+                  memory={memoryQuery.data}
+                  timezone={data.teacher.timezone}
+                />
+                <aside
+                  className="student-360-sidebar"
+                  aria-label="Kontekst ucznia"
+                >
+                  <AttendanceSection memory={memoryQuery.data} />
+                  <StudentFinanceSummary
+                    financeQuery={financeQuery}
+                    fallbackBalance={student.balanceDue}
+                    fallbackPackageRemaining={student.packageRemainingLessons}
+                    onOpen={() => selectTab("payments")}
+                  />
+                  <section
+                    className="student-side-card panel"
+                    aria-labelledby="groups-title"
+                  >
+                    <div className="student-side-card__heading">
+                      <Users size={19} aria-hidden="true" />
+                      <h2 id="groups-title">Grupy</h2>
+                    </div>
+                    {student.groupIds.length ? (
+                      <div className="membership-links membership-links--compact">
+                        {data.groups
+                          .filter((group) =>
+                            student.groupIds.includes(group.id),
+                          )
+                          .map((group) => (
+                            <Link
+                              href={`/app/uczniowie/grupy/${group.id}`}
+                              key={group.id}
+                            >
+                              <span>
+                                <strong>{group.name}</strong>
+                                <small>
+                                  {[group.subject, group.level]
+                                    .filter(Boolean)
+                                    .join(" · ")}
+                                </small>
+                              </span>
+                              <span aria-hidden="true">›</span>
+                            </Link>
+                          ))}
+                      </div>
+                    ) : (
+                      <p className="memory-section-empty">
+                        Uczeń nie należy do żadnej aktywnej grupy.
+                      </p>
+                    )}
+                    {student.status === "active" &&
+                      !data.teacher.subscription.readOnly && (
+                        <button
+                          className="text-link"
+                          onClick={() => setGroupDialogOpen(true)}
+                        >
+                          <Plus size={15} aria-hidden="true" /> Dodaj do grupy
+                        </button>
+                      )}
+                  </section>
+                </aside>
+              </div>
+            </>
+          )}
+
+          <section
+            className="student-profile-details panel"
+            aria-labelledby="student-info-title"
+          >
             <div className="section-heading">
               <div>
-                <p className="eyebrow">Nitka postępu</p>
-                <h2>Ciągłość nauki</h2>
+                <p className="eyebrow">Dane i ustawienia</p>
+                <h2 id="student-info-title">Informacje</h2>
               </div>
-              <BookOpen size={21} />
+              <GraduationCap size={21} aria-hidden="true" />
             </div>
-            <ProgressThread student={student} lessons={related} />
-          </section>
-          <aside className="student-facts panel">
-            <p className="eyebrow">Profil lekcji</p>
-            <dl>
+            <dl className="student-info-grid">
               <div>
                 <dt>E-mail</dt>
                 <dd>
-                  <Mail size={16} aria-hidden="true" />
+                  <Mail size={15} aria-hidden="true" />
                   {student.email || "Nie podano"}
                 </dd>
               </div>
               <div>
                 <dt>Telefon</dt>
                 <dd>
-                  <Phone size={16} aria-hidden="true" />
+                  <Phone size={15} aria-hidden="true" />
                   {student.phone || "Nie podano"}
                 </dd>
               </div>
@@ -273,8 +358,15 @@ export function StudentDetailPage() {
                 <dd>{student.subject || "Nie podano"}</dd>
               </div>
               <div>
-                <dt>Standardowy czas</dt>
-                <dd>{student.defaultDurationMinutes} min</dd>
+                <dt>Poziom</dt>
+                <dd>{student.level || "Nie podano"}</dd>
+              </div>
+              <div>
+                <dt>Czas lekcji</dt>
+                <dd>
+                  <Clock3 size={15} aria-hidden="true" />
+                  {student.defaultDurationMinutes} min
+                </dd>
               </div>
               <div>
                 <dt>Format</dt>
@@ -289,6 +381,10 @@ export function StudentDetailPage() {
                 <dd>{formatMoney(student.defaultPrice)}</dd>
               </div>
               <div>
+                <dt>Strefa czasowa</dt>
+                <dd>{student.timezone || data.teacher.timezone}</dd>
+              </div>
+              <div className="student-info-grid__wide">
                 <dt>Link lub adres</dt>
                 <dd className="breakable">
                   {student.defaultLocation || "Nie podano"}
@@ -301,20 +397,25 @@ export function StudentDetailPage() {
                 <p>{student.notes}</p>
               </div>
             )}
-          </aside>
-          <section className="overview-wide panel">
+          </section>
+
+          <section
+            className="student-contacts panel"
+            aria-labelledby="contacts-title"
+          >
             <div className="section-heading">
               <div>
                 <p className="eyebrow">Rodzice i opiekunowie</p>
-                <h2>Kontakty</h2>
+                <h2 id="contacts-title">Kontakty</h2>
               </div>
-              <button
-                className="button button--secondary"
-                disabled={data.teacher.subscription.readOnly}
-                onClick={() => setContactEditor(null)}
-              >
-                <Plus size={17} /> Dodaj kontakt
-              </button>
+              {!data.teacher.subscription.readOnly && (
+                <button
+                  className="button button--secondary"
+                  onClick={() => setContactEditor(null)}
+                >
+                  <Plus size={17} /> Dodaj kontakt
+                </button>
+              )}
             </div>
             {data.contacts.filter((item) => item.studentId === student.id)
               .length ? (
@@ -336,105 +437,27 @@ export function StudentDetailPage() {
                             .join(" · ") || "Brak danych kontaktowych"}
                         </span>
                       </div>
-                      <div className="inline-actions">
-                        <button
-                          className="text-link"
-                          disabled={data.teacher.subscription.readOnly}
-                          onClick={() => setContactEditor(contact)}
-                        >
-                          Edytuj
-                        </button>
-                        <button
-                          className="text-link text-link--danger"
-                          disabled={data.teacher.subscription.readOnly}
-                          onClick={() => setRemoveContact(contact)}
-                        >
-                          Odłącz
-                        </button>
-                      </div>
+                      {!data.teacher.subscription.readOnly && (
+                        <div className="inline-actions">
+                          <button
+                            className="text-link"
+                            onClick={() => setContactEditor(contact)}
+                          >
+                            Edytuj
+                          </button>
+                          <button
+                            className="text-link text-link--danger"
+                            onClick={() => setRemoveContact(contact)}
+                          >
+                            Odłącz
+                          </button>
+                        </div>
+                      )}
                     </article>
                   ))}
               </div>
             ) : (
-              <EmptyState
-                title="Nie dodano jeszcze rodzica, opiekuna ani kontaktu do rozliczeń."
-                action={
-                  <button
-                    className="button button--secondary"
-                    disabled={data.teacher.subscription.readOnly}
-                    onClick={() => setContactEditor(null)}
-                  >
-                    Dodaj kontakt
-                  </button>
-                }
-              />
-            )}
-          </section>
-          <section className="overview-wide panel">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Stały skład</p>
-                <h2>Grupy</h2>
-              </div>
-              {student.status === "active" ? (
-                <button
-                  className="button button--secondary"
-                  disabled={data.teacher.subscription.readOnly}
-                  onClick={() => setGroupDialogOpen(true)}
-                >
-                  <Plus size={17} /> Dodaj do grupy
-                </button>
-              ) : (
-                <Users size={21} aria-hidden="true" />
-              )}
-            </div>
-            {student.groupIds.length ? (
-              <div className="membership-links">
-                {data.groups
-                  .filter((group) => student.groupIds.includes(group.id))
-                  .map((group) => (
-                    <Link
-                      href={`/app/uczniowie/grupy/${group.id}`}
-                      key={group.id}
-                    >
-                      <span>
-                        <strong>{group.name}</strong>
-                        <small>
-                          {[group.subject, group.level]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </small>
-                      </span>
-                      <span aria-hidden="true">›</span>
-                    </Link>
-                  ))}
-              </div>
-            ) : (
-              <EmptyState title="Uczeń nie należy do żadnej aktywnej grupy." />
-            )}
-          </section>
-          <section className="upcoming-panel">
-            <div className="section-heading">
-              <h2>Najbliższe lekcje</h2>
-              <button
-                className="text-link"
-                onClick={() => selectTab("lessons")}
-              >
-                Zobacz wszystkie
-              </button>
-            </div>
-            {upcoming.length ? (
-              <div className="lesson-rows">
-                {upcoming.slice(0, 3).map((lesson) => (
-                  <LessonRow
-                    key={lesson.id}
-                    lesson={lesson}
-                    timezone={data.teacher.timezone}
-                  />
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="Nie ma zaplanowanych lekcji dla tego ucznia." />
+              <EmptyState title="Nie dodano jeszcze rodzica, opiekuna ani kontaktu do rozliczeń." />
             )}
           </section>
         </div>
@@ -506,7 +529,7 @@ export function StudentDetailPage() {
               <p className="eyebrow">Płatności i pakiety</p>
               <h2>Rozliczenia ucznia</h2>
             </div>
-            {financeQuery.data && (
+            {financeQuery.data && !data.teacher.subscription.readOnly && (
               <div className="finance-header-actions">
                 <CreatePackageDialog
                   overview={financeQuery.data}
@@ -733,6 +756,90 @@ export function StudentDetailPage() {
         onConfirm={removeContactRelation}
       />
     </div>
+  );
+}
+
+function StudentFinanceSummary({
+  financeQuery,
+  fallbackBalance,
+  fallbackPackageRemaining,
+  onOpen,
+}: {
+  financeQuery: ReturnType<typeof useFinancialOverview>;
+  fallbackBalance: Money;
+  fallbackPackageRemaining: number | null;
+  onOpen: () => void;
+}) {
+  const overview = financeQuery.data;
+  const outstanding = overview?.summary.outstanding ?? fallbackBalance.amount;
+  const currency = overview?.summary.currency ?? fallbackBalance.currency;
+  const activePackages = overview?.packages
+    .filter((item) => item.status === "active")
+    .slice(0, 2);
+
+  return (
+    <section
+      className="student-side-card panel"
+      aria-labelledby="finance-summary-title"
+    >
+      <div className="student-side-card__heading">
+        <CircleDollarSign size={19} aria-hidden="true" />
+        <h2 id="finance-summary-title">Rozliczenia</h2>
+      </div>
+      {financeQuery.isPending ? (
+        <div
+          className="student-side-skeleton"
+          aria-label="Wczytywanie rozliczeń"
+          aria-busy="true"
+        >
+          <div className="skeleton skeleton--wide" />
+          <div className="skeleton skeleton--title" />
+        </div>
+      ) : financeQuery.isError ? (
+        <div className="student-side-error" role="status">
+          <p>Nie udało się wczytać rozliczeń.</p>
+          <button
+            className="text-link"
+            onClick={() => void financeQuery.refetch()}
+          >
+            Spróbuj ponownie
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="finance-summary-amount">
+            <span>Do zapłaty</span>
+            <strong>
+              {outstanding > 0
+                ? formatMoney({ amount: outstanding, currency })
+                : "Brak zaległości"}
+            </strong>
+          </div>
+          {activePackages?.length ? (
+            <div className="finance-package-summary">
+              {activePackages.map((item) => (
+                <div key={item.id}>
+                  <span>{item.name}</span>
+                  <strong>
+                    {item.remainingLessons} z {item.totalLessons} lekcji
+                    pozostało
+                  </strong>
+                </div>
+              ))}
+            </div>
+          ) : fallbackPackageRemaining !== null ? (
+            <p className="student-side-card__hint">
+              Pakiet: {fallbackPackageRemaining} lekcji pozostało
+            </p>
+          ) : (
+            <p className="student-side-card__hint">Brak aktywnego pakietu</p>
+          )}
+          <button className="text-link" onClick={onOpen}>
+            Zobacz rozliczenia
+          </button>
+        </>
+      )}
+    </section>
   );
 }
 
