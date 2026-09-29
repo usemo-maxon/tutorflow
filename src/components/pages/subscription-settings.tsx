@@ -34,7 +34,11 @@ export function SubscriptionSettings({
   payment?: "processing" | "failed" | "cancelled";
 }) {
   const session = useSessionTeacher();
-  const { data, isPending } = useAppData(session.id);
+  const { data, isPending } = useAppData(
+    session.id,
+    undefined,
+    "subscription",
+  );
   const [billing, setBilling] = useState<BillingChoice>("annual");
   const [checkout, setCheckout] = useState<BillingChoice | null>(null);
   const [checkoutError, setCheckoutError] = useState("");

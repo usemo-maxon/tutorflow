@@ -4,6 +4,7 @@ import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import type {
   AppAction,
   AppData,
+  AppDataScope,
   IntegrationState,
   MutationResponse,
 } from "@/lib/domain";
@@ -170,9 +171,74 @@ function safeIntegrationError(
   return "Nie udało się zsynchronizować Google Calendar. Spróbuj ponownie.";
 }
 
+type AppDataSection =
+  | "students"
+  | "lessons"
+  | "lesson-participants"
+  | "lesson-details"
+  | "attendance"
+  | "availability"
+  | "calendar-events"
+  | "statistics"
+  | "contacts"
+  | "groups"
+  | "student-balances"
+  | "integrations";
+
+const scopeSections: Record<Exclude<AppDataScope, "full">, AppDataSection[]> = {
+  calendar: [
+    "students",
+    "lessons",
+    "lesson-participants",
+    "availability",
+    "calendar-events",
+    "groups",
+  ],
+  students: [
+    "students",
+    "lessons",
+    "lesson-participants",
+    "groups",
+    "student-balances",
+  ],
+  "student-detail": [
+    "students",
+    "lessons",
+    "lesson-participants",
+    "lesson-details",
+    "attendance",
+    "contacts",
+    "groups",
+    "student-balances",
+  ],
+  groups: ["students", "lessons", "groups"],
+  statistics: [
+    "students",
+    "lessons",
+    "lesson-participants",
+    "lesson-details",
+    "attendance",
+    "statistics",
+  ],
+  profile: [],
+  availability: ["availability"],
+  integrations: ["integrations", "lessons"],
+  subscription: ["students", "integrations"],
+  onboarding: ["students", "lessons", "integrations"],
+};
+
+function includesSection(scope: AppDataScope, section: AppDataSection) {
+  return scope === "full" || scopeSections[scope].includes(section);
+}
+
+function emptyQueryResult() {
+  return Promise.resolve({ data: [], error: null });
+}
+
 async function loadTenantStore(
   teacherId: string,
   range?: { start: string; end: string },
+  scope: AppDataScope = "full",
 ) {
   const supabase = await createSupabaseServerClient();
   const { data: authData, error: authError } = await supabase.auth.getUser();
@@ -198,12 +264,14 @@ async function loadTenantStore(
         )
         .eq("teacher_id", teacherId)
         .single(),
-      supabase
-        .from("integration_connections")
-        .select(
-          "provider,status,label,last_error,sync_state,last_attempted_sync_at,last_successful_sync_at",
-        )
-        .eq("teacher_id", teacherId),
+      includesSection(scope, "integrations")
+        ? supabase
+            .from("integration_connections")
+            .select(
+              "provider,status,label,last_error,sync_state,last_attempted_sync_at,last_successful_sync_at",
+            )
+            .eq("teacher_id", teacherId)
+        : emptyQueryResult(),
     ]);
   const failure = [profileResult, tutorResult, subscriptionResult].find(
     (result) => result.error,
@@ -266,94 +334,132 @@ async function loadTenantStore(
     packageBalancesResult,
     chargeBalancesResult,
   ] = await Promise.all([
-    supabase
-      .from("students")
-      .select(
-        "id,first_name,last_name,display_name,email,phone,legacy_contact,subject,level,goal,notes,status,default_lesson_duration_minutes,default_format,default_location,default_lesson_price_grosz,currency,timezone,created_at",
-      )
-      .eq("workspace_id", workspaceId),
-    lessonsQuery,
-    supabase
-      .from("lesson_participants")
-      .select("id,lesson_id,student_id,payment_status")
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("attendances")
-      .select("lesson_id,student_id,status")
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("lesson_plan_items")
-      .select("id,lesson_id,position,content")
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("plan_item_results")
-      .select("lesson_participant_id,plan_item_id,completed,score,note")
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("homeworks")
-      .select("lesson_id,description")
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("lesson_notes")
-      .select("lesson_id,content,note_type")
-      .eq("workspace_id", workspaceId)
-      .eq("note_type", "general"),
-    supabase
-      .from("availability_rules")
-      .select(
-        "id,kind,label,day_of_week,starts_at,ends_at,start_time,end_time,timezone,all_day,is_available",
-      )
-      .eq("workspace_id", workspaceId)
-      .eq("tutor_id", teacherId),
-    supabase
-      .from("availability_exceptions")
-      .select("id,exception_date,kind,start_time,end_time,timezone,reason")
-      .eq("workspace_id", workspaceId)
-      .eq("tutor_id", teacherId),
-    calendarBlocksQuery,
-    externalEventsQuery,
-    supabase
-      .from("student_stat_imports")
-      .select(
-        "id,student_id,occurred_at,topic,skill,score,duration_minutes,attendance_status,source_file,imported_at",
-      )
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("contacts")
-      .select("id,first_name,last_name,email,phone,type")
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("student_contacts")
-      .select(
-        "id,student_id,contact_id,relationship,is_primary,is_billing_contact,created_at",
-      )
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("groups")
-      .select(
-        "id,name,subject,level,status,default_duration_minutes,default_price_grosz,currency,notes,created_at",
-      )
-      .eq("workspace_id", workspaceId)
-      .eq("is_ad_hoc", false),
-    supabase
-      .from("group_members")
-      .select("id,group_id,student_id,status,joined_at,left_at")
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("packages")
-      .select("id,student_id,status")
-      .eq("workspace_id", workspaceId)
-      .eq("status", "active"),
-    supabase
-      .from("package_balances")
-      .select("package_id,student_id,remaining_lessons")
-      .eq("workspace_id", workspaceId),
-    supabase
-      .from("charge_balances")
-      .select("student_id,outstanding_grosz,currency")
-      .eq("workspace_id", workspaceId)
-      .gt("outstanding_grosz", 0)
-      .neq("status", "cancelled"),
+    includesSection(scope, "students")
+      ? supabase
+          .from("students")
+          .select(
+            "id,first_name,last_name,display_name,email,phone,legacy_contact,subject,level,goal,notes,status,default_lesson_duration_minutes,default_format,default_location,default_lesson_price_grosz,currency,timezone,created_at",
+          )
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "lessons") ? lessonsQuery : emptyQueryResult(),
+    includesSection(scope, "lesson-participants")
+      ? supabase
+          .from("lesson_participants")
+          .select("id,lesson_id,student_id,payment_status")
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "attendance")
+      ? supabase
+          .from("attendances")
+          .select("lesson_id,student_id,status")
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "lesson-details")
+      ? supabase
+          .from("lesson_plan_items")
+          .select("id,lesson_id,position,content")
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "lesson-details")
+      ? supabase
+          .from("plan_item_results")
+          .select("lesson_participant_id,plan_item_id,completed,score,note")
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "lesson-details")
+      ? supabase
+          .from("homeworks")
+          .select("lesson_id,description")
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "lesson-details")
+      ? supabase
+          .from("lesson_notes")
+          .select("lesson_id,content,note_type")
+          .eq("workspace_id", workspaceId)
+          .eq("note_type", "general")
+      : emptyQueryResult(),
+    includesSection(scope, "availability")
+      ? supabase
+          .from("availability_rules")
+          .select(
+            "id,kind,label,day_of_week,starts_at,ends_at,start_time,end_time,timezone,all_day,is_available",
+          )
+          .eq("workspace_id", workspaceId)
+          .eq("tutor_id", teacherId)
+      : emptyQueryResult(),
+    includesSection(scope, "availability")
+      ? supabase
+          .from("availability_exceptions")
+          .select("id,exception_date,kind,start_time,end_time,timezone,reason")
+          .eq("workspace_id", workspaceId)
+          .eq("tutor_id", teacherId)
+      : emptyQueryResult(),
+    includesSection(scope, "calendar-events")
+      ? calendarBlocksQuery
+      : emptyQueryResult(),
+    includesSection(scope, "calendar-events")
+      ? externalEventsQuery
+      : emptyQueryResult(),
+    includesSection(scope, "statistics")
+      ? supabase
+          .from("student_stat_imports")
+          .select(
+            "id,student_id,occurred_at,topic,skill,score,duration_minutes,attendance_status,source_file,imported_at",
+          )
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "contacts")
+      ? supabase
+          .from("contacts")
+          .select("id,first_name,last_name,email,phone,type")
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "contacts")
+      ? supabase
+          .from("student_contacts")
+          .select(
+            "id,student_id,contact_id,relationship,is_primary,is_billing_contact,created_at",
+          )
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "groups")
+      ? supabase
+          .from("groups")
+          .select(
+            "id,name,subject,level,status,default_duration_minutes,default_price_grosz,currency,notes,created_at",
+          )
+          .eq("workspace_id", workspaceId)
+          .eq("is_ad_hoc", false)
+      : emptyQueryResult(),
+    includesSection(scope, "groups")
+      ? supabase
+          .from("group_members")
+          .select("id,group_id,student_id,status,joined_at,left_at")
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "student-balances")
+      ? supabase
+          .from("packages")
+          .select("id,student_id,status")
+          .eq("workspace_id", workspaceId)
+          .eq("status", "active")
+      : emptyQueryResult(),
+    includesSection(scope, "student-balances")
+      ? supabase
+          .from("package_balances")
+          .select("package_id,student_id,remaining_lessons")
+          .eq("workspace_id", workspaceId)
+      : emptyQueryResult(),
+    includesSection(scope, "student-balances")
+      ? supabase
+          .from("charge_balances")
+          .select("student_id,outstanding_grosz,currency")
+          .eq("workspace_id", workspaceId)
+          .gt("outstanding_grosz", 0)
+          .neq("status", "cancelled")
+      : emptyQueryResult(),
   ]);
   const domainFailure = [
     studentsResult,
@@ -1888,12 +1994,13 @@ async function enqueuePendingSync(
 export async function getAppData(
   teacherId: string,
   range?: { start: string; end: string },
+  scope: AppDataScope = "full",
 ): Promise<AppData> {
   if (localAllowed()) {
-    const data = await local.getAppData(teacherId);
-    if (!range) return data;
+    let data = await local.getAppData(teacherId);
+    if (!range) return projectAppData(data, scope);
     const rangeStart = Date.parse(range.start);
-    return {
+    data = {
       ...data,
       lessons: data.lessons.filter(
         (lesson) =>
@@ -1920,12 +2027,43 @@ export async function getAppData(
             ),
       ),
     };
+    return projectAppData(data, scope);
   }
-  return queryStore(
-    teacherId,
-    (store) => local.appDataFromStore(store, teacherId),
-    range,
-  );
+  const loaded = await loadTenantStore(teacherId, range, scope);
+  return local.appDataFromStore(loaded.store, teacherId);
+}
+
+function projectAppData(data: AppData, scope: AppDataScope): AppData {
+  if (scope === "full") return data;
+  return {
+    ...data,
+    students: includesSection(scope, "students") ? data.students : [],
+    contacts: includesSection(scope, "contacts") ? data.contacts : [],
+    groups: includesSection(scope, "groups") ? data.groups : [],
+    lessons: includesSection(scope, "lessons") ? data.lessons : [],
+    studentStatImports: includesSection(scope, "statistics")
+      ? data.studentStatImports
+      : [],
+    availability: includesSection(scope, "availability")
+      ? data.availability
+      : [],
+    availabilityExceptions: includesSection(scope, "availability")
+      ? data.availabilityExceptions
+      : [],
+    calendarBlocks: includesSection(scope, "calendar-events")
+      ? data.calendarBlocks
+      : [],
+    externalGoogleEvents: includesSection(scope, "calendar-events")
+      ? data.externalGoogleEvents
+      : [],
+    integrations: includesSection(scope, "integrations")
+      ? data.integrations
+      : {
+          google: defaultIntegration("google"),
+          telegram: defaultIntegration("telegram"),
+          payu: defaultIntegration("payu"),
+        },
+  };
 }
 
 export { localAllowed };

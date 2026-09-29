@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { AppActionSchema, fieldErrors } from "@/lib/validation";
+import type { AppDataScope } from "@/lib/domain";
 import { currentTeacherId } from "@/server/auth";
 import { performAction } from "@/server/app-service";
 import { ApiFailure, errorResponse } from "@/server/errors";
@@ -9,6 +10,20 @@ import { getAppData, isSchedulingAction } from "@/server/repository";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
+const appDataScopes = new Set<AppDataScope>([
+  "full",
+  "calendar",
+  "students",
+  "student-detail",
+  "groups",
+  "statistics",
+  "profile",
+  "availability",
+  "integrations",
+  "subscription",
+  "onboarding",
+]);
+
 export async function GET(request: Request) {
   try {
     const teacherId = await currentTeacherId();
@@ -16,6 +31,14 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const start = url.searchParams.get("start");
     const end = url.searchParams.get("end");
+    const requestedScope = url.searchParams.get("scope") ?? "full";
+    if (!appDataScopes.has(requestedScope as AppDataScope)) {
+      throw new ApiFailure(422, {
+        code: "INVALID_APP_DATA_SCOPE",
+        message: "Nieprawidłowy zakres danych.",
+      });
+    }
+    const scope = requestedScope as AppDataScope;
     const range = start && end ? { start, end } : undefined;
     if (
       range &&
@@ -28,7 +51,7 @@ export async function GET(request: Request) {
         message: "Nieprawidłowy zakres kalendarza.",
       });
     }
-    return Response.json(await getAppData(teacherId, range));
+    return Response.json(await getAppData(teacherId, range, scope));
   } catch (error) {
     return errorResponse(error);
   }

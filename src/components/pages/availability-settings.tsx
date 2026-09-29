@@ -39,7 +39,11 @@ const weekdayDates: Record<number, string> = {
 };
 export function AvailabilitySettings() {
   const session = useSessionTeacher();
-  const { data, isPending } = useAppData(session.id);
+  const { data, isPending } = useAppData(
+    session.id,
+    undefined,
+    "availability",
+  );
   const mutation = useAppMutation(session.id);
   const { showToast, showError } = useAppUi();
   const {

@@ -18,7 +18,7 @@ type SortKey = "name" | "next" | "recent";
 
 export function StudentsPage() {
   const teacher = useSessionTeacher();
-  const { data, isPending } = useAppData(teacher.id);
+  const { data, isPending } = useAppData(teacher.id, undefined, "students");
   const { openStudentComposer } = useAppUi();
   const searchParams = useSearchParams();
   const router = useRouter();

@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import type { AppAction, AppData } from "@/lib/domain";
+import type { AppAction, AppData, AppDataScope } from "@/lib/domain";
 import type {
   LessonWorkspaceAction,
   LessonWorkspaceData,
@@ -164,11 +164,18 @@ export function useLessonWorkspaceMutation(
 export function useAppData(
   teacherId: string,
   range?: { start: string; end: string },
+  scope: AppDataScope = "full",
 ) {
   const router = useRouter();
   return useQuery({
-    queryKey: ["app", teacherId, range?.start ?? "all", range?.end ?? "all"],
-    queryFn: ({ signal }) => fetchAppData(signal, range),
+    queryKey: [
+      "app",
+      teacherId,
+      scope,
+      range?.start ?? "all",
+      range?.end ?? "all",
+    ],
+    queryFn: ({ signal }) => fetchAppData(signal, range, scope),
     refetchInterval: 60_000,
     retry(failureCount, error) {
       if (error instanceof ClientApiError && error.status < 500) return false;
@@ -189,7 +196,7 @@ export function useAppMutation(teacherId: string) {
     mutationFn: (action: AppAction) => mutateApp(action),
     onSuccess(response) {
       queryClient.setQueryData<AppData>(
-        ["app", teacherId, "all", "all"],
+        ["app", teacherId, "full", "all", "all"],
         response.data,
       );
       void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });

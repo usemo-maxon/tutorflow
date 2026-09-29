@@ -28,7 +28,11 @@ export function IntegrationsSettings() {
     message: string;
   } | null>(null);
   const session = useSessionTeacher();
-  const { data, isPending, refetch } = useAppData(session.id);
+  const { data, isPending, refetch } = useAppData(
+    session.id,
+    undefined,
+    "integrations",
+  );
   if (isPending || !data) return <PageLoading />;
   const entitlements = resolveEntitlements(data.teacher.subscription);
   const failedLesson = data.lessons.find(

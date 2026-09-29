@@ -125,7 +125,7 @@ export function CalendarPage() {
     () => calendarQueryRange(anchor, view, session.timezone),
     [anchor, session.timezone, view],
   );
-  const { data, isPending } = useAppData(session.id, queryRange);
+  const { data, isPending } = useAppData(session.id, queryRange, "calendar");
   const mutation = useAppMutation(session.id);
   const queryClient = useQueryClient();
   const { openLessonComposer, showToast, showError } = useAppUi();

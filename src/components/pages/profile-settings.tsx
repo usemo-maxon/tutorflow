@@ -3,15 +3,14 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { LoaderCircle } from "lucide-react";
 import Link from "next/link";
-import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { useAppData, useAppMutation } from "@/hooks/use-app-data";
+import { useAppMutation } from "@/hooks/use-app-data";
 import { copy } from "@/lib/copy";
 import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
-import { PageLoading } from "../ui/loading";
 
 const schema = z.object({
   name: z.string().trim().min(2, "Podaj imię i nazwisko."),
@@ -20,7 +19,7 @@ const schema = z.object({
 type Values = z.infer<typeof schema>;
 export function ProfileSettings() {
   const session = useSessionTeacher();
-  const { data, isPending } = useAppData(session.id);
+  const router = useRouter();
   const mutation = useAppMutation(session.id);
   const { showToast, showError } = useAppUi();
   const {
@@ -32,17 +31,13 @@ export function ProfileSettings() {
     resolver: zodResolver(schema),
     defaultValues: { name: session.name, timezone: session.timezone },
   });
-  useEffect(() => {
-    if (data && !isDirty)
-      reset({ name: data.teacher.name, timezone: data.teacher.timezone });
-  }, [data, reset, isDirty]);
   useUnsavedChanges(isDirty);
-  if (isPending || !data) return <PageLoading />;
   const submit = handleSubmit(async (values) => {
     try {
       await mutation.mutateAsync({ type: "updateProfile", ...values });
       showToast({ message: copy.toasts.changesSaved });
       reset(values);
+      router.refresh();
     } catch (error) {
       showError(error);
     }
@@ -62,7 +57,7 @@ export function ProfileSettings() {
           <span>Imię i nazwisko</span>
           <input
             {...register("name")}
-            readOnly={data.teacher.subscription.readOnly}
+            readOnly={session.subscription.readOnly}
             aria-invalid={Boolean(errors.name)}
           />
           {errors.name && (
@@ -73,9 +68,9 @@ export function ProfileSettings() {
           <span>Adres e-mail</span>
           <input
             value={
-              data.teacher.email === "demo@tutorflow.local"
+              session.email === "demo@tutorflow.local"
                 ? "demo@easy4tutor.local"
-                : data.teacher.email
+                : session.email
             }
             readOnly
           />
@@ -85,7 +80,7 @@ export function ProfileSettings() {
           <span>Strefa czasowa</span>
           <select
             {...register("timezone")}
-            disabled={data.teacher.subscription.readOnly}
+            disabled={session.subscription.readOnly}
           >
             <option value="Europe/Warsaw">Europe/Warsaw (Polska)</option>
             <option value="Europe/London">Europe/London</option>
@@ -96,7 +91,7 @@ export function ProfileSettings() {
         <button
           className="button button--primary"
           disabled={
-            !isDirty || isSubmitting || data.teacher.subscription.readOnly
+            !isDirty || isSubmitting || session.subscription.readOnly
           }
         >
           {isSubmitting && <LoaderCircle className="spin" size={17} />}Zapisz

@@ -13,7 +13,7 @@ import { PageLoading } from "../ui/loading";
 
 export function GroupsPage() {
   const teacher = useSessionTeacher();
-  const { data, isPending } = useAppData(teacher.id);
+  const { data, isPending } = useAppData(teacher.id, undefined, "groups");
   const searchParams = useSearchParams();
   const router = useRouter();
   const [search, setSearch] = useState("");

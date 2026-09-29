@@ -4,7 +4,13 @@ import type {
   LessonWorkspaceAction,
   LessonWorkspaceData,
 } from "./lesson-workspace";
-import type { AppAction, AppData, AppError, MutationResponse } from "./domain";
+import type {
+  AppAction,
+  AppData,
+  AppDataScope,
+  AppError,
+  MutationResponse,
+} from "./domain";
 import type { StudentMemory } from "./student-memory";
 import type { NextLessonBriefing } from "./next-lesson-briefing";
 import type { GroupContinuity } from "./group-continuity";
@@ -21,12 +27,17 @@ export class ClientApiError extends Error {
 export async function fetchAppData(
   signal?: AbortSignal,
   range?: { start: string; end: string },
+  scope: AppDataScope = "full",
 ): Promise<AppData> {
   const timeout = AbortSignal.timeout(20_000);
-  const params = range
-    ? `?start=${encodeURIComponent(range.start)}&end=${encodeURIComponent(range.end)}`
-    : "";
-  const response = await fetch(`/api/app${params}`, {
+  const params = new URLSearchParams();
+  if (range) {
+    params.set("start", range.start);
+    params.set("end", range.end);
+  }
+  if (scope !== "full") params.set("scope", scope);
+  const search = params.size ? `?${params}` : "";
+  const response = await fetch(`/api/app${search}`, {
     signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     cache: "no-store",
   });

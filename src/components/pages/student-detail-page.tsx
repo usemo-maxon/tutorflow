@@ -59,7 +59,11 @@ const tabs = [
 export function StudentDetailPage() {
   const { studentId } = useParams<{ studentId: string }>();
   const session = useSessionTeacher();
-  const { data, isPending } = useAppData(session.id);
+  const { data, isPending } = useAppData(
+    session.id,
+    undefined,
+    "student-detail",
+  );
   const student = data?.students.find(
     (candidate) => candidate.id === studentId,
   );

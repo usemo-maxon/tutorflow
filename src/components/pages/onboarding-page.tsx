@@ -19,7 +19,11 @@ import { PageLoading } from "../ui/loading";
 export function OnboardingPage() {
   const session = useSessionTeacher();
   const router = useRouter();
-  const { data, isPending, error, refetch } = useAppData(session.id);
+  const { data, isPending, error, refetch } = useAppData(
+    session.id,
+    undefined,
+    "onboarding",
+  );
   const completion = useCompleteOnboarding(session.id);
   const { openStudentComposer, openLessonComposer, showError } = useAppUi();
 

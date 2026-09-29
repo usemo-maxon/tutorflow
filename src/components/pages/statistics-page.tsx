@@ -39,7 +39,7 @@ type StatEvent = {
 
 export function StatisticsPage() {
   const teacher = useSessionTeacher();
-  const { data, isPending } = useAppData(teacher.id);
+  const { data, isPending } = useAppData(teacher.id, undefined, "statistics");
   const mutation = useAppMutation(teacher.id);
   const searchParams = useSearchParams();
   const router = useRouter();

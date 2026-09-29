@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   after: vi.fn(),
   background: undefined as (() => Promise<void>) | undefined,
   currentTeacherId: vi.fn(),
+  getAppData: vi.fn(),
   performAction: vi.fn(),
   processJobs: vi.fn(),
 }));
@@ -32,12 +33,12 @@ vi.mock("@/server/google-calendar-sync", () => ({
 }));
 
 vi.mock("@/server/repository", () => ({
-  getAppData: vi.fn(),
+  getAppData: mocks.getAppData,
   isSchedulingAction: (action: { type: string }) =>
     action.type === "createLesson",
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 describe("Lesson mutation Google synchronization", () => {
   beforeEach(() => {
@@ -47,6 +48,7 @@ describe("Lesson mutation Google synchronization", () => {
       "11111111-1111-4111-8111-111111111111",
     );
     mocks.performAction.mockResolvedValue({ data: {}, result: { id: "l1" } });
+    mocks.getAppData.mockResolvedValue({ teacher: {}, students: [] });
     mocks.processJobs.mockResolvedValue({
       recovered: 0,
       processed: 1,
@@ -93,5 +95,27 @@ describe("Lesson mutation Google synchronization", () => {
     expect(mocks.processJobs).toHaveBeenCalledWith({
       teacherId: "11111111-1111-4111-8111-111111111111",
     });
+  });
+
+  it("forwards a validated lightweight data scope", async () => {
+    const response = await GET(
+      new Request("https://easy4tutor.pl/api/app?scope=profile"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.getAppData).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+      undefined,
+      "profile",
+    );
+  });
+
+  it("rejects an unknown data scope", async () => {
+    const response = await GET(
+      new Request("https://easy4tutor.pl/api/app?scope=everything"),
+    );
+
+    expect(response.status).toBe(422);
+    expect(mocks.getAppData).not.toHaveBeenCalled();
   });
 });

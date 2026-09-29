@@ -307,6 +307,19 @@ export interface AppData {
   financials: Record<"week" | "month" | "year", FinancialSummary>;
 }
 
+export type AppDataScope =
+  | "full"
+  | "calendar"
+  | "students"
+  | "student-detail"
+  | "groups"
+  | "statistics"
+  | "profile"
+  | "availability"
+  | "integrations"
+  | "subscription"
+  | "onboarding";
+
 export interface FinancialSummary {
   lessonCount: number;
   hours: number;

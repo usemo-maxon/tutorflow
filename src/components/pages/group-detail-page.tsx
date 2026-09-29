@@ -40,7 +40,7 @@ import { PageLoading } from "../ui/loading";
 export function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const teacher = useSessionTeacher();
-  const { data, isPending } = useAppData(teacher.id);
+  const { data, isPending } = useAppData(teacher.id, undefined, "groups");
   const continuity = useGroupContinuity(teacher.id, groupId, Boolean(data));
   const mutation = useAppMutation(teacher.id);
   const { openLessonComposer, showToast, showError } = useAppUi();
