@@ -64,6 +64,21 @@ export function participantCompletionStatus(
     : "optional-empty";
 }
 
+export function hasMeaningfulOutcome(outcome?: {
+  progressSummary?: string | null;
+  difficultyLevel?: StudentOutcomeDifficulty | null;
+  difficultyNote?: string | null;
+  nextStep?: string | null;
+}) {
+  return Boolean(
+    outcome &&
+    (outcome.progressSummary?.trim() ||
+      outcome.difficultyLevel ||
+      outcome.difficultyNote?.trim() ||
+      outcome.nextStep?.trim()),
+  );
+}
+
 export function difficultyLabel(difficulty?: StudentOutcomeDifficulty) {
   return difficultyOptions.find((option) => option.value === difficulty)?.label;
 }

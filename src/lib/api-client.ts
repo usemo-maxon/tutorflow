@@ -7,6 +7,7 @@ import type {
 import type { AppAction, AppData, AppError, MutationResponse } from "./domain";
 import type { StudentMemory } from "./student-memory";
 import type { NextLessonBriefing } from "./next-lesson-briefing";
+import type { GroupContinuity } from "./group-continuity";
 
 export class ClientApiError extends Error {
   constructor(
@@ -106,6 +107,21 @@ export async function fetchNextLessonBriefing(
     },
   );
   return parseResponse<NextLessonBriefing>(response);
+}
+
+export async function fetchGroupContinuity(
+  groupId: string,
+  signal?: AbortSignal,
+): Promise<GroupContinuity> {
+  const timeout = AbortSignal.timeout(20_000);
+  const response = await fetch(
+    `/api/groups/${encodeURIComponent(groupId)}/continuity`,
+    {
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      cache: "no-store",
+    },
+  );
+  return parseResponse<GroupContinuity>(response);
 }
 
 export async function mutateLessonWorkspace(

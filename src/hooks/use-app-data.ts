@@ -16,11 +16,36 @@ import {
   fetchStudentMemory,
   fetchNextLessonBriefing,
   fetchFinancialOverview,
+  fetchGroupContinuity,
   mutateApp,
   mutateLessonWorkspace,
   mutateFinancialOverview,
   completeOnboarding,
 } from "@/lib/api-client";
+
+export function useGroupContinuity(
+  teacherId: string,
+  groupId: string,
+  enabled = true,
+) {
+  const router = useRouter();
+  return useQuery({
+    queryKey: ["group-continuity", teacherId, groupId],
+    queryFn: ({ signal }) => fetchGroupContinuity(groupId, signal),
+    enabled: enabled && Boolean(groupId),
+    staleTime: 30_000,
+    retry(failureCount, error) {
+      if (error instanceof ClientApiError && error.status < 500) return false;
+      return failureCount < 2;
+    },
+    throwOnError(error) {
+      if (error instanceof ClientApiError && error.status === 401) {
+        router.push("/logowanie");
+      }
+      return false;
+    },
+  });
+}
 
 export function useDashboardData(teacherId: string) {
   const router = useRouter();
@@ -129,6 +154,9 @@ export function useLessonWorkspaceMutation(
       void queryClient.invalidateQueries({
         queryKey: ["lesson-briefing", teacherId],
       });
+      void queryClient.invalidateQueries({
+        queryKey: ["group-continuity", teacherId],
+      });
     },
   });
 }
@@ -173,6 +201,9 @@ export function useAppMutation(teacherId: string) {
       });
       void queryClient.invalidateQueries({
         queryKey: ["lesson-briefing", teacherId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["group-continuity", teacherId],
       });
     },
   });

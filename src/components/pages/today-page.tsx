@@ -4,8 +4,11 @@ import {
   AlertTriangle,
   ArrowRight,
   CalendarDays,
+  CircleDollarSign,
   Clock3,
-  ExternalLink,
+  Link2,
+  NotebookPen,
+  PackageX,
   Plus,
   UserPlus,
   Users,
@@ -14,7 +17,11 @@ import Link from "next/link";
 import { useMemo } from "react";
 import { useDashboardData } from "@/hooks/use-app-data";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
-import type { DashboardAttentionItem, DashboardLesson } from "@/lib/dashboard";
+import type {
+  DashboardBriefingPreview,
+  DashboardLesson,
+  TodayAction,
+} from "@/lib/dashboard";
 import { formatDay, formatShortDay, formatTime } from "@/lib/format";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
@@ -25,11 +32,14 @@ export function TodayPage() {
   const { data, isPending, error, refetch } = useDashboardData(session.id);
   const { openLessonComposer, openStudentComposer } = useAppUi();
   const now = useMinuteClock();
-  const temporal = useMemo(
+  const currentLessonId = useMemo(
     () =>
-      data
-        ? lessonContext(data.todaysLessons, now, data.teacher.timezone)
-        : null,
+      data?.todaysLessons.find(
+        (lesson) =>
+          !["completed", "cancelled", "no_show"].includes(lesson.status) &&
+          Date.parse(lesson.startsAt) <= now.getTime() &&
+          now.getTime() < Date.parse(lesson.endsAt),
+      )?.id,
     [data, now],
   );
 
@@ -38,7 +48,7 @@ export function TodayPage() {
     return (
       <div className="route-error" role="alert">
         <AlertTriangle size={22} aria-hidden="true" />
-        <h1>Nie udało się wczytać planu dnia</h1>
+        <h1>Nie udało się wczytać dzisiejszego planu</h1>
         <p>Spróbuj ponownie. Twoje zapisane dane są bezpieczne.</p>
         <button className="button button--secondary" onClick={() => refetch()}>
           Spróbuj ponownie
@@ -49,8 +59,6 @@ export function TodayPage() {
 
   const timezone = data.teacher.timezone;
   const isNewTutor = data.studentCount === 0;
-  const onboardingIncomplete = !session.onboardingCompletedAt;
-  const nextUpcoming = data.upcomingLessons[0];
   const teacherName = data.teacher.name.trim().split(/\s+/)[0];
 
   return (
@@ -75,33 +83,12 @@ export function TodayPage() {
         )}
       </header>
 
-      {onboardingIncomplete && (
-        <section
-          className="onboarding-reminder"
-          aria-labelledby="onboarding-reminder-title"
-        >
-          <div>
-            <p className="eyebrow">Pierwsze kroki</p>
-            <h2 id="onboarding-reminder-title">
-              Dokończ konfigurację easy4tutor
-            </h2>
-            <p>
-              Dodaj ucznia i pierwszą lekcję, żeby uruchomić pełny przepływ
-              pracy.
-            </p>
-          </div>
-          <Link className="button button--secondary" href="/app/start">
-            Dokończ konfigurację
-            <ArrowRight size={17} aria-hidden="true" />
-          </Link>
-        </section>
-      )}
-
       {data.partialErrors.length > 0 && (
         <div className="dashboard-partial-error" role="status">
           <AlertTriangle size={18} aria-hidden="true" />
           <span>
-            Nie udało się wczytać części danych. Główny plan dnia jest aktualny.
+            Część dodatkowego kontekstu jest chwilowo niedostępna. Plan lekcji
+            pozostaje aktualny.
           </span>
           <button className="text-link" onClick={() => refetch()}>
             Spróbuj ponownie
@@ -112,106 +99,245 @@ export function TodayPage() {
       {isNewTutor ? (
         <NewTutorState
           readOnly={data.teacher.readOnly}
-          showAction={!onboardingIncomplete}
+          onboardingIncomplete={!session.onboardingCompletedAt}
           onAddStudent={() => openStudentComposer()}
+          onAddLesson={() => openLessonComposer()}
         />
       ) : (
-        <div className="today-dashboard__layout">
-          <main className="today-dashboard__main">
-            <section className="today-schedule" aria-labelledby="today-heading">
-              <div className="dashboard-section-heading">
-                <div>
-                  <p className="eyebrow">Dzisiaj</p>
-                  <h2 id="today-heading">Plan dnia</h2>
-                </div>
-                <span className="dashboard-section-count">
-                  {lessonCount(data.todaysLessons.length)}
-                </span>
-              </div>
-
-              {temporal && data.todaysLessons.length > 0 && (
-                <div className={`day-context day-context--${temporal.kind}`}>
-                  <span className="day-context__pulse" aria-hidden="true" />
-                  <div>
-                    <strong>{temporal.label}</strong>
-                    {temporal.lesson && (
-                      <span>{temporal.lesson.participantLabel}</span>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {data.todaysLessons.length > 0 ? (
-                <ol className="today-lesson-list">
-                  {data.todaysLessons.map((lesson) => (
-                    <TodayLessonRow
-                      key={lesson.id}
-                      lesson={lesson}
-                      timezone={timezone}
-                      now={now}
-                      emphasized={temporal?.lesson?.id === lesson.id}
-                    />
-                  ))}
-                </ol>
-              ) : (
-                <TodayEmptyState
-                  next={nextUpcoming}
-                  timezone={timezone}
-                  readOnly={data.teacher.readOnly}
-                  onAddLesson={() => openLessonComposer()}
-                />
-              )}
-            </section>
-
-            <AttentionSection items={data.attentionItems} />
-          </main>
-
-          <aside
-            className="today-dashboard__rail"
-            aria-label="Dalszy plan dnia"
-          >
-            <UpcomingSection
-              lessons={data.upcomingLessons}
+        <div className="today-action-grid">
+          <div className="today-action-grid__main">
+            <NextLessonSection
+              lesson={data.nextLesson}
               timezone={timezone}
+              current={Boolean(data.nextLesson?.id === currentLessonId)}
+            />
+            <TodayLessonsSection
+              lessons={data.todaysLessons}
+              timezone={timezone}
+              currentLessonId={currentLessonId}
+              readOnly={data.teacher.readOnly}
+              onAddLesson={() => openLessonComposer()}
+            />
+          </div>
+          <aside
+            className="today-action-grid__rail"
+            aria-label="Dzisiejsze działania"
+          >
+            <ActionSection
+              items={data.actions}
+              hiddenCount={data.hiddenActionCount}
             />
             <QuickActions
               readOnly={data.teacher.readOnly}
               onAddLesson={() => openLessonComposer()}
               onAddStudent={() => openStudentComposer()}
             />
-            <MonthlySummary
-              lessonCount={data.monthlySummary.lessonCount}
-              teachingMinutes={data.monthlySummary.teachingMinutes}
-              activeStudents={data.monthlySummary.activeStudents}
-              unavailable={data.partialErrors.includes("monthly_summary")}
-            />
           </aside>
+          <UpcomingSection lessons={data.upcomingLessons} timezone={timezone} />
+          <MonthlySummary
+            lessonCount={data.monthlySummary.lessonCount}
+            teachingMinutes={data.monthlySummary.teachingMinutes}
+            activeStudents={data.monthlySummary.activeStudents}
+            unavailable={data.partialErrors.includes("monthly_summary")}
+          />
         </div>
       )}
     </div>
   );
 }
 
+function NextLessonSection({
+  lesson,
+  timezone,
+  current,
+}: {
+  lesson?: DashboardLesson & { briefing?: DashboardBriefingPreview };
+  timezone: string;
+  current: boolean;
+}) {
+  return (
+    <section className="next-lesson-card" aria-labelledby="next-lesson-heading">
+      <div className="next-lesson-card__topline">
+        <div>
+          <p className="eyebrow">{current ? "Teraz" : "Co dalej"}</p>
+          <h2 id="next-lesson-heading">
+            {current ? "Trwająca lekcja" : "Następna lekcja"}
+          </h2>
+        </div>
+        {lesson && (
+          <span
+            className={`next-lesson-card__state${current ? " is-current" : ""}`}
+          >
+            {current ? "Teraz" : "Dzisiaj"}
+          </span>
+        )}
+      </div>
+      {lesson ? (
+        <div className="next-lesson-card__content">
+          <div className="next-lesson-card__identity">
+            <p className="next-lesson-card__time">
+              <time dateTime={lesson.startsAt}>
+                {formatTime(lesson.startsAt, timezone)}
+              </time>
+              <span aria-hidden="true">–</span>
+              <time dateTime={lesson.endsAt}>
+                {formatTime(lesson.endsAt, timezone)}
+              </time>
+            </p>
+            <h3>{lesson.participantLabel}</h3>
+            <p>{[lesson.level, lesson.topic].filter(Boolean).join(" · ")}</p>
+          </div>
+          <BriefingPreview preview={lesson.briefing} />
+          <Link
+            className="button button--primary"
+            href={`/app/lekcje/${lesson.id}`}
+          >
+            Otwórz lekcję <ArrowRight size={17} aria-hidden="true" />
+          </Link>
+        </div>
+      ) : (
+        <div className="next-lesson-card__empty">
+          <p>Nie masz już dziś kolejnej lekcji.</p>
+          <span>Nadchodzący plan znajdziesz niżej.</span>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BriefingPreview({ preview }: { preview?: DashboardBriefingPreview }) {
+  if (!preview) {
+    return (
+      <p className="briefing-preview briefing-preview--muted">
+        Kontekst przygotowania jest chwilowo niedostępny.
+      </p>
+    );
+  }
+  if (preview.kind === "first_lesson") {
+    return (
+      <p className="briefing-preview">
+        <strong>Pierwsza lekcja z tym uczniem.</strong>
+      </p>
+    );
+  }
+  if (preview.kind === "group") {
+    return (
+      <div className="briefing-preview">
+        <strong>{preview.participantCount} uczniów</strong>
+        <span>
+          Kontekst zapisany dla {preview.contextCount} z{" "}
+          {preview.participantCount} uczniów
+        </span>
+      </div>
+    );
+  }
+  if (!preview.lastProgress && !preview.difficulty && !preview.nextStep) {
+    return (
+      <p className="briefing-preview">
+        <strong>Kontekst ucznia jest zapisany.</strong>
+      </p>
+    );
+  }
+  return (
+    <dl className="briefing-preview briefing-preview--details">
+      {preview.lastProgress && (
+        <div>
+          <dt>Ostatnio</dt>
+          <dd>{preview.lastProgress}</dd>
+        </div>
+      )}
+      {preview.difficulty && (
+        <div>
+          <dt>Problem</dt>
+          <dd>{preview.difficulty}</dd>
+        </div>
+      )}
+      {preview.nextStep && (
+        <div>
+          <dt>Dalej</dt>
+          <dd>{preview.nextStep}</dd>
+        </div>
+      )}
+    </dl>
+  );
+}
+
+function TodayLessonsSection({
+  lessons,
+  timezone,
+  currentLessonId,
+  readOnly,
+  onAddLesson,
+}: {
+  lessons: DashboardLesson[];
+  timezone: string;
+  currentLessonId?: string;
+  readOnly: boolean;
+  onAddLesson: () => void;
+}) {
+  return (
+    <section className="today-schedule" aria-labelledby="today-heading">
+      <div className="dashboard-section-heading">
+        <div>
+          <p className="eyebrow">Chronologia</p>
+          <h2 id="today-heading">Dzisiejsze lekcje</h2>
+        </div>
+        <span className="dashboard-section-count">
+          {lessonCount(lessons.length)}
+        </span>
+      </div>
+      {lessons.length ? (
+        <ol className="today-lesson-list">
+          {lessons.map((lesson) => (
+            <TodayLessonRow
+              key={lesson.id}
+              lesson={lesson}
+              timezone={timezone}
+              current={lesson.id === currentLessonId}
+            />
+          ))}
+        </ol>
+      ) : (
+        <div className="today-empty">
+          <span className="today-empty__line" aria-hidden="true" />
+          <div>
+            <h3>Na dziś nie masz zaplanowanych lekcji.</h3>
+            <p>
+              Możesz spokojnie przygotować kolejne zajęcia albo dodać nową
+              lekcję.
+            </p>
+          </div>
+          <button
+            className="button button--secondary"
+            disabled={readOnly}
+            onClick={onAddLesson}
+          >
+            <Plus size={17} aria-hidden="true" /> Dodaj lekcję
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function TodayLessonRow({
   lesson,
   timezone,
-  now,
-  emphasized,
+  current,
 }: {
   lesson: DashboardLesson;
   timezone: string;
-  now: Date;
-  emphasized: boolean;
+  current: boolean;
 }) {
-  const joinAvailable =
-    Boolean(lesson.meetingUrl) &&
-    now.getTime() >= Date.parse(lesson.startsAt) - 30 * 60_000 &&
-    now.getTime() <= Date.parse(lesson.endsAt);
-  const meta = [lesson.subject, lesson.level].filter(Boolean).join(" · ");
-
+  const actionLabel =
+    lesson.status === "needs_completion"
+      ? "Zakończ lekcję"
+      : lesson.status === "completed" || lesson.status === "no_show"
+        ? "Otwórz"
+        : "Otwórz lekcję";
   return (
     <li
-      className={`today-lesson${emphasized ? " today-lesson--emphasized" : ""}${lesson.status === "completed" ? " today-lesson--completed" : ""}`}
+      className={`today-lesson${current ? " today-lesson--emphasized" : ""}${lesson.status === "completed" ? " today-lesson--completed" : ""}`}
     >
       <div className="today-lesson__time">
         <time dateTime={lesson.startsAt}>
@@ -225,28 +351,24 @@ function TodayLessonRow({
           <div>
             <h3>{lesson.participantLabel}</h3>
             <p>
-              {meta || lesson.topic || "Temat do ustalenia"}
+              {lesson.topic || "Lekcja"}
               {lesson.participantCount > 1
                 ? ` · ${lesson.participantCount} uczniów`
-                : ` · ${lesson.durationMinutes} min`}
+                : ""}
             </p>
           </div>
-          <LessonStatusBadge status={lesson.status} />
+          {current ? (
+            <span className="status-badge status-badge--current">
+              <Clock3 size={14} aria-hidden="true" />
+              Teraz
+            </span>
+          ) : (
+            <LessonStatusBadge status={lesson.status} />
+          )}
         </div>
         <div className="today-lesson__actions">
-          {joinAvailable && lesson.meetingUrl && (
-            <a
-              className="button button--secondary"
-              href={lesson.meetingUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink size={16} aria-hidden="true" />
-              Dołącz
-            </a>
-          )}
           <Link className="text-link" href={`/app/lekcje/${lesson.id}`}>
-            Otwórz lekcję <ArrowRight size={16} aria-hidden="true" />
+            {actionLabel} <ArrowRight size={16} aria-hidden="true" />
           </Link>
         </div>
       </div>
@@ -254,7 +376,13 @@ function TodayLessonRow({
   );
 }
 
-function AttentionSection({ items }: { items: DashboardAttentionItem[] }) {
+function ActionSection({
+  items,
+  hiddenCount,
+}: {
+  items: TodayAction[];
+  hiddenCount: number;
+}) {
   return (
     <section
       className="dashboard-attention"
@@ -262,41 +390,61 @@ function AttentionSection({ items }: { items: DashboardAttentionItem[] }) {
     >
       <div className="dashboard-section-heading">
         <div>
-          <p className="eyebrow">Wymaga uwagi</p>
+          <p className="eyebrow">Priorytety</p>
           <h2 id="attention-heading">Do zrobienia</h2>
         </div>
         {items.length > 0 && (
           <span
             className="attention-count"
-            aria-label={`${items.length} spraw`}
+            aria-label={`${items.length + hiddenCount} spraw`}
           >
-            {items.length}
+            {items.length + hiddenCount}
           </span>
         )}
       </div>
-      {items.length > 0 ? (
+      {items.length ? (
         <ul className="attention-list">
-          {items.map((item) => (
-            <li
-              key={item.id}
-              className={`attention-item attention-item--${item.type}`}
-            >
-              <span className="attention-item__marker" aria-hidden="true" />
-              <div>
-                <strong>{item.title}</strong>
-                <p>{item.detail}</p>
-              </div>
-              <Link className="text-link" href={item.href}>
-                {item.actionLabel} <ArrowRight size={15} aria-hidden="true" />
-              </Link>
-            </li>
-          ))}
+          {items.map((item) => {
+            const Icon = actionIcon(item.type);
+            return (
+              <li
+                key={item.id}
+                className={`attention-item attention-item--${item.severity}`}
+              >
+                <span className="attention-item__icon" aria-hidden="true">
+                  <Icon size={17} />
+                </span>
+                <div>
+                  <strong>{item.title}</strong>
+                  <p>{item.detail}</p>
+                </div>
+                <Link className="text-link" href={item.href}>
+                  {item.actionLabel} <ArrowRight size={15} aria-hidden="true" />
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       ) : (
-        <p className="dashboard-calm-state">Wszystko jest na bieżąco.</p>
+        <p className="dashboard-calm-state">
+          Nie ma teraz nic pilnego do zrobienia.
+        </p>
+      )}
+      {hiddenCount > 0 && (
+        <p className="attention-more">
+          + {hiddenCount} kolejnych spraw — najważniejsze są pokazane powyżej.
+        </p>
       )}
     </section>
   );
+}
+
+function actionIcon(type: TodayAction["type"]) {
+  if (type === "package_problem") return PackageX;
+  if (type === "overdue_finance") return CircleDollarSign;
+  if (type === "google_reconnect") return Link2;
+  if (type === "missing_continuity") return NotebookPen;
+  return Clock3;
 }
 
 function UpcomingSection({
@@ -308,13 +456,13 @@ function UpcomingSection({
 }) {
   return (
     <section
-      className="dashboard-rail-section"
+      className="dashboard-rail-section dashboard-upcoming"
       aria-labelledby="upcoming-heading"
     >
       <div className="dashboard-section-heading dashboard-section-heading--compact">
         <div>
-          <p className="eyebrow">Nadchodzące</p>
-          <h2 id="upcoming-heading">Co dalej</h2>
+          <p className="eyebrow">Następne 14 dni</p>
+          <h2 id="upcoming-heading">Nadchodzące</h2>
         </div>
         <Link
           className="icon-link"
@@ -324,13 +472,12 @@ function UpcomingSection({
           <CalendarDays size={18} aria-hidden="true" />
         </Link>
       </div>
-      {lessons.length > 0 ? (
+      {lessons.length ? (
         <ol className="upcoming-list">
           {lessons.slice(0, 5).map((lesson, index) => {
-            const previous = lessons[index - 1];
             const day = formatShortDay(lesson.startsAt, timezone);
-            const previousDay = previous
-              ? formatShortDay(previous.startsAt, timezone)
+            const previousDay = index
+              ? formatShortDay(lessons[index - 1].startsAt, timezone)
               : null;
             return (
               <li key={lesson.id}>
@@ -341,11 +488,7 @@ function UpcomingSection({
                   <time>{formatTime(lesson.startsAt, timezone)}</time>
                   <span>
                     <strong>{lesson.participantLabel}</strong>
-                    <small>
-                      {[lesson.subject, lesson.level]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </small>
+                    <small>{lesson.topic || "Lekcja"}</small>
                   </span>
                   <ArrowRight size={15} aria-hidden="true" />
                 </Link>
@@ -358,9 +501,6 @@ function UpcomingSection({
           Brak kolejnych lekcji w najbliższych 14 dniach.
         </p>
       )}
-      <Link className="text-link dashboard-rail-link" href="/app/kalendarz">
-        Otwórz kalendarz <ArrowRight size={15} aria-hidden="true" />
-      </Link>
     </section>
   );
 }
@@ -375,7 +515,10 @@ function QuickActions({
   onAddStudent: () => void;
 }) {
   return (
-    <section className="dashboard-rail-section" aria-labelledby="quick-heading">
+    <section
+      className="dashboard-rail-section dashboard-quick"
+      aria-labelledby="quick-heading"
+    >
       <div className="dashboard-section-heading dashboard-section-heading--compact">
         <div>
           <p className="eyebrow">Szybkie działania</p>
@@ -413,7 +556,7 @@ function QuickActions({
 }
 
 function MonthlySummary({
-  lessonCount,
+  lessonCount: count,
   teachingMinutes,
   activeStudents,
   unavailable,
@@ -442,7 +585,7 @@ function MonthlySummary({
         <dl>
           <div>
             <dt>Lekcje</dt>
-            <dd>{lessonCount}</dd>
+            <dd>{count}</dd>
           </div>
           <div>
             <dt>Czas nauczania</dt>
@@ -455,54 +598,22 @@ function MonthlySummary({
         </dl>
       )}
       <p className="monthly-summary__note">
-        Czas obejmuje tylko uzupełnione lekcje.
+        Czas obejmuje tylko zakończone lekcje.
       </p>
     </section>
   );
 }
 
-function TodayEmptyState({
-  next,
-  timezone,
-  readOnly,
-  onAddLesson,
-}: {
-  next?: DashboardLesson;
-  timezone: string;
-  readOnly: boolean;
-  onAddLesson: () => void;
-}) {
-  return (
-    <div className="today-empty">
-      <span className="today-empty__line" aria-hidden="true" />
-      <div>
-        <h3>Brak lekcji na dziś</h3>
-        <p>
-          {next
-            ? `Następna: ${capitalize(formatShortDay(next.startsAt, timezone))} o ${formatTime(next.startsAt, timezone)} — ${next.participantLabel}.`
-            : "Najbliższe 14 dni są jeszcze wolne."}
-        </p>
-      </div>
-      <button
-        className="button button--secondary"
-        disabled={readOnly}
-        onClick={onAddLesson}
-      >
-        <Plus size={17} aria-hidden="true" />
-        Dodaj lekcję
-      </button>
-    </div>
-  );
-}
-
 function NewTutorState({
   readOnly,
-  showAction,
+  onboardingIncomplete,
   onAddStudent,
+  onAddLesson,
 }: {
   readOnly: boolean;
-  showAction: boolean;
+  onboardingIncomplete: boolean;
   onAddStudent: () => void;
+  onAddLesson: () => void;
 }) {
   return (
     <section className="new-tutor-state" aria-labelledby="welcome-heading">
@@ -510,19 +621,32 @@ function NewTutorState({
         <p className="eyebrow">Pierwszy krok</p>
         <h2 id="welcome-heading">Zacznij od pierwszego ucznia</h2>
         <p>
-          Dodaj kartę ucznia, a potem od razu zaplanuj pierwszą lekcję. Resztę
-          dnia ułożysz już w kalendarzu.
+          Dodaj kartę ucznia, a potem zaplanuj pierwszą lekcję. Dzisiaj stanie
+          się Twoim codziennym planem pracy.
         </p>
-        {showAction && (
+        <div className="new-tutor-state__actions">
           <button
             className="button button--primary"
             disabled={readOnly}
             onClick={onAddStudent}
           >
             <UserPlus size={18} aria-hidden="true" />
-            Dodaj pierwszego ucznia
+            Dodaj ucznia
           </button>
-        )}
+          <button
+            className="button button--secondary"
+            disabled={readOnly}
+            onClick={onAddLesson}
+          >
+            <Plus size={18} aria-hidden="true" />
+            Zaplanuj lekcję
+          </button>
+          {onboardingIncomplete && (
+            <Link className="text-link" href="/app/start">
+              Dokończ konfigurację <ArrowRight size={16} aria-hidden="true" />
+            </Link>
+          )}
+        </div>
       </div>
       <ol className="new-tutor-steps">
         <li>
@@ -558,50 +682,6 @@ function TodayDashboardLoading() {
       </div>
     </div>
   );
-}
-
-function lessonContext(
-  lessons: DashboardLesson[],
-  now: Date,
-  timezone: string,
-) {
-  const current = lessons.find(
-    (lesson) =>
-      lesson.status !== "completed" &&
-      now.getTime() >= Date.parse(lesson.startsAt) &&
-      now.getTime() < Date.parse(lesson.endsAt),
-  );
-  if (current) {
-    return {
-      kind: "current" as const,
-      label: `Lekcja trwa do ${formatTime(current.endsAt, timezone)}`,
-      lesson: current,
-    };
-  }
-  const next = lessons.find(
-    (lesson) =>
-      lesson.status === "scheduled" &&
-      Date.parse(lesson.startsAt) > now.getTime(),
-  );
-  if (next) {
-    const minutes = Math.max(
-      1,
-      Math.round((Date.parse(next.startsAt) - now.getTime()) / 60_000),
-    );
-    return {
-      kind: "next" as const,
-      label:
-        minutes < 60
-          ? `Następna lekcja za ${minutes} min`
-          : `Następna lekcja o ${formatTime(next.startsAt, timezone)}`,
-      lesson: next,
-    };
-  }
-  return {
-    kind: "done" as const,
-    label: "Na dziś to już wszystko",
-    lesson: undefined,
-  };
 }
 
 function lessonCount(count: number) {

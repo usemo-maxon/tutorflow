@@ -17,6 +17,7 @@ import type {
 
 export interface LessonComposerPreset {
   studentIds?: string[];
+  groupId?: string;
   date?: string;
   time?: string;
   durationMinutes?: number;

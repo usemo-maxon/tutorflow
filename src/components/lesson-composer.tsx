@@ -122,6 +122,7 @@ export function LessonComposer() {
       teacher.timezone,
       lessonComposer ?? {},
       data?.students ?? [],
+      data?.groups ?? [],
     ),
   });
   const occurrences = useFieldArray({
@@ -158,11 +159,15 @@ export function LessonComposer() {
     }
     if (initialized.current !== lessonComposer && data) {
       initialized.current = lessonComposer;
-      previousTarget.current = lessonComposer.studentIds?.[0]
-        ? `student:${lessonComposer.studentIds[0]}`
-        : "";
+      previousTarget.current = lessonComposer.groupId
+        ? `group:${lessonComposer.groupId}`
+        : lessonComposer.studentIds?.[0]
+          ? `student:${lessonComposer.studentIds[0]}`
+          : "";
       setSearch("");
-      setPickerExpanded(!lessonComposer.studentIds?.length);
+      setPickerExpanded(
+        !lessonComposer.studentIds?.length && !lessonComposer.groupId,
+      );
       setSaveError("");
       setConflict(null);
       reset(
@@ -170,6 +175,7 @@ export function LessonComposer() {
           data?.teacher.timezone ?? teacher.timezone,
           lessonComposer,
           data?.students ?? [],
+          data?.groups ?? [],
         ),
       );
     }
@@ -1050,14 +1056,25 @@ function getDefaults(
     defaultLocation: string;
     defaultPrice: { amount: number } | null;
   }[],
+  groups: {
+    id: string;
+    defaultDurationMinutes: number;
+    defaultPrice: { amount: number } | null;
+    subject: string;
+  }[],
 ): Values {
   const selected = students.find((student) =>
     preset.studentIds?.includes(student.id),
   );
+  const selectedGroup = groups.find((group) => group.id === preset.groupId);
   const nextHour = addHours(new Date(), 1);
   nextHour.setMinutes(0, 0, 0);
   return {
-    targetKey: selected ? `student:${selected.id}` : "",
+    targetKey: selectedGroup
+      ? `group:${selectedGroup.id}`
+      : selected
+        ? `student:${selected.id}`
+        : "",
     mode: "single",
     occurrences: [
       {
@@ -1065,7 +1082,10 @@ function getDefaults(
         date: preset.date ?? formatInTimeZone(nextHour, timezone, "yyyy-MM-dd"),
         time: preset.time ?? formatInTimeZone(nextHour, timezone, "HH:mm"),
         durationMinutes:
-          preset.durationMinutes ?? selected?.defaultDurationMinutes ?? 60,
+          preset.durationMinutes ??
+          selected?.defaultDurationMinutes ??
+          selectedGroup?.defaultDurationMinutes ??
+          60,
       },
     ],
     intervalWeeks: 1,
@@ -1083,9 +1103,12 @@ function getDefaults(
     atTeacherPlace:
       selected?.defaultFormat === "offline" &&
       selected?.defaultLocation === "W domu / w biurze",
-    priceZloty: (selected?.defaultPrice?.amount ?? 0) / 100,
-    trial: selected?.defaultPrice === null,
-    subject: "",
+    priceZloty:
+      (selected?.defaultPrice?.amount ??
+        selectedGroup?.defaultPrice?.amount ??
+        0) / 100,
+    trial: (selected?.defaultPrice ?? selectedGroup?.defaultPrice) === null,
+    subject: selectedGroup?.subject ?? "",
     color: DEFAULT_CALENDAR_COLOR,
     topic: "",
     plan: "",

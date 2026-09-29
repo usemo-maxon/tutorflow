@@ -1,12 +1,27 @@
 import "server-only";
 
 import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
-import type {
-  DashboardAttentionItem,
-  DashboardData,
-  DashboardLesson,
+import {
+  TODAY_ACTION_LIMIT,
+  TODAY_CONTINUITY_DAYS,
+  TODAY_LESSON_LIMIT,
+  TODAY_UNFINISHED_DAYS,
+  TODAY_UPCOMING_DAYS,
+  TODAY_UPCOMING_LIMIT,
+  type DashboardData,
+  type DashboardLesson,
+  type TodayAction,
 } from "@/lib/dashboard";
-import type { AppData, Lesson, Student, StudentGroup } from "@/lib/domain";
+import { hasEntitlement } from "@/lib/entitlements";
+import { hasMeaningfulOutcome } from "@/lib/lesson-completion";
+import type {
+  AppData,
+  IntegrationState,
+  Lesson,
+  Student,
+  StudentGroup,
+  StudentOutcomeDifficulty,
+} from "@/lib/domain";
 
 export interface DashboardRanges {
   dateKey: string;
@@ -15,7 +30,8 @@ export interface DashboardRanges {
   monthStart: string;
   monthEnd: string;
   upcomingEnd: string;
-  attentionStart: string;
+  unfinishedStart: string;
+  continuityStart: string;
 }
 
 export interface DashboardLessonSource {
@@ -30,22 +46,36 @@ export interface DashboardLessonSource {
   format: Lesson["format"];
   meetingUrl?: string;
   syncStatus: Lesson["syncStatus"];
+  billingType?: "per_lesson" | "per_student" | "package" | "trial";
+}
+
+export interface DashboardOutcomeSource {
+  lessonId: string;
+  studentId: string;
+  progressSummary?: string | null;
+  difficultyLevel?: StudentOutcomeDifficulty | null;
+  difficultyNote?: string | null;
+  nextStep?: string | null;
 }
 
 export interface DashboardSource {
-  teacher: DashboardData["teacher"];
+  now: string;
+  teacher: DashboardData["teacher"] & {
+    onboardingCompleted: boolean;
+    googleEntitled: boolean;
+    googleStatus: IntegrationState["status"];
+    googleSyncState?: IntegrationState["syncState"];
+  };
   ranges: DashboardRanges;
   students: Pick<Student, "id" | "name" | "subject" | "level" | "status">[];
   groups: Pick<StudentGroup, "id" | "name" | "subject" | "level">[];
   todaysLessons: DashboardLessonSource[];
   upcomingLessons: DashboardLessonSource[];
   unfinishedLessons: DashboardLessonSource[];
-  syncFailures: DashboardLessonSource[];
+  recentCompletedLessons: DashboardLessonSource[];
+  outcomes: DashboardOutcomeSource[];
   monthlyLessons: DashboardLessonSource[];
-  lowPackages: Array<{
-    studentId: string;
-    remainingLessons: number;
-  }>;
+  packageProblems: Array<{ lessonId: string; studentId: string }>;
   overdueCharges?: Array<{
     studentId: string;
     outstanding: number;
@@ -62,16 +92,25 @@ export function dashboardRanges(now: Date, timezone: string): DashboardRanges {
   const monthStart = localMidnight(monthKey, timezone);
   const nextMonth = new Date(`${monthKey}T00:00:00.000Z`);
   nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-  const nextMonthKey = nextMonth.toISOString().slice(0, 10);
 
   return {
     dateKey,
     todayStart,
     todayEnd,
     monthStart,
-    monthEnd: localMidnight(nextMonthKey, timezone),
-    upcomingEnd: localMidnight(addToDateKey(dateKey, 14), timezone),
-    attentionStart: localMidnight(addToDateKey(dateKey, -30), timezone),
+    monthEnd: localMidnight(nextMonth.toISOString().slice(0, 10), timezone),
+    upcomingEnd: localMidnight(
+      addToDateKey(dateKey, TODAY_UPCOMING_DAYS),
+      timezone,
+    ),
+    unfinishedStart: localMidnight(
+      addToDateKey(dateKey, -TODAY_UNFINISHED_DAYS),
+      timezone,
+    ),
+    continuityStart: localMidnight(
+      addToDateKey(dateKey, -TODAY_CONTINUITY_DAYS),
+      timezone,
+    ),
   };
 }
 
@@ -90,121 +129,49 @@ export function buildDashboardData(source: DashboardSource): DashboardData {
     const first = participants[0];
     const participantLabel =
       group?.name ??
-      participants.map((student) => student.name).join(", ") ??
-      "Lekcja";
-    const starts = Date.parse(lesson.startsAt);
-    const ends = Date.parse(lesson.endsAt);
-
+      (participants.map((item) => item.name).join(", ") || "Lekcja");
     return {
       id: lesson.id,
       startsAt: lesson.startsAt,
       endsAt: lesson.endsAt,
-      durationMinutes: Math.max(0, Math.round((ends - starts) / 60_000)),
+      durationMinutes: Math.max(
+        0,
+        Math.round(
+          (Date.parse(lesson.endsAt) - Date.parse(lesson.startsAt)) / 60_000,
+        ),
+      ),
       status: lesson.status,
-      participantLabel: participantLabel || "Lekcja",
+      participantLabel,
       participantCount: lesson.participantIds.length,
       primaryStudentId:
         !group && lesson.participantIds.length === 1 ? first?.id : undefined,
       groupId: lesson.groupId,
       subject: lesson.subject || group?.subject || first?.subject || "",
       level: group?.level || first?.level || "",
-      topic: lesson.topic,
+      topic: lesson.topic.trim() || "Lekcja",
       format: lesson.format,
       meetingUrl: lesson.meetingUrl,
     };
   };
 
-  const unfinished = [...source.unfinishedLessons].sort((a, b) =>
-    a.startsAt.localeCompare(b.startsAt),
+  const todaysLessons = source.todaysLessons
+    .filter((lesson) => lesson.status !== "cancelled")
+    .sort(byStartsAt)
+    .slice(0, TODAY_LESSON_LIMIT)
+    .map(toLesson);
+  const now = Date.parse(source.now);
+  const current = todaysLessons.find(
+    (lesson) =>
+      !["completed", "cancelled", "no_show"].includes(lesson.status) &&
+      Date.parse(lesson.startsAt) <= now &&
+      now < Date.parse(lesson.endsAt),
   );
-  const attentionItems: DashboardAttentionItem[] = [];
-
-  if (source.syncFailures.length) {
-    attentionItems.push({
-      id: "sync-failure",
-      type: "sync_failure",
-      priority: 0,
-      title: syncFailureLabel(source.syncFailures.length),
-      detail: "Sprawdź połączenie z Google Calendar i ponów synchronizację.",
-      href: "/app/ustawienia/integracje",
-      actionLabel: "Sprawdź integrację",
-      count: source.syncFailures.length,
-    });
-  }
-
-  if (unfinished.length) {
-    attentionItems.push({
-      id: "unfinished-lessons",
-      type: "unfinished_lessons",
-      priority: 1,
-      title: unfinishedLessonLabel(unfinished.length),
-      detail: "Uzupełnij temat, obecność i wynik po zajęciach.",
-      href: `/app/lekcje/${unfinished[0].id}`,
-      actionLabel:
-        unfinished.length === 1 ? "Otwórz lekcję" : "Otwórz najstarszą",
-      count: unfinished.length,
-    });
-  }
-
-  const overdue = source.overdueCharges ?? [];
-  if (overdue.length) {
-    const currency = overdue[0].currency;
-    const sameCurrency = overdue.filter((item) => item.currency === currency);
-    const total = sameCurrency.reduce((sum, item) => sum + item.outstanding, 0);
-    attentionItems.push({
-      id: "overdue-payments",
-      type: "overdue_payment",
-      priority: 2,
-      title:
-        overdue.length === 1
-          ? `${students.get(overdue[0].studentId)?.name ?? "Uczeń"} — płatność po terminie`
-          : `${overdue.length} płatności po terminie`,
-      detail: `${new Intl.NumberFormat("pl-PL", { style: "currency", currency }).format(total / 100)} wymaga rozliczenia.`,
-      href: "/app/platnosci?filter=overdue",
-      actionLabel: "Zobacz należności",
-      count: overdue.length,
-    });
-  }
-
-  const lowByStudent = new Map<string, number>();
-  for (const item of source.lowPackages) {
-    const current = lowByStudent.get(item.studentId);
-    if (current === undefined || item.remainingLessons < current) {
-      lowByStudent.set(item.studentId, item.remainingLessons);
-    }
-  }
-  [...lowByStudent.entries()]
-    .map(([studentId, remainingLessons]) => ({
-      student: students.get(studentId),
-      remainingLessons,
-    }))
-    .filter(
-      (
-        item,
-      ): item is {
-        student: NonNullable<typeof item.student>;
-        remainingLessons: number;
-      } => Boolean(item.student),
-    )
-    .sort(
-      (a, b) =>
-        a.remainingLessons - b.remainingLessons ||
-        a.student.name.localeCompare(b.student.name, "pl"),
-    )
-    .slice(0, 3)
-    .forEach(({ student, remainingLessons }) => {
-      attentionItems.push({
-        id: `low-package-${student.id}`,
-        type: "low_package",
-        priority: 3,
-        title: `${student.name}: ${packageBalanceLabel(remainingLessons)}`,
-        detail: "Warto ustalić kolejny pakiet przed następną lekcją.",
-        href: `/app/uczniowie/${student.id}`,
-        actionLabel: "Zobacz ucznia",
-        count: 1,
-      });
-    });
-
+  const next = todaysLessons.find(
+    (lesson) =>
+      lesson.status === "scheduled" && Date.parse(lesson.startsAt) > now,
+  );
+  const allActions = buildActions(source, students, groups);
+  const visibleActions = allActions.slice(0, TODAY_ACTION_LIMIT);
   const monthLessons = source.monthlyLessons.filter(
     (lesson) => lesson.status !== "cancelled",
   );
@@ -213,23 +180,24 @@ export function buildDashboardData(source: DashboardSource): DashboardData {
   );
 
   return {
-    teacher: source.teacher,
+    teacher: {
+      name: source.teacher.name,
+      timezone: source.teacher.timezone,
+      readOnly: source.teacher.readOnly,
+    },
     today: {
       dateKey: source.ranges.dateKey,
       startsAt: source.ranges.todayStart,
       endsAt: source.ranges.todayEnd,
     },
-    todaysLessons: source.todaysLessons
-      .filter((lesson) => lesson.status !== "cancelled")
-      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
-      .map(toLesson),
-    attentionItems: attentionItems.sort(
-      (a, b) => a.priority - b.priority || a.title.localeCompare(b.title, "pl"),
-    ),
+    nextLesson: current ?? next,
+    todaysLessons,
+    actions: visibleActions,
+    hiddenActionCount: Math.max(0, allActions.length - visibleActions.length),
     upcomingLessons: source.upcomingLessons
       .filter((lesson) => lesson.status !== "cancelled")
-      .sort((a, b) => a.startsAt.localeCompare(b.startsAt))
-      .slice(0, 7)
+      .sort(byStartsAt)
+      .slice(0, TODAY_UPCOMING_LIMIT)
       .map(toLesson),
     monthlySummary: {
       lessonCount: monthLessons.length,
@@ -253,6 +221,158 @@ export function buildDashboardData(source: DashboardSource): DashboardData {
     studentCount: source.students.length,
     partialErrors: source.partialErrors ?? [],
   };
+}
+
+function buildActions(
+  source: DashboardSource,
+  students: Map<string, DashboardSource["students"][number]>,
+  groups: Map<string, DashboardSource["groups"][number]>,
+): TodayAction[] {
+  const actions: TodayAction[] = [];
+  const lessons = new Map(
+    [
+      ...source.todaysLessons,
+      ...source.upcomingLessons,
+      ...source.unfinishedLessons,
+      ...source.recentCompletedLessons,
+    ].map((lesson) => [lesson.id, lesson]),
+  );
+
+  for (const problem of source.packageProblems) {
+    const lesson = lessons.get(problem.lessonId);
+    const student = students.get(problem.studentId);
+    if (!lesson || !student) continue;
+    actions.push({
+      id: `package:${lesson.id}:${student.id}`,
+      type: "package_problem",
+      priority: 0,
+      severity: "blocking",
+      title: `Brak aktywnego pakietu przed lekcją z ${student.name}.`,
+      detail: "Pakiet jest wymagany do rozliczenia tej lekcji.",
+      href: `/app/platnosci?studentId=${encodeURIComponent(student.id)}`,
+      actionLabel: "Zobacz rozliczenia",
+      lessonId: lesson.id,
+      studentId: student.id,
+    });
+  }
+
+  for (const lesson of [...source.unfinishedLessons].sort(byStartsAt)) {
+    const label = lessonLabel(lesson, students, groups);
+    actions.push({
+      id: `unfinished:${lesson.id}`,
+      type: "unfinished_lesson",
+      priority: 1,
+      severity: "attention",
+      title: `Lekcja z ${label} nie została zakończona.`,
+      detail: "Uzupełnij przebieg i wynik zajęć.",
+      href: `/app/lekcje/${lesson.id}`,
+      actionLabel: "Zakończ lekcję",
+      lessonId: lesson.id,
+    });
+  }
+
+  if (
+    source.teacher.googleEntitled &&
+    (source.teacher.googleStatus === "reconnect_required" ||
+      source.teacher.googleSyncState === "reconnect_required" ||
+      source.teacher.googleSyncState === "error")
+  ) {
+    actions.push({
+      id: "google:reconnect",
+      type: "google_reconnect",
+      priority: 2,
+      severity: "attention",
+      title: "Google Calendar wymaga ponownego połączenia.",
+      detail: "Połącz kalendarz ponownie, aby przywrócić synchronizację.",
+      href: "/app/ustawienia/integracje",
+      actionLabel: "Połącz ponownie",
+    });
+  }
+
+  const overdue = new Map<
+    string,
+    { studentId: string; currency: string; amount: number }
+  >();
+  for (const charge of source.overdueCharges ?? []) {
+    const key = `${charge.studentId}:${charge.currency}`;
+    const current = overdue.get(key);
+    overdue.set(key, {
+      studentId: charge.studentId,
+      currency: charge.currency,
+      amount: (current?.amount ?? 0) + charge.outstanding,
+    });
+  }
+  for (const item of overdue.values()) {
+    const student = students.get(item.studentId);
+    if (!student) continue;
+    const formatted = new Intl.NumberFormat("pl-PL", {
+      style: "currency",
+      currency: item.currency,
+    }).format(item.amount / 100);
+    actions.push({
+      id: `overdue:${item.studentId}:${item.currency}`,
+      type: "overdue_finance",
+      priority: 3,
+      severity: "attention",
+      title: `${student.name} · ${formatted} po terminie`,
+      detail: "Kwota wynika wyłącznie z należności po terminie.",
+      href: `/app/platnosci?studentId=${encodeURIComponent(student.id)}`,
+      actionLabel: "Zobacz rozliczenia",
+      studentId: student.id,
+      currency: item.currency,
+      amount: item.amount,
+    });
+  }
+
+  const outcomes = new Map(
+    source.outcomes.map((outcome) => [
+      `${outcome.lessonId}:${outcome.studentId}`,
+      outcome,
+    ]),
+  );
+  for (const lesson of [...source.recentCompletedLessons].sort(byStartsAt)) {
+    const missingCount = lesson.participantIds.filter(
+      (studentId) =>
+        !hasMeaningfulOutcome(outcomes.get(`${lesson.id}:${studentId}`)),
+    ).length;
+    if (!missingCount) continue;
+    const label = lessonLabel(lesson, students, groups);
+    const grouped = lesson.participantIds.length > 1;
+    actions.push({
+      id: `continuity:${lesson.id}`,
+      type: "missing_continuity",
+      priority: 4,
+      severity: "neutral",
+      title: grouped
+        ? `Uzupełnij podsumowanie: ${label}`
+        : `Brakuje podsumowania po lekcji z ${label}.`,
+      detail: grouped
+        ? `${missingCount} z ${lesson.participantIds.length} uczniów bez kontekstu.`
+        : "Krótka notatka ułatwi przygotowanie kolejnej lekcji.",
+      href: `/app/lekcje/${lesson.id}`,
+      actionLabel: "Dodaj podsumowanie",
+      lessonId: lesson.id,
+      missingCount,
+      participantCount: lesson.participantIds.length,
+    });
+  }
+
+  if (!source.teacher.onboardingCompleted) {
+    actions.push({
+      id: "onboarding:complete",
+      type: "onboarding",
+      priority: 5,
+      severity: "neutral",
+      title: "Dokończ konfigurację easy4tutor.",
+      detail: "Uzupełnij pierwsze kroki, kiedy będziesz mieć chwilę.",
+      href: "/app/start",
+      actionLabel: "Dokończ konfigurację",
+    });
+  }
+
+  return actions.sort(
+    (a, b) => a.priority - b.priority || a.id.localeCompare(b.id),
+  );
 }
 
 export function dashboardSourceFromAppData(
@@ -279,12 +399,19 @@ export function dashboardSourceFromAppData(
   const lessons = data.lessons.map(lessonSource);
   const between = (lesson: DashboardLessonSource, start: string, end: string) =>
     lesson.startsAt >= start && lesson.startsAt < end;
-
   return {
+    now: now.toISOString(),
     teacher: {
       name: data.teacher.name,
       timezone: data.teacher.timezone,
       readOnly: data.teacher.subscription.readOnly,
+      onboardingCompleted: Boolean(data.teacher.onboardingCompletedAt),
+      googleEntitled: hasEntitlement(
+        data.teacher.subscription,
+        "googleCalendar",
+      ),
+      googleStatus: data.integrations.google.status,
+      googleSyncState: data.integrations.google.syncState,
     },
     ranges,
     students: data.students.map(({ id, name, subject, level, status }) => ({
@@ -312,27 +439,37 @@ export function dashboardSourceFromAppData(
       (lesson) =>
         lesson.status === "needs_completion" &&
         lesson.endsAt < now.toISOString() &&
-        lesson.startsAt >= ranges.attentionStart,
+        lesson.startsAt >= ranges.unfinishedStart,
     ),
-    syncFailures: lessons.filter((lesson) =>
-      ["failed", "deleted_in_google"].includes(lesson.syncStatus),
+    recentCompletedLessons: lessons.filter(
+      (lesson) =>
+        lesson.status === "completed" &&
+        lesson.startsAt >= ranges.continuityStart &&
+        lesson.startsAt < now.toISOString(),
     ),
+    outcomes: [],
     monthlyLessons: lessons.filter((lesson) =>
       between(lesson, ranges.monthStart, ranges.monthEnd),
     ),
-    lowPackages: data.students
-      .filter(
-        (student) =>
-          student.status === "active" &&
-          student.packageRemainingLessons !== null &&
-          student.packageRemainingLessons <= 2,
-      )
-      .map((student) => ({
-        studentId: student.id,
-        remainingLessons: student.packageRemainingLessons!,
-      })),
+    packageProblems: [],
     overdueCharges: [],
   };
+}
+
+function lessonLabel(
+  lesson: DashboardLessonSource,
+  students: Map<string, DashboardSource["students"][number]>,
+  groups: Map<string, DashboardSource["groups"][number]>,
+) {
+  if (lesson.groupId) return groups.get(lesson.groupId)?.name ?? "grupą";
+  return students.get(lesson.participantIds[0])?.name ?? "uczniem";
+}
+
+function byStartsAt(left: DashboardLessonSource, right: DashboardLessonSource) {
+  return (
+    left.startsAt.localeCompare(right.startsAt) ||
+    left.id.localeCompare(right.id)
+  );
 }
 
 function localMidnight(dateKey: string, timezone: string) {
@@ -343,32 +480,4 @@ function addToDateKey(dateKey: string, amount: number) {
   const date = new Date(`${dateKey}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + amount);
   return date.toISOString().slice(0, 10);
-}
-
-function unfinishedLessonLabel(count: number) {
-  if (count === 1) return "1 lekcja wymaga uzupełnienia";
-  const last = count % 10;
-  const lastTwo = count % 100;
-  const noun =
-    last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)
-      ? "lekcje wymagają"
-      : "lekcji wymaga";
-  return `${count} ${noun} uzupełnienia`;
-}
-
-function packageBalanceLabel(count: number) {
-  if (count === 0) return "nie ma już lekcji w pakiecie";
-  if (count === 1) return "została 1 lekcja w pakiecie";
-  return `zostały ${count} lekcje w pakiecie`;
-}
-
-function syncFailureLabel(count: number) {
-  if (count === 1) return "1 lekcja ma problem z synchronizacją";
-  const last = count % 10;
-  const lastTwo = count % 100;
-  return `${count} ${
-    last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14)
-      ? "lekcje mają"
-      : "lekcji ma"
-  } problem z synchronizacją`;
 }

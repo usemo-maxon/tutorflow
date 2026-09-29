@@ -1,0 +1,961 @@
+{
+  "version": 1,
+  "teachers": [
+    {
+      "id": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "name": "Aleksandra Wysocka",
+      "email": "demo@tutorflow.local",
+      "passwordHash": "1071ef83cf3440de8239d139f7bb0347:8ded06ec0c1278d4e7e1dc4f43930d68a8e7afaf9b42bf7a68d65d95fa7c86b7a7096cedc80f75c603b8bb05e9e35fea941d2e97eb6208cbb270298d794fa252",
+      "timezone": "Europe/Warsaw",
+      "onboardingCompletedAt": "2026-09-29T18:59:35.427Z",
+      "demo": true,
+      "subscription": {
+        "status": "trial",
+        "tier": "free",
+        "readOnly": false,
+        "trialEndsAt": "2026-10-10T18:59:35.427Z"
+      },
+      "google": {
+        "status": "error",
+        "label": "Kalendarz prywatny",
+        "lastError": "Nie udało się zsynchronizować ostatniego wydarzenia."
+      },
+      "telegram": {
+        "status": "not_configured"
+      },
+      "payu": {
+        "status": "not_configured"
+      }
+    }
+  ],
+  "students": [
+    {
+      "id": "13b2c275-b9f2-45de-ab70-f58ce89bff7e",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "firstName": "Anna",
+      "lastName": "Nowak",
+      "displayName": "Anna Nowak",
+      "name": "Anna Nowak",
+      "email": "anna@example.test",
+      "phone": "",
+      "contact": "anna@example.test",
+      "subject": "Angielski",
+      "level": "B1",
+      "goal": "Swobodna komunikacja w pracy",
+      "notes": "",
+      "status": "active",
+      "defaultDurationMinutes": 60,
+      "defaultFormat": "online",
+      "defaultLocation": "https://meet.google.com/example",
+      "defaultPrice": {
+        "amount": 13000,
+        "currency": "PLN"
+      },
+      "timezone": "Europe/Warsaw",
+      "groupIds": [
+        "0d68aaec-cf31-4744-9eca-49ba08b3013b"
+      ],
+      "packageRemainingLessons": 7,
+      "balanceDue": {
+        "amount": 8000,
+        "currency": "PLN"
+      },
+      "createdAt": "2026-06-01T18:59:35.427Z"
+    },
+    {
+      "id": "4ae4d75a-74fe-494e-9bbb-a0c67f27d717",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "firstName": "Marta",
+      "lastName": "Kowalska",
+      "displayName": "Marta Kowalska",
+      "name": "Marta Kowalska",
+      "email": "marta@example.test",
+      "phone": "",
+      "contact": "marta@example.test",
+      "subject": "Angielski",
+      "level": "B2",
+      "goal": "Egzamin Cambridge FCE",
+      "notes": "",
+      "status": "active",
+      "defaultDurationMinutes": 60,
+      "defaultFormat": "online",
+      "defaultLocation": "https://meet.google.com/example",
+      "defaultPrice": {
+        "amount": 15000,
+        "currency": "PLN"
+      },
+      "timezone": "Europe/Warsaw",
+      "groupIds": [],
+      "packageRemainingLessons": null,
+      "balanceDue": {
+        "amount": 0,
+        "currency": "PLN"
+      },
+      "createdAt": "2026-06-01T18:59:35.427Z"
+    },
+    {
+      "id": "af5df838-297e-413e-9a70-7140cc69d292",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "firstName": "Jan",
+      "lastName": "Zieliński",
+      "displayName": "Jan Zieliński",
+      "name": "Jan Zieliński",
+      "email": "",
+      "phone": "+48 600 000 000",
+      "contact": "+48 600 000 000",
+      "subject": "Angielski",
+      "level": "A2",
+      "goal": "Rozmowy podczas podróży",
+      "notes": "",
+      "status": "active",
+      "defaultDurationMinutes": 60,
+      "defaultFormat": "offline",
+      "defaultLocation": "ul. Długa 12, Warszawa",
+      "defaultPrice": {
+        "amount": 12000,
+        "currency": "PLN"
+      },
+      "timezone": "Europe/Warsaw",
+      "groupIds": [],
+      "packageRemainingLessons": null,
+      "balanceDue": {
+        "amount": 0,
+        "currency": "PLN"
+      },
+      "createdAt": "2026-06-01T18:59:35.427Z"
+    },
+    {
+      "id": "fe85e4f4-a463-45fa-a306-36e8baa97d8a",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "firstName": "Lena",
+      "lastName": "Wiśniewska-Król",
+      "displayName": "Lena Wiśniewska-Król",
+      "name": "Lena Wiśniewska-Król",
+      "email": "lena@example.test",
+      "phone": "",
+      "contact": "lena@example.test",
+      "subject": "Angielski",
+      "level": "B1+",
+      "goal": "Pewność w prezentacjach biznesowych",
+      "notes": "",
+      "status": "active",
+      "defaultDurationMinutes": 60,
+      "defaultFormat": "online",
+      "defaultLocation": "https://meet.google.com/example",
+      "defaultPrice": {
+        "amount": 16000,
+        "currency": "PLN"
+      },
+      "timezone": "Europe/Warsaw",
+      "groupIds": [],
+      "packageRemainingLessons": null,
+      "balanceDue": {
+        "amount": 0,
+        "currency": "PLN"
+      },
+      "createdAt": "2026-06-01T18:59:35.427Z"
+    },
+    {
+      "id": "4d7ecc16-0a20-47e9-b3e8-432f7765902e",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "firstName": "Piotr",
+      "lastName": "Maj",
+      "displayName": "Piotr Maj",
+      "name": "Piotr Maj",
+      "email": "piotr@example.test",
+      "phone": "",
+      "contact": "piotr@example.test",
+      "subject": "Angielski",
+      "level": "B1",
+      "goal": "Konwersacje bez blokady",
+      "notes": "",
+      "status": "active",
+      "defaultDurationMinutes": 60,
+      "defaultFormat": "online",
+      "defaultLocation": "https://meet.google.com/example",
+      "defaultPrice": {
+        "amount": 13000,
+        "currency": "PLN"
+      },
+      "timezone": "Europe/Warsaw",
+      "groupIds": [
+        "0d68aaec-cf31-4744-9eca-49ba08b3013b"
+      ],
+      "packageRemainingLessons": null,
+      "balanceDue": {
+        "amount": 0,
+        "currency": "PLN"
+      },
+      "createdAt": "2026-06-01T18:59:35.427Z"
+    },
+    {
+      "id": "5e2765e1-0776-4104-8b25-1787418762f6",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "firstName": "Katarzyna",
+      "lastName": "Domańska",
+      "displayName": "Katarzyna Domańska",
+      "name": "Katarzyna Domańska",
+      "email": "katarzyna@example.test",
+      "phone": "",
+      "contact": "katarzyna@example.test",
+      "subject": "Angielski",
+      "level": "C1",
+      "goal": "Akademicki język angielski",
+      "notes": "Współpraca zakończona zgodnie z planem.",
+      "status": "archived",
+      "defaultDurationMinutes": 60,
+      "defaultFormat": "online",
+      "defaultLocation": "https://meet.google.com/example",
+      "defaultPrice": {
+        "amount": 17000,
+        "currency": "PLN"
+      },
+      "timezone": "Europe/Warsaw",
+      "groupIds": [],
+      "packageRemainingLessons": null,
+      "balanceDue": {
+        "amount": 0,
+        "currency": "PLN"
+      },
+      "createdAt": "2026-06-01T18:59:35.427Z"
+    }
+  ],
+  "contacts": [
+    {
+      "id": "4070b412-501d-4d3a-9302-bec0014d6e13",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "studentId": "4ae4d75a-74fe-494e-9bbb-a0c67f27d717",
+      "contactId": "6eea3635-c39b-45e9-9ffa-9faddab267d2",
+      "firstName": "Joanna",
+      "lastName": "Kowalska",
+      "displayName": "Joanna Kowalska",
+      "email": "joanna.kowalska@example.test",
+      "phone": "+48 600 100 200",
+      "type": "parent",
+      "relationship": "Mama",
+      "isPrimary": true,
+      "isBillingContact": true,
+      "createdAt": "2026-06-11T18:59:35.427Z"
+    }
+  ],
+  "groups": [
+    {
+      "id": "0d68aaec-cf31-4744-9eca-49ba08b3013b",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "name": "Konwersacje B1",
+      "subject": "Angielski",
+      "level": "B1",
+      "status": "active",
+      "defaultDurationMinutes": 60,
+      "defaultPrice": {
+        "amount": 8000,
+        "currency": "PLN"
+      },
+      "notes": "",
+      "members": [
+        {
+          "id": "a29b2128-9e1a-48e5-8387-806d44c1d642",
+          "studentId": "13b2c275-b9f2-45de-ab70-f58ce89bff7e",
+          "status": "active",
+          "joinedAt": "2026-07-01T18:59:35.427Z"
+        },
+        {
+          "id": "98b48747-b828-41ff-8849-2413091d07a6",
+          "studentId": "4d7ecc16-0a20-47e9-b3e8-432f7765902e",
+          "status": "active",
+          "joinedAt": "2026-07-01T18:59:35.427Z"
+        }
+      ],
+      "createdAt": "2026-07-01T18:59:35.427Z"
+    }
+  ],
+  "lessons": [
+    {
+      "id": "17b36e69-4898-4e82-8c35-c24095453ef4",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "4ae4d75a-74fe-494e-9bbb-a0c67f27d717"
+      ],
+      "startsAt": "2026-09-22T18:59:00.000Z",
+      "durationMinutes": 60,
+      "format": "online",
+      "location": "https://meet.google.com/example",
+      "price": {
+        "amount": 15000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "completed",
+      "syncStatus": "synced",
+      "topic": "Past Simple — opowiadanie o doświadczeniach",
+      "planItems": [
+        {
+          "id": "f3d1c1b0-3bba-41d6-b672-f42b6bb83db1",
+          "position": 0,
+          "text": "Powtórka czasowników nieregularnych"
+        },
+        {
+          "id": "ece75141-6a48-4add-a4f5-35d63140961c",
+          "position": 1,
+          "text": "Historia z ostatniego wyjazdu"
+        },
+        {
+          "id": "f289f944-994a-4638-96bd-e71257819845",
+          "position": 2,
+          "text": "Korekta wymowy końcówek -ed"
+        }
+      ],
+      "homework": "Powtórzyć przykłady i przygotować trzy własne zdania.",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "4ae4d75a-74fe-494e-9bbb-a0c67f27d717",
+          "attendanceStatus": "present",
+          "paymentStatus": "paid",
+          "results": [
+            {
+              "planItemId": "f3d1c1b0-3bba-41d6-b672-f42b6bb83db1",
+              "completed": true,
+              "score": 8,
+              "note": "Dobrze rozpoznaje konstrukcję, warto utrwalić ją w mówieniu."
+            },
+            {
+              "planItemId": "ece75141-6a48-4add-a4f5-35d63140961c",
+              "completed": true,
+              "score": 8,
+              "note": "Dobrze rozpoznaje konstrukcję, warto utrwalić ją w mówieniu."
+            },
+            {
+              "planItemId": "f289f944-994a-4638-96bd-e71257819845",
+              "completed": true,
+              "score": 8,
+              "note": "Dobrze rozpoznaje konstrukcję, warto utrwalić ją w mówieniu."
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    },
+    {
+      "id": "e44ec9ca-0686-4a57-b577-113e95fb7ba6",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "13b2c275-b9f2-45de-ab70-f58ce89bff7e"
+      ],
+      "startsAt": "2026-09-27T18:59:00.000Z",
+      "durationMinutes": 60,
+      "format": "online",
+      "location": "https://meet.google.com/example",
+      "price": {
+        "amount": 13000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "completed",
+      "syncStatus": "synced",
+      "topic": "Small talk w pracy",
+      "planItems": [
+        {
+          "id": "ab299027-1d3e-4cec-af5a-709f1c4d987a",
+          "position": 0,
+          "text": "Pytania otwierające rozmowę"
+        },
+        {
+          "id": "ef65f13d-0725-4773-8a47-97e406489d64",
+          "position": 1,
+          "text": "Reakcje podtrzymujące dialog"
+        }
+      ],
+      "homework": "Powtórzyć przykłady i przygotować trzy własne zdania.",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "13b2c275-b9f2-45de-ab70-f58ce89bff7e",
+          "attendanceStatus": "present",
+          "paymentStatus": "paid",
+          "results": [
+            {
+              "planItemId": "ab299027-1d3e-4cec-af5a-709f1c4d987a",
+              "completed": true,
+              "score": 8,
+              "note": "Dobrze rozpoznaje konstrukcję, warto utrwalić ją w mówieniu."
+            },
+            {
+              "planItemId": "ef65f13d-0725-4773-8a47-97e406489d64",
+              "completed": true,
+              "score": 8,
+              "note": "Dobrze rozpoznaje konstrukcję, warto utrwalić ją w mówieniu."
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    },
+    {
+      "id": "4c49e0f5-c505-407c-a15e-8811d2d08f10",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "af5df838-297e-413e-9a70-7140cc69d292"
+      ],
+      "startsAt": "2026-09-29T15:29:00.000Z",
+      "durationMinutes": 60,
+      "format": "offline",
+      "location": "ul. Długa 12, Warszawa",
+      "price": {
+        "amount": 12000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "completed",
+      "syncStatus": "synced",
+      "topic": "Pytanie o drogę",
+      "planItems": [
+        {
+          "id": "4ba5d910-a30f-43c4-a160-02c8bf9f6471",
+          "position": 0,
+          "text": "Słownictwo miejskie"
+        },
+        {
+          "id": "d9ada2d4-2577-45a7-aef3-9eb082e57408",
+          "position": 1,
+          "text": "Dialog w punkcie informacji"
+        },
+        {
+          "id": "c2671207-3609-4bfd-bb3f-1fb8b74228c1",
+          "position": 2,
+          "text": "Wskazywanie kierunku"
+        }
+      ],
+      "homework": "Powtórzyć przykłady i przygotować trzy własne zdania.",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "af5df838-297e-413e-9a70-7140cc69d292",
+          "attendanceStatus": "present",
+          "paymentStatus": "paid",
+          "results": [
+            {
+              "planItemId": "4ba5d910-a30f-43c4-a160-02c8bf9f6471",
+              "completed": true,
+              "score": 8,
+              "note": "Dobrze rozpoznaje konstrukcję, warto utrwalić ją w mówieniu."
+            },
+            {
+              "planItemId": "d9ada2d4-2577-45a7-aef3-9eb082e57408",
+              "completed": true,
+              "score": 8,
+              "note": "Dobrze rozpoznaje konstrukcję, warto utrwalić ją w mówieniu."
+            },
+            {
+              "planItemId": "c2671207-3609-4bfd-bb3f-1fb8b74228c1",
+              "completed": true,
+              "score": 8,
+              "note": "Dobrze rozpoznaje konstrukcję, warto utrwalić ją w mówieniu."
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    },
+    {
+      "id": "f45fb6ab-9350-4027-bfe3-064def1189c3",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "13b2c275-b9f2-45de-ab70-f58ce89bff7e",
+        "4d7ecc16-0a20-47e9-b3e8-432f7765902e"
+      ],
+      "startsAt": "2026-09-29T17:24:00.000Z",
+      "durationMinutes": 60,
+      "format": "online",
+      "location": "https://meet.google.com/example",
+      "price": {
+        "amount": 13000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "scheduled",
+      "syncStatus": "synced",
+      "topic": "Rozmowa o planach na weekend",
+      "planItems": [
+        {
+          "id": "9f6d46eb-162a-4ed1-af0e-a771a618da19",
+          "position": 0,
+          "text": "Warm-up w parach"
+        },
+        {
+          "id": "a22c2e78-4899-44c0-88d3-5121886b7e99",
+          "position": 1,
+          "text": "Future forms w praktyce"
+        },
+        {
+          "id": "f52859d7-d289-4c5b-b638-fc0aa277df67",
+          "position": 2,
+          "text": "Informacja zwrotna"
+        }
+      ],
+      "homework": "",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "13b2c275-b9f2-45de-ab70-f58ce89bff7e",
+          "attendanceStatus": "unknown",
+          "paymentStatus": "unpaid",
+          "results": [
+            {
+              "planItemId": "9f6d46eb-162a-4ed1-af0e-a771a618da19",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "a22c2e78-4899-44c0-88d3-5121886b7e99",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "f52859d7-d289-4c5b-b638-fc0aa277df67",
+              "completed": false,
+              "note": ""
+            }
+          ]
+        },
+        {
+          "studentId": "4d7ecc16-0a20-47e9-b3e8-432f7765902e",
+          "attendanceStatus": "unknown",
+          "paymentStatus": "unpaid",
+          "results": [
+            {
+              "planItemId": "9f6d46eb-162a-4ed1-af0e-a771a618da19",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "a22c2e78-4899-44c0-88d3-5121886b7e99",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "f52859d7-d289-4c5b-b638-fc0aa277df67",
+              "completed": false,
+              "note": ""
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    },
+    {
+      "id": "7e9e74fe-2bdb-4863-9330-96307e559015",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "4ae4d75a-74fe-494e-9bbb-a0c67f27d717"
+      ],
+      "startsAt": "2026-09-29T19:54:00.000Z",
+      "durationMinutes": 60,
+      "format": "online",
+      "location": "https://meet.google.com/example",
+      "price": {
+        "amount": 15000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "scheduled",
+      "syncStatus": "synced",
+      "topic": "Present Perfect",
+      "planItems": [
+        {
+          "id": "63fa8ee9-46bf-42c2-a693-b50293d2750f",
+          "position": 0,
+          "text": "Różnica: finished vs unfinished time"
+        },
+        {
+          "id": "96d01fb2-b4f6-4d6f-b505-69f2be385b5d",
+          "position": 1,
+          "text": "For i since w kontekście"
+        },
+        {
+          "id": "3dd7b77f-d338-47c1-96d7-94ca41eef9b9",
+          "position": 2,
+          "text": "Krótka wypowiedź egzaminacyjna"
+        }
+      ],
+      "homework": "",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "4ae4d75a-74fe-494e-9bbb-a0c67f27d717",
+          "attendanceStatus": "unknown",
+          "paymentStatus": "unpaid",
+          "results": [
+            {
+              "planItemId": "63fa8ee9-46bf-42c2-a693-b50293d2750f",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "96d01fb2-b4f6-4d6f-b505-69f2be385b5d",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "3dd7b77f-d338-47c1-96d7-94ca41eef9b9",
+              "completed": false,
+              "note": ""
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    },
+    {
+      "id": "0041f354-b777-46bb-bfcd-2ee92f865fb2",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "fe85e4f4-a463-45fa-a306-36e8baa97d8a"
+      ],
+      "startsAt": "2026-09-29T22:29:00.000Z",
+      "durationMinutes": 60,
+      "format": "online",
+      "location": "https://meet.google.com/example",
+      "price": {
+        "amount": 16000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "scheduled",
+      "syncStatus": "synced",
+      "topic": "Prowadzenie prezentacji — otwarcie",
+      "planItems": [
+        {
+          "id": "ce2cbbca-2a91-41e4-820b-4251dda904ef",
+          "position": 0,
+          "text": "Mocne zdanie otwierające"
+        },
+        {
+          "id": "4cc51397-a190-4c7c-b9e1-10634067e519",
+          "position": 1,
+          "text": "Zapowiedź struktury"
+        },
+        {
+          "id": "65be6784-36bf-47bc-8233-fc8e3e59c803",
+          "position": 2,
+          "text": "Przejścia między slajdami"
+        }
+      ],
+      "homework": "",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "fe85e4f4-a463-45fa-a306-36e8baa97d8a",
+          "attendanceStatus": "unknown",
+          "paymentStatus": "paid",
+          "results": [
+            {
+              "planItemId": "ce2cbbca-2a91-41e4-820b-4251dda904ef",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "4cc51397-a190-4c7c-b9e1-10634067e519",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "65be6784-36bf-47bc-8233-fc8e3e59c803",
+              "completed": false,
+              "note": ""
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    },
+    {
+      "id": "ed7bee02-2e63-4847-ab4b-893aa9ed075e",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "af5df838-297e-413e-9a70-7140cc69d292"
+      ],
+      "startsAt": "2026-09-30T19:59:00.000Z",
+      "durationMinutes": 60,
+      "format": "offline",
+      "location": "ul. Długa 12, Warszawa",
+      "price": {
+        "amount": 12000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "scheduled",
+      "syncStatus": "failed",
+      "syncMessage": "Nie udało się zsynchronizować wydarzenia z Google Calendar.",
+      "topic": "W hotelu",
+      "planItems": [
+        {
+          "id": "efe1cffb-1ed8-4ef2-8ea4-b3964d2ec172",
+          "position": 0,
+          "text": "Check-in"
+        },
+        {
+          "id": "933c4507-c854-43eb-b961-1d4c17b2cf8e",
+          "position": 1,
+          "text": "Prośby i problemy w pokoju"
+        }
+      ],
+      "homework": "",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "af5df838-297e-413e-9a70-7140cc69d292",
+          "attendanceStatus": "unknown",
+          "paymentStatus": "unpaid",
+          "results": [
+            {
+              "planItemId": "efe1cffb-1ed8-4ef2-8ea4-b3964d2ec172",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "933c4507-c854-43eb-b961-1d4c17b2cf8e",
+              "completed": false,
+              "note": ""
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    },
+    {
+      "id": "8b9a5c7e-bdec-490e-b0f4-f33ff22b1d38",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "13b2c275-b9f2-45de-ab70-f58ce89bff7e",
+        "4d7ecc16-0a20-47e9-b3e8-432f7765902e"
+      ],
+      "startsAt": "2026-10-01T19:59:00.000Z",
+      "durationMinutes": 60,
+      "format": "online",
+      "location": "https://meet.google.com/example",
+      "price": {
+        "amount": 13000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "scheduled",
+      "syncStatus": "synced",
+      "topic": "Opinie i argumentowanie",
+      "planItems": [
+        {
+          "id": "30ac0c20-9223-4070-9610-d24fccbccf37",
+          "position": 0,
+          "text": "Wyrażanie opinii"
+        },
+        {
+          "id": "965e3cde-bf0f-470a-b785-4d20d3287481",
+          "position": 1,
+          "text": "Zgoda i sprzeciw"
+        },
+        {
+          "id": "baee02e6-a795-4472-9ccc-4cd1ddadd75d",
+          "position": 2,
+          "text": "Mini-debata"
+        }
+      ],
+      "homework": "",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "13b2c275-b9f2-45de-ab70-f58ce89bff7e",
+          "attendanceStatus": "unknown",
+          "paymentStatus": "unpaid",
+          "results": [
+            {
+              "planItemId": "30ac0c20-9223-4070-9610-d24fccbccf37",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "965e3cde-bf0f-470a-b785-4d20d3287481",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "baee02e6-a795-4472-9ccc-4cd1ddadd75d",
+              "completed": false,
+              "note": ""
+            }
+          ]
+        },
+        {
+          "studentId": "4d7ecc16-0a20-47e9-b3e8-432f7765902e",
+          "attendanceStatus": "unknown",
+          "paymentStatus": "unpaid",
+          "results": [
+            {
+              "planItemId": "30ac0c20-9223-4070-9610-d24fccbccf37",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "965e3cde-bf0f-470a-b785-4d20d3287481",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "baee02e6-a795-4472-9ccc-4cd1ddadd75d",
+              "completed": false,
+              "note": ""
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    },
+    {
+      "id": "f820756c-17c3-4c0e-8bce-5c2c0139da65",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "4ae4d75a-74fe-494e-9bbb-a0c67f27d717"
+      ],
+      "startsAt": "2026-10-02T18:59:00.000Z",
+      "durationMinutes": 60,
+      "format": "online",
+      "location": "https://meet.google.com/example",
+      "price": {
+        "amount": 15000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "scheduled",
+      "syncStatus": "deleted_in_google",
+      "syncMessage": "Wydarzenie usunięte w Google Calendar",
+      "topic": "Present Perfect vs Past Simple",
+      "planItems": [
+        {
+          "id": "ccc8b9ec-2c70-45e3-847e-2150bcb256e1",
+          "position": 0,
+          "text": "Linia czasu"
+        },
+        {
+          "id": "74f97212-0066-4003-b6d1-5688567ceb9f",
+          "position": 1,
+          "text": "Transformacje zdań"
+        },
+        {
+          "id": "10a2ed89-fd3f-46a3-98f4-cba51d48d200",
+          "position": 2,
+          "text": "Speaking practice"
+        }
+      ],
+      "homework": "",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "4ae4d75a-74fe-494e-9bbb-a0c67f27d717",
+          "attendanceStatus": "unknown",
+          "paymentStatus": "unpaid",
+          "results": [
+            {
+              "planItemId": "ccc8b9ec-2c70-45e3-847e-2150bcb256e1",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "74f97212-0066-4003-b6d1-5688567ceb9f",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "10a2ed89-fd3f-46a3-98f4-cba51d48d200",
+              "completed": false,
+              "note": ""
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    },
+    {
+      "id": "7249416a-18e8-4fa3-a2c3-80aa1eff171f",
+      "color": "#6F8FEF",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "participantIds": [
+        "fe85e4f4-a463-45fa-a306-36e8baa97d8a"
+      ],
+      "startsAt": "2026-09-28T16:59:00.000Z",
+      "durationMinutes": 60,
+      "format": "online",
+      "location": "https://meet.google.com/example",
+      "price": {
+        "amount": 16000,
+        "currency": "PLN"
+      },
+      "mode": "single",
+      "status": "cancelled",
+      "syncStatus": "synced",
+      "topic": "Spotkanie statusowe",
+      "planItems": [
+        {
+          "id": "eaf7f247-3d8f-4931-907c-c28c597a4a88",
+          "position": 0,
+          "text": "Raportowanie postępu"
+        },
+        {
+          "id": "0a98c66c-aea6-4f1c-813f-b9c83979f331",
+          "position": 1,
+          "text": "Sygnalizowanie ryzyka"
+        }
+      ],
+      "homework": "",
+      "generalNotes": "",
+      "participants": [
+        {
+          "studentId": "fe85e4f4-a463-45fa-a306-36e8baa97d8a",
+          "attendanceStatus": "unknown",
+          "paymentStatus": "cancelled",
+          "results": [
+            {
+              "planItemId": "eaf7f247-3d8f-4931-907c-c28c597a4a88",
+              "completed": false,
+              "note": ""
+            },
+            {
+              "planItemId": "0a98c66c-aea6-4f1c-813f-b9c83979f331",
+              "completed": false,
+              "note": ""
+            }
+          ]
+        }
+      ],
+      "createdAt": "2026-09-19T18:59:35.427Z"
+    }
+  ],
+  "lessonStudentOutcomes": [],
+  "studentStatImports": [],
+  "availability": [
+    {
+      "id": "fb8d855b-fedd-4bfd-85e3-2276637e487f",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "kind": "single",
+      "label": "Czas niedostępny",
+      "start": "2026-09-30T11:59:35.427Z",
+      "end": "2026-09-30T14:59:35.427Z"
+    }
+  ],
+  "availabilityExceptions": [],
+  "calendarBlocks": [],
+  "sessions": [
+    {
+      "token": "aaAlbuTisu7F5T44POR6Q9-D1FhJiU8iKJEWeT1VTXw",
+      "teacherId": "7e4197f7-40d9-442a-bbcb-288328476302",
+      "expiresAt": "2026-10-29T19:59:35.510Z"
+    }
+  ]
+}
