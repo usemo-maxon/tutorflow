@@ -75,9 +75,7 @@ export function LessonCompletionDialog({
     }));
   }
 
-  async function markAttendance(
-    status: "present" | "absent" | "late",
-  ) {
+  async function markAttendance(status: "present" | "absent" | "late") {
     if (!selected) return;
     setError("");
     try {
@@ -160,7 +158,8 @@ export function LessonCompletionDialog({
     const currentIndex = data.participants.findIndex(
       (participant) => participant.studentId === selectedStudentId,
     );
-    const delta = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    const delta =
+      event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
     if (!delta) return;
     event.preventDefault();
     const next =
@@ -190,19 +189,30 @@ export function LessonCompletionDialog({
                   : "Popraw notatki bez ponownego rozliczania lekcji."}
               </Dialog.Description>
             </div>
-            <Dialog.Close className="icon-button" aria-label="Zamknij" disabled={pending}>
+            <Dialog.Close
+              className="icon-button"
+              aria-label="Zamknij"
+              disabled={pending}
+            >
               <X size={19} />
             </Dialog.Close>
           </header>
 
           <div className="dialog-scroll completion-dialog__body">
             {data.participants.length > 1 && (
-              <section className="completion-participants" aria-labelledby="completion-students">
+              <section
+                className="completion-participants"
+                aria-labelledby="completion-students"
+              >
                 <div className="completion-section-title">
                   <span id="completion-students">Uczniowie</span>
                   <small>Wybierz osobę, aby uzupełnić jej wynik.</small>
                 </div>
-                <div className="completion-tabs" role="tablist" aria-label="Uczestnicy lekcji">
+                <div
+                  className="completion-tabs"
+                  role="tablist"
+                  aria-label="Uczestnicy lekcji"
+                >
                   {data.participants.map((participant) => {
                     const status = participantCompletionStatus(
                       participant.attendanceStatus,
@@ -214,14 +224,23 @@ export function LessonCompletionDialog({
                         key={participant.studentId}
                         type="button"
                         role="tab"
-                        aria-selected={selected?.studentId === participant.studentId}
+                        aria-selected={
+                          selected?.studentId === participant.studentId
+                        }
                         aria-controls="completion-student-panel"
-                        tabIndex={selected?.studentId === participant.studentId ? 0 : -1}
+                        tabIndex={
+                          selected?.studentId === participant.studentId ? 0 : -1
+                        }
                         onKeyDown={moveParticipant}
-                        onClick={() => setSelectedStudentId(participant.studentId)}
+                        onClick={() =>
+                          setSelectedStudentId(participant.studentId)
+                        }
                       >
                         {status === "attendance-missing" ? (
-                          <AlertTriangle size={15} aria-label="Brak obecności" />
+                          <AlertTriangle
+                            size={15}
+                            aria-label="Brak obecności"
+                          />
                         ) : status === "ready" ? (
                           <Check size={15} aria-label="Gotowe" />
                         ) : (
@@ -247,16 +266,29 @@ export function LessonCompletionDialog({
                 className="completion-student-panel"
               >
                 <div className="completion-student-heading">
-                  <span className="avatar"><UserRound size={17} /></span>
+                  <span className="avatar">
+                    <UserRound size={17} />
+                  </span>
                   <div>
                     <strong>{selected.name}</strong>
-                    <small>{[selected.subject, selected.level].filter(Boolean).join(" · ")}</small>
+                    <small>
+                      {[selected.subject, selected.level]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </small>
                   </div>
                 </div>
 
-                <fieldset className="completion-fieldset" disabled={mode === "edit" || pending}>
+                <fieldset
+                  className="completion-fieldset"
+                  disabled={mode === "edit" || pending}
+                >
                   <legend>Obecność</legend>
-                  <div className="attendance-choice" role="group" aria-label={`Obecność: ${selected.name}`}>
+                  <div
+                    className="attendance-choice"
+                    role="group"
+                    aria-label={`Obecność: ${selected.name}`}
+                  >
                     {(["present", "absent", "late"] as const).map((status) => (
                       <button
                         key={status}
@@ -281,19 +313,27 @@ export function LessonCompletionDialog({
                     rows={3}
                     maxLength={2_000}
                     value={selectedDraft.progressSummary}
-                    onChange={(event) => updateDraft({ progressSummary: event.target.value })}
+                    onChange={(event) =>
+                      updateDraft({ progressSummary: event.target.value })
+                    }
                     placeholder="Przećwiczyliśmy pytania w Past Simple i uczeń poprawnie używał did w większości przykładów."
                   />
                 </label>
 
                 <fieldset className="completion-fieldset">
                   <legend>Jak poszło?</legend>
-                  <div className="completion-difficulty" role="group" aria-label={`Poziom trudności: ${selected.name}`}>
+                  <div
+                    className="completion-difficulty"
+                    role="group"
+                    aria-label={`Poziom trudności: ${selected.name}`}
+                  >
                     {difficultyOptions.map((option) => (
                       <button
                         key={option.value}
                         type="button"
-                        aria-pressed={selectedDraft.difficultyLevel === option.value}
+                        aria-pressed={
+                          selectedDraft.difficultyLevel === option.value
+                        }
                         onClick={() =>
                           updateDraft({
                             difficultyLevel:
@@ -315,7 +355,9 @@ export function LessonCompletionDialog({
                     rows={2}
                     maxLength={2_000}
                     value={selectedDraft.difficultyNote}
-                    onChange={(event) => updateDraft({ difficultyNote: event.target.value })}
+                    onChange={(event) =>
+                      updateDraft({ difficultyNote: event.target.value })
+                    }
                     placeholder="Mylił did z was/were w pytaniach."
                   />
                 </label>
@@ -326,36 +368,59 @@ export function LessonCompletionDialog({
                     rows={3}
                     maxLength={2_000}
                     value={selectedDraft.nextStep}
-                    onChange={(event) => updateDraft({ nextStep: event.target.value })}
+                    onChange={(event) =>
+                      updateDraft({ nextStep: event.target.value })
+                    }
                     placeholder="Na początku następnej lekcji powtórzyć pytania i przejść do krótkich dialogów."
                   />
                 </label>
 
-                {!buildCompletionOutcomes({ [selected.studentId]: selectedDraft }).length && (
+                {!buildCompletionOutcomes({
+                  [selected.studentId]: selectedDraft,
+                }).length && (
                   <p className="completion-encouragement">
-                    Dodaj krótką notatkę, żeby łatwiej wrócić do kontekstu na następnej lekcji.
+                    Dodaj krótką notatkę, żeby łatwiej wrócić do kontekstu na
+                    następnej lekcji.
                   </p>
                 )}
               </div>
             )}
 
             {mode === "complete" && (
-              <details className="completion-homework" open={Boolean(data.homework)}>
+              <details
+                className="completion-homework"
+                open={Boolean(data.homework)}
+              >
                 <summary>Praca domowa</summary>
                 <p>Wspólna dla ucznia lub całej grupy.</p>
                 <div className="lesson-form-grid">
                   <label className="field">
                     <span>Tytuł</span>
-                    <input value={homeworkTitle} onChange={(event) => setHomeworkTitle(event.target.value)} placeholder="Np. Ćwiczenia 4–6" />
+                    <input
+                      value={homeworkTitle}
+                      onChange={(event) => setHomeworkTitle(event.target.value)}
+                      placeholder="Np. Ćwiczenia 4–6"
+                    />
                   </label>
                   <label className="field">
                     <span>Termin (opcjonalnie)</span>
-                    <input type="date" value={homeworkDue} onChange={(event) => setHomeworkDue(event.target.value)} />
+                    <input
+                      type="date"
+                      value={homeworkDue}
+                      onChange={(event) => setHomeworkDue(event.target.value)}
+                    />
                   </label>
                 </div>
                 <label className="field">
                   <span>Opis</span>
-                  <textarea rows={2} value={homeworkDescription} onChange={(event) => setHomeworkDescription(event.target.value)} placeholder="Instrukcja dla ucznia lub grupy" />
+                  <textarea
+                    rows={2}
+                    value={homeworkDescription}
+                    onChange={(event) =>
+                      setHomeworkDescription(event.target.value)
+                    }
+                    placeholder="Instrukcja dla ucznia lub grupy"
+                  />
                 </label>
               </details>
             )}
@@ -368,7 +433,9 @@ export function LessonCompletionDialog({
           </div>
 
           <footer className="dialog-footer completion-dialog__footer">
-            <Dialog.Close className="button button--quiet" disabled={pending}>Anuluj</Dialog.Close>
+            <Dialog.Close className="button button--quiet" disabled={pending}>
+              Anuluj
+            </Dialog.Close>
             <button
               className="button button--primary"
               type="button"
@@ -392,7 +459,11 @@ export function LessonCompletionDialog({
 }
 
 function attendanceLabel(status: "present" | "absent" | "late") {
-  return status === "present" ? "Obecny" : status === "absent" ? "Nieobecny" : "Spóźniony";
+  return status === "present"
+    ? "Obecny"
+    : status === "absent"
+      ? "Nieobecny"
+      : "Spóźniony";
 }
 
 function errorMessage(error: unknown) {

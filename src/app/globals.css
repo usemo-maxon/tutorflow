@@ -2215,7 +2215,11 @@ h3 {
 .dialog-content--alert .dialog-footer {
   margin: auto -28px -28px;
   flex-wrap: wrap;
-  padding-inline: 0;
+  padding-inline: 28px;
+}
+.dialog-content--alert > .dialog-header {
+  margin: -28px -28px 22px;
+  padding: 22px 28px 18px;
 }
 .dialog-header {
   display: flex;
@@ -4582,6 +4586,204 @@ h3 {
 .lesson-completion-panel .button--quiet {
   color: #d9e9e3;
 }
+.completed-outcomes {
+  display: grid;
+  gap: 20px;
+  margin-top: 22px;
+  padding: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+}
+.completed-outcomes > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.completed-outcomes h2,
+.completed-outcomes h3 {
+  margin: 2px 0 0;
+}
+.completed-outcomes__list {
+  display: grid;
+  gap: 14px;
+}
+.completed-outcomes article {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  background: var(--surface-subtle);
+  border-radius: var(--radius-card);
+}
+.completed-outcomes dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 24px;
+  margin: 0;
+}
+.completed-outcomes dl > div {
+  display: grid;
+  gap: 4px;
+}
+.completed-outcomes dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.completed-outcomes dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.completion-dialog {
+  width: min(720px, calc(100vw - 32px));
+  overflow: hidden;
+}
+.completion-dialog__body {
+  display: grid;
+  gap: 22px;
+  padding-bottom: 28px;
+}
+.completion-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+.completion-section-title > span,
+.completion-fieldset legend,
+.completion-homework summary {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+}
+.completion-section-title small,
+.completion-student-heading small,
+.completion-homework > p {
+  color: var(--muted);
+}
+.completion-tabs {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding: 2px 2px 7px;
+  scrollbar-width: thin;
+}
+.completion-tabs button {
+  display: inline-flex;
+  min-height: 42px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  color: var(--muted);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-weight: 750;
+}
+.completion-tabs button[aria-selected="true"] {
+  color: var(--brand-primary);
+  background: var(--brand-soft);
+  border-color: color-mix(in srgb, var(--brand-primary) 35%, var(--border));
+}
+.completion-tabs button:focus-visible,
+.completion-difficulty button:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+}
+.completion-student-panel {
+  display: grid;
+  gap: 16px;
+}
+.completion-student-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.completion-student-heading > div {
+  display: grid;
+}
+.completion-fieldset {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.completion-fieldset legend {
+  margin-bottom: 8px;
+}
+.completion-field textarea {
+  resize: vertical;
+}
+.completion-difficulty {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 4px;
+  background: var(--surface-subtle);
+  border-radius: 10px;
+}
+.completion-difficulty button {
+  min-height: 42px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-weight: 750;
+}
+.completion-difficulty button[aria-pressed="true"] {
+  color: var(--brand-primary);
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: 0 1px 3px rgb(24 50 40 / 10%);
+}
+.completion-required,
+.completion-error {
+  color: var(--error);
+}
+.completion-encouragement {
+  margin: -4px 0 0;
+  padding: 10px 12px;
+  color: var(--muted);
+  background: var(--brand-soft);
+  border-radius: 8px;
+  font-size: 12px;
+}
+.completion-homework {
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.completion-homework summary {
+  min-height: 40px;
+  cursor: pointer;
+}
+.completion-homework > p {
+  margin: -4px 0 14px;
+  font-size: 12px;
+}
+.completion-homework[open] {
+  display: grid;
+  gap: 12px;
+}
+.completion-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  background: var(--error-bg);
+  border-radius: 9px;
+  font-size: 12px;
+}
+.completion-dialog__footer {
+  flex-shrink: 0;
+}
 .lesson-context-rail {
   position: sticky;
   top: 22px;
@@ -4647,6 +4849,16 @@ h3 {
   }
   .lesson-color-panel .button {
     width: 100%;
+  }
+  .completed-outcomes > header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .completed-outcomes dl {
+    grid-template-columns: 1fr;
+  }
+  .completion-dialog__footer {
+    position: sticky;
   }
 }
 
@@ -7631,7 +7843,13 @@ summary {
   font-size: 14px;
 }
 .overview-wide {
+  display: grid;
   grid-column: 1 / -1;
+  gap: 20px;
+  padding: 24px;
+}
+.overview-wide > .empty-state {
+  padding: 0;
 }
 .contact-list,
 .membership-links,
@@ -7743,6 +7961,10 @@ summary {
 }
 
 @media (max-width: 767px) {
+  .overview-wide {
+    padding: 18px 14px;
+  }
+
   .module-switch {
     width: 100%;
   }
@@ -8128,12 +8350,28 @@ summary {
   width: min(620px, calc(100vw - 28px));
   max-height: min(820px, calc(100vh - 28px));
   max-height: min(820px, calc(100dvh - 28px));
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .finance-form {
   display: grid;
   gap: 16px;
+  min-height: 0;
+  padding: 22px 24px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.dialog-actions {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 6px -24px -24px;
+  padding: 14px 24px max(16px, env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--border);
 }
 
 .finance-form label,
@@ -8302,6 +8540,26 @@ summary {
   .finance-form-grid,
   .allocation-summary {
     grid-template-columns: 1fr;
+  }
+
+  .finance-dialog {
+    width: 100vw;
+    max-height: none;
+  }
+
+  .finance-form {
+    padding: 18px 14px 24px;
+  }
+
+  .dialog-actions {
+    margin-right: -14px;
+    margin-bottom: -24px;
+    margin-left: -14px;
+    padding-inline: 14px;
+  }
+
+  .dialog-actions .button {
+    flex: 1;
   }
 
   .allocation-summary span:last-child {

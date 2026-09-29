@@ -31,7 +31,17 @@ describe("LessonWorkspaceActionSchema", () => {
       }).success,
     ).toBe(true);
     expect(
-      LessonWorkspaceActionSchema.safeParse({ type: "completeLesson" }).success,
+      LessonWorkspaceActionSchema.safeParse({
+        type: "completeLesson",
+        expectedUpdatedAt: lessonUpdatedAt,
+        outcomes: [
+          {
+            studentId: "10000000-0000-4000-8000-000000000002",
+            progressSummary: "Zrealizowano plan.",
+            difficultyLevel: "mixed",
+          },
+        ],
+      }).success,
     ).toBe(true);
   });
 
@@ -126,6 +136,20 @@ describe("LessonWorkspaceActionSchema", () => {
         studentId: "10000000-0000-4000-8000-000000000002",
         difficultyLevel: "medium",
         progressSummary: "x".repeat(2_001),
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects duplicate students in one completion payload", () => {
+    const studentId = "10000000-0000-4000-8000-000000000002";
+    expect(
+      LessonWorkspaceActionSchema.safeParse({
+        type: "completeLesson",
+        expectedUpdatedAt: lessonUpdatedAt,
+        outcomes: [
+          { studentId, nextStep: "A" },
+          { studentId, nextStep: "B" },
+        ],
       }).success,
     ).toBe(false);
   });

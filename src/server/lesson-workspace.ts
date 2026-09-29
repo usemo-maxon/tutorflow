@@ -1084,18 +1084,47 @@ function mutateLocalWorkspace(
     ) {
       attendanceRequired();
     }
+    const packageStudent =
+      lesson.participants.length === 1
+        ? store.students.find(
+            (student) =>
+              student.teacherId === teacherId &&
+              student.id === lesson.participants[0].studentId &&
+              typeof student.packageRemainingLessons === "number",
+          )
+        : undefined;
+    if (
+      packageStudent &&
+      (packageStudent.packageRemainingLessons ?? 0) <= 0
+    ) {
+      throw new ApiFailure(409, {
+        code: "PACKAGE_EXHAUSTED",
+        message: "Pakiet nie ma wolnej lekcji. Zajęcia nie zostały zakończone.",
+      });
+    }
     const participantIds = new Set(
       lesson.participants.map((participant) => participant.studentId),
     );
     if (
-      action.outcomes.some(
-        (outcome) => !participantIds.has(outcome.studentId),
-      )
+      new Set(action.outcomes.map((outcome) => outcome.studentId)).size !==
+      action.outcomes.length
+    ) {
+      invalidCompletionPayload();
+    }
+    if (
+      action.outcomes.some((outcome) => !participantIds.has(outcome.studentId))
     ) {
       invalidCompletionParticipant();
     }
     store.lessonStudentOutcomes ??= [];
     for (const outcome of action.outcomes) {
+      if (
+        !outcome.progressSummary &&
+        !outcome.difficultyLevel &&
+        !outcome.difficultyNote &&
+        !outcome.nextStep
+      )
+        continue;
       const existing = store.lessonStudentOutcomes.find(
         (item) =>
           item.teacherId === teacherId &&
@@ -1121,6 +1150,7 @@ function mutateLocalWorkspace(
         });
       }
     }
+    if (packageStudent) packageStudent.packageRemainingLessons! -= 1;
     lesson.status = "completed";
   } else if (action.type === "markNoShow") {
     if (lesson.status === "completed" || lesson.status === "cancelled")
@@ -1141,12 +1171,13 @@ function databaseFailure(error: unknown): never {
     (error as { message?: string; details?: string })?.message ?? error,
   );
   if (message.includes("ATTENDANCE_REQUIRED")) attendanceRequired();
+  if (message.includes("INVALID_OUTCOME_PARTICIPANT"))
+    invalidCompletionParticipant();
   if (
-    message.includes("INVALID_OUTCOME_PARTICIPANT") ||
     message.includes("INVALID_OUTCOME_PAYLOAD") ||
     message.includes("DUPLICATE_OUTCOME_PARTICIPANT")
   )
-    invalidCompletionParticipant();
+    invalidCompletionPayload();
   if (message.includes("PACKAGE_EXHAUSTED")) {
     throw new ApiFailure(409, {
       code: "PACKAGE_EXHAUSTED",
@@ -1183,6 +1214,13 @@ function invalidCompletionParticipant(): never {
   throw new ApiFailure(422, {
     code: "INVALID_PARTICIPANT",
     message: "Podsumowanie zawiera ucznia spoza listy uczestników lekcji.",
+  });
+}
+
+function invalidCompletionPayload(): never {
+  throw new ApiFailure(422, {
+    code: "VALIDATION_ERROR",
+    message: "Sprawdź podsumowania uczniów i spróbuj ponownie.",
   });
 }
 

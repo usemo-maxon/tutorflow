@@ -7,11 +7,9 @@ import {
 
 describe("lesson completion helpers", () => {
   it("maps stored difficulty values to Polish labels", () => {
-    expect(["easy", "mixed", "hard"].map((value) => difficultyLabel(value as never))).toEqual([
-      "Łatwo",
-      "Różnie",
-      "Trudno",
-    ]);
+    expect(
+      ["easy", "mixed", "hard"].map((value) => difficultyLabel(value as never)),
+    ).toEqual(["Łatwo", "Różnie", "Trudno"]);
   });
 
   it("trims values and omits fully blank outcomes", () => {

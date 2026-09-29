@@ -233,6 +233,114 @@ describe("lesson student outcomes", () => {
     });
   });
 
+  it("completes locally with outcome upserts and allows correction without replaying completion", async () => {
+    for (const studentId of participantIds) {
+      await mutateLessonWorkspace(teacherId, lessonId, {
+        type: "markAttendance",
+        studentId,
+        status: "present",
+      });
+    }
+    const before = await getLessonWorkspace(teacherId, lessonId);
+    const completed = await mutateLessonWorkspace(teacherId, lessonId, {
+      type: "completeLesson",
+      expectedUpdatedAt: before.lesson.updatedAt,
+      outcomes: [
+        {
+          studentId: participantIds[0],
+          progressSummary: "Pytania opanowane.",
+          difficultyLevel: "easy",
+        },
+        {
+          studentId: participantIds[1],
+          nextStep: "Powtórzyć did.",
+        },
+      ],
+    });
+    expect(completed.lesson.status).toBe("completed");
+    expect(completed.participants[0].outcome).toMatchObject({
+      progressSummary: "Pytania opanowane.",
+      difficultyLevel: "easy",
+    });
+    expect(completed.participants[1].outcome?.nextStep).toBe("Powtórzyć did.");
+
+    const replayed = await mutateLessonWorkspace(teacherId, lessonId, {
+      type: "completeLesson",
+      expectedUpdatedAt: before.lesson.updatedAt,
+      outcomes: [],
+    });
+    expect(replayed.lesson.status).toBe("completed");
+    expect(
+      await store.queryStore(
+        (data) =>
+          data.lessonStudentOutcomes?.filter(
+            (outcome) => outcome.lessonId === lessonId,
+          ).length,
+      ),
+    ).toBe(3);
+
+    const corrected = await mutateLessonWorkspace(teacherId, lessonId, {
+      type: "saveStudentOutcome",
+      studentId: participantIds[1],
+      nextStep: "Najpierw pytania, potem dialogi.",
+    });
+    expect(corrected.lesson.status).toBe("completed");
+    expect(corrected.participants[1].outcome?.nextStep).toBe(
+      "Najpierw pytania, potem dialogi.",
+    );
+  });
+
+  it("rolls local outcomes back when a package is exhausted", async () => {
+    const packageStudentId = (
+      await performAction(teacherId, {
+        type: "createStudent",
+        student: student("Pakiet"),
+      })
+    ).result!.id!;
+    await store.mutateStore((data) => {
+      data.students.find(
+        (candidate) => candidate.id === packageStudentId,
+      )!.packageRemainingLessons = 0;
+    });
+    const packageLessonId = (
+      await performAction(teacherId, {
+        type: "createLesson",
+        lesson: {
+          target: { type: "student", id: packageStudentId },
+          mode: "single",
+          occurrences: [
+            { startsAt: "2042-03-09T16:00:00.000Z", durationMinutes: 60 },
+          ],
+          format: "offline",
+          location: "Sala testowa",
+          priceAmount: null,
+          topic: "Pakiet bez jednostek",
+          plan: [],
+          allowOutsideAvailability: true,
+        },
+      })
+    ).result!.id!;
+    await mutateLessonWorkspace(teacherId, packageLessonId, {
+      type: "markAttendance",
+      studentId: packageStudentId,
+      status: "present",
+    });
+    const before = await getLessonWorkspace(teacherId, packageLessonId);
+    await expect(
+      mutateLessonWorkspace(teacherId, packageLessonId, {
+        type: "completeLesson",
+        expectedUpdatedAt: before.lesson.updatedAt,
+        outcomes: [{ studentId: packageStudentId, nextStep: "Nie zapisuj" }],
+      }),
+    ).rejects.toMatchObject<Partial<ApiFailure>>({
+      status: 409,
+      body: { code: "PACKAGE_EXHAUSTED", message: expect.any(String) },
+    });
+    const after = await getLessonWorkspace(teacherId, packageLessonId);
+    expect(after.lesson.status).toBe("scheduled");
+    expect(after.participants[0].outcome).toBeUndefined();
+  });
+
   it("blocks read-only mutation and retains history for an archived student", async () => {
     await store.mutateStore((data) => {
       data.teachers.find(
@@ -263,7 +371,7 @@ describe("lesson student outcomes", () => {
     const workspace = await getLessonWorkspace(teacherId, lessonId);
     expect(workspace.participants[0]).toMatchObject({
       status: "archived",
-      outcome: { progressSummary: "Postęp utrwalony." },
+      outcome: { progressSummary: "Pytania opanowane." },
     });
   });
 

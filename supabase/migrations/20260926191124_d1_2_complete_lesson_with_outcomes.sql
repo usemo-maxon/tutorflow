@@ -15,8 +15,6 @@ set search_path = ''
 as $$
 declare
   lesson_row public.lessons%rowtype;
-  package_row public.packages%rowtype;
-  participant_row record;
   outcome_row jsonb;
   outcome_student_id uuid;
   progress_value text;
@@ -24,8 +22,7 @@ declare
   difficulty_note_value text;
   next_step_value text;
   unresolved_count integer;
-  remaining_units integer;
-  due_days integer;
+  completion_result jsonb;
 begin
   if not (select private.is_workspace_member(p_workspace_id)) then
     raise exception 'WORKSPACE_ACCESS_DENIED' using errcode = '42501';
@@ -74,8 +71,9 @@ begin
     if jsonb_typeof(outcome_row) <> 'object'
       or not (outcome_row ? 'studentId')
       or exists (
-        select 1 from jsonb_object_keys(outcome_row) key
-        where key not in ('studentId', 'progressSummary', 'difficultyLevel', 'difficultyNote', 'nextStep')
+        select 1
+        from jsonb_object_keys(outcome_row) as submitted_key(key_name)
+        where key_name not in ('studentId', 'progressSummary', 'difficultyLevel', 'difficultyNote', 'nextStep')
       )
       or (outcome_row ? 'progressSummary' and jsonb_typeof(outcome_row -> 'progressSummary') not in ('string', 'null'))
       or (outcome_row ? 'difficultyLevel' and jsonb_typeof(outcome_row -> 'difficultyLevel') not in ('string', 'null'))
@@ -131,43 +129,15 @@ begin
     end if;
   end loop;
 
-  select payment_due_days into due_days from public.workspaces where id = p_workspace_id;
-  if lesson_row.billing_type = 'package' and lesson_row.student_id is not null then
-    select * into package_row from public.packages
-    where workspace_id = p_workspace_id and student_id = lesson_row.student_id
-      and status = 'active' and (expires_at is null or expires_at >= now())
-    order by expires_at asc nulls last, purchased_at, created_at
-    limit 1 for update;
-    if package_row.id is not null then
-      remaining_units := public.complete_lesson_with_package(
-        p_workspace_id, p_lesson_id, lesson_row.student_id, package_row.id, p_idempotency_key
-      );
-    else
-      update public.lessons set status = 'completed', completed_at = coalesce(completed_at, now()),
-        cancelled_at = null, updated_at = now()
-      where id = p_lesson_id and workspace_id = p_workspace_id;
-    end if;
-  else
-    update public.lessons set status = 'completed', completed_at = coalesce(completed_at, now()),
-      cancelled_at = null, updated_at = now()
-    where id = p_lesson_id and workspace_id = p_workspace_id;
-    if lesson_row.billing_type in ('per_lesson', 'per_student') and coalesce(lesson_row.price_grosz, 0) > 0 then
-      for participant_row in
-        select student_id from public.lesson_participants
-        where workspace_id = p_workspace_id and lesson_id = p_lesson_id
-      loop
-        insert into public.charges (
-          workspace_id, student_id, lesson_id, type, description,
-          amount_grosz, currency, due_at
-        ) values (
-          p_workspace_id, participant_row.student_id, p_lesson_id, 'lesson',
-          coalesce(nullif(lesson_row.title, ''), 'Lekcja'), lesson_row.price_grosz,
-          lesson_row.currency, now() + make_interval(days => due_days)
-        ) on conflict do nothing;
-      end loop;
-    end if;
-  end if;
-  return jsonb_build_object('status', 'completed', 'remainingLessons', remaining_units);
+  -- A PostgreSQL function call remains inside the caller's transaction. Reuse
+  -- the hardened L0.10 completion routine so finance rules have one source of
+  -- truth; any exception rolls the outcome upserts back with the completion.
+  completion_result := public.complete_lesson_workspace(
+    p_workspace_id,
+    p_lesson_id,
+    p_idempotency_key
+  );
+  return completion_result;
 end;
 $$;
 

@@ -175,6 +175,8 @@ describe("canonical launch regression baseline", () => {
     });
     firstWorkspace = await mutateLessonWorkspace(teacherId, firstLessonId, {
       type: "completeLesson",
+      expectedUpdatedAt: firstWorkspace.lesson.updatedAt,
+      outcomes: [],
     });
 
     expect(firstWorkspace.lesson).toMatchObject({
@@ -197,7 +199,11 @@ describe("canonical launch regression baseline", () => {
     const retriedCompletion = await mutateLessonWorkspace(
       teacherId,
       firstLessonId,
-      { type: "completeLesson" },
+      {
+        type: "completeLesson",
+        expectedUpdatedAt: firstWorkspace.lesson.updatedAt,
+        outcomes: [],
+      },
     );
     const finance = await getFinancialOverview(teacherId, { studentId });
     const persisted = await getAppData(teacherId);

@@ -350,9 +350,7 @@ function LessonWorkspaceView({
         <CompletedOutcomes
           data={data}
           onEdit={
-            data.teacher.readOnly
-              ? undefined
-              : () => setCompletionMode("edit")
+            data.teacher.readOnly ? undefined : () => setCompletionMode("edit")
           }
         />
       )}
@@ -892,14 +890,21 @@ function CompletedOutcomes({
   onEdit?: () => void;
 }) {
   return (
-    <section className="completed-outcomes" aria-labelledby="completed-outcomes-title">
+    <section
+      className="completed-outcomes"
+      aria-labelledby="completed-outcomes-title"
+    >
       <header>
         <div>
           <span className="eyebrow">Ciągłość nauki</span>
           <h2 id="completed-outcomes-title">Podsumowanie ucznia</h2>
         </div>
         {onEdit && (
-          <button className="button button--secondary" type="button" onClick={onEdit}>
+          <button
+            className="button button--secondary"
+            type="button"
+            onClick={onEdit}
+          >
             Edytuj podsumowanie
           </button>
         )}
@@ -915,16 +920,28 @@ function CompletedOutcomes({
               ) : (
                 <dl>
                   {outcome.progressSummary && (
-                    <div><dt>Co udało się zrobić</dt><dd>{outcome.progressSummary}</dd></div>
+                    <div>
+                      <dt>Co udało się zrobić</dt>
+                      <dd>{outcome.progressSummary}</dd>
+                    </div>
                   )}
                   {outcome.difficultyLevel && (
-                    <div><dt>Jak poszło</dt><dd>{difficultyLabel(outcome.difficultyLevel)}</dd></div>
+                    <div>
+                      <dt>Jak poszło</dt>
+                      <dd>{difficultyLabel(outcome.difficultyLevel)}</dd>
+                    </div>
                   )}
                   {outcome.difficultyNote && (
-                    <div><dt>Problem</dt><dd>{outcome.difficultyNote}</dd></div>
+                    <div>
+                      <dt>Problem</dt>
+                      <dd>{outcome.difficultyNote}</dd>
+                    </div>
                   )}
                   {outcome.nextStep && (
-                    <div><dt>Następny krok</dt><dd>{outcome.nextStep}</dd></div>
+                    <div>
+                      <dt>Następny krok</dt>
+                      <dd>{outcome.nextStep}</dd>
+                    </div>
                   )}
                 </dl>
               )}
