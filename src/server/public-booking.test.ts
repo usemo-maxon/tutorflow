@@ -68,6 +68,7 @@ beforeAll(async () => {
     teacher.bookingAvailability = {
       minimumNoticeHours: 0,
       bookingHorizonDays: 30,
+      cancellationNoticeHours: 24,
     };
     teacher.publicProfile = {
       enabled: true,
@@ -152,21 +153,23 @@ describe("public booking transaction", () => {
     const saved = await store.queryStore((data) => data.bookings?.[0]);
 
     expect(confirmation).toEqual({
-      bookingId: expect.any(String),
       eventTypeName: "Lekcja indywidualna",
       startsAt: slot(2),
       endsAt: new Date(Date.parse(slot(2)) + 60 * 60_000).toISOString(),
       timezone: "Europe/Warsaw",
       guestEmail: "jan@example.com",
+      managementUrl: expect.stringMatching(
+        /^http:\/\/localhost:3000\/rezerwacja\/[A-Za-z0-9_-]{43}$/,
+      ),
     });
     expect(Object.keys(confirmation).sort()).toEqual(
       [
-        "bookingId",
         "endsAt",
         "eventTypeName",
         "guestEmail",
         "startsAt",
         "timezone",
+        "managementUrl",
       ].sort(),
     );
     expect(saved).toMatchObject({

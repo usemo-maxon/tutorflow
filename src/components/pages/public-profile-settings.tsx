@@ -79,9 +79,10 @@ export function PublicProfileSettings() {
           throw new Error("LOAD_FAILED");
         setProfile(profileResult.data as TutorPublicProfile);
         setEventTypes(eventTypesResult.data as BookingEventType[]);
-        setAvailabilitySettings(
-          availabilityResult.data as BookingAvailabilitySettings,
-        );
+        setAvailabilitySettings({
+          ...DEFAULT_BOOKING_AVAILABILITY,
+          ...(availabilityResult.data as BookingAvailabilitySettings),
+        });
       })
       .catch(() => setMessage("Nie udało się pobrać ustawień."));
   }, []);
@@ -525,9 +526,72 @@ export function PublicProfileSettings() {
                   disabled={teacher.subscription.readOnly}
                 />
               </label>
+              <label className="field">
+                <span>Możliwość anulowania do</span>
+                <select
+                  value={availabilitySettings.cancellationNoticeHours}
+                  onChange={(event) =>
+                    setAvailabilitySettings((current) => ({
+                      ...current,
+                      cancellationNoticeHours: Number(event.target.value),
+                    }))
+                  }
+                  disabled={teacher.subscription.readOnly}
+                >
+                  <option value={12}>12 h przed lekcją</option>
+                  <option value={24}>24 h przed lekcją</option>
+                  <option value={48}>48 h przed lekcją</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Zmiana terminu do</span>
+                <select
+                  value={
+                    availabilitySettings.rescheduleNoticeHours ??
+                    DEFAULT_BOOKING_AVAILABILITY.rescheduleNoticeHours
+                  }
+                  onChange={(event) =>
+                    setAvailabilitySettings((current) => ({
+                      ...current,
+                      rescheduleNoticeHours: Number(event.target.value),
+                    }))
+                  }
+                  disabled={teacher.subscription.readOnly}
+                >
+                  <option value={12}>12 h przed lekcją</option>
+                  <option value={24}>24 h przed lekcją</option>
+                  <option value={48}>48 h przed lekcją</option>
+                </select>
+              </label>
+            </div>
+            <div className="booking-reminder-settings">
+              <div>
+                <strong>Przypomnienia dla rezerwacji</strong>
+                <small>
+                  Wiadomość e-mail jest wysyłana gościowi dzień przed lekcją.
+                </small>
+              </div>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={
+                    availabilitySettings.reminder24HoursEnabled ??
+                    DEFAULT_BOOKING_AVAILABILITY.reminder24HoursEnabled
+                  }
+                  onChange={(event) =>
+                    setAvailabilitySettings((current) => ({
+                      ...current,
+                      reminder24HoursEnabled: event.target.checked,
+                    }))
+                  }
+                  disabled={teacher.subscription.readOnly}
+                />
+                Dzień przed (e-mail)
+              </label>
             </div>
             <p className="form-note">
-              Domyślnie: 12 godzin wyprzedzenia i 30 dni do przodu. Sloty są
+              Domyślnie: 12 godzin wyprzedzenia, 30 dni do przodu i anulowanie
+              oraz zmiana terminu do 24 godzin przed lekcją. Sloty są
               wyświetlane co 15 minut.
             </p>
             <div className="public-settings-actions">

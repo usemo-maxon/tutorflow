@@ -6,6 +6,7 @@ import {
   dashboardRanges,
   dashboardSourceFromAppData,
   type DashboardLessonSource,
+  type DashboardBookingSource,
   type DashboardSource,
 } from "./dashboard";
 import { createSupabaseServerClient } from "./supabase";
@@ -25,6 +26,16 @@ interface DashboardLessonRow {
   meeting_url: string | null;
   sync_status: Lesson["syncStatus"];
   billing_type: "per_lesson" | "per_student" | "package" | "trial";
+}
+
+interface DashboardBookingRow {
+  id: string;
+  starts_at: string;
+  ends_at: string;
+  guest_name: string;
+  event_type_name: string;
+  guest_goal: string | null;
+  status: "confirmed";
 }
 
 export async function queryTodayDashboardSource(
@@ -101,6 +112,7 @@ export async function queryTodayDashboardSource(
     studentsResult,
     todayResult,
     upcomingResult,
+    bookingsResult,
     unfinishedResult,
     completedResult,
     monthResult,
@@ -132,6 +144,21 @@ export async function queryTodayDashboardSource(
       .neq("status", "cancelled")
       .order("starts_at")
       .limit(7),
+    supabase
+      .from("bookings")
+      .select(
+        "id,starts_at,ends_at,guest_name,event_type_name,guest_goal,status",
+      )
+      .eq("workspace_id", workspaceId)
+      .eq("tutor_id", teacherId)
+      .eq("source", "public_booking")
+      .eq("status", "confirmed")
+      .is("student_id", null)
+      .is("converted_lesson_id", null)
+      .gte("starts_at", ranges.todayStart)
+      .lt("starts_at", ranges.upcomingEnd)
+      .order("starts_at")
+      .limit(31),
     supabase
       .from("lessons")
       .select(lessonColumns)
@@ -179,9 +206,12 @@ export async function queryTodayDashboardSource(
       .limit(100),
   ]);
 
-  const coreFailure = [studentsResult, todayResult, upcomingResult].find(
-    (result) => result.error,
-  );
+  const coreFailure = [
+    studentsResult,
+    todayResult,
+    upcomingResult,
+    bookingsResult,
+  ].find((result) => result.error);
   if (coreFailure?.error) throw coreFailure.error;
 
   const allRows = uniqueLessonRows([
@@ -248,6 +278,16 @@ export async function queryTodayDashboardSource(
     syncStatus: row.sync_status,
     billingType: row.billing_type,
   });
+  const mapBooking = (row: DashboardBookingRow): DashboardBookingSource => ({
+    id: row.id,
+    startsAt: row.starts_at,
+    endsAt: row.ends_at,
+    guestName: row.guest_name,
+    eventTypeName: row.event_type_name,
+    goalPreview: row.guest_goal?.trim() || undefined,
+    status: row.status,
+  });
+  const bookingRows = (bookingsResult.data ?? []) as DashboardBookingRow[];
   const optionalAttentionFailed =
     Boolean(unfinishedResult.error) ||
     Boolean(completedResult.error) ||
@@ -333,9 +373,15 @@ export async function queryTodayDashboardSource(
     todaysLessons: ((todayResult.data ?? []) as DashboardLessonRow[]).map(
       mapLesson,
     ),
+    todaysBookings: bookingRows
+      .filter((row) => row.starts_at < ranges.todayEnd)
+      .map(mapBooking),
     upcomingLessons: ((upcomingResult.data ?? []) as DashboardLessonRow[]).map(
       mapLesson,
     ),
+    upcomingBookings: bookingRows
+      .filter((row) => row.starts_at >= ranges.todayEnd)
+      .map(mapBooking),
     unfinishedLessons: unfinishedResult.error
       ? []
       : ((unfinishedResult.data ?? []) as DashboardLessonRow[]).map(mapLesson),

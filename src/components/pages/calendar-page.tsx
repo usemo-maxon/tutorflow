@@ -22,6 +22,7 @@ import {
   GripVertical,
   Plus,
   Trash2,
+  UserPlus,
   Users,
   X,
 } from "lucide-react";
@@ -37,6 +38,10 @@ import {
 import { useAppData, useAppMutation } from "@/hooks/use-app-data";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import { ClientApiError } from "@/lib/api-client";
+import {
+  BOOKING_CALENDAR_INTERACTION,
+  bookingDetailHref,
+} from "@/lib/booking-schedule";
 import {
   blockDragEntry,
   blockPresetFromCalendarRange,
@@ -1001,6 +1006,11 @@ function CalendarGrid({
               localDateKey(lesson.startsAt, timezone) ===
               localDateKey(day, timezone),
           ).length;
+          const bookingCount = data.calendarBookings.filter(
+            (booking) =>
+              localDateKey(booking.startsAt, timezone) ===
+              localDateKey(day, timezone),
+          ).length;
           const allDayGoogle = data.externalGoogleEvents.filter(
             (event) =>
               event.allDay &&
@@ -1019,7 +1029,10 @@ function CalendarGrid({
                 {formatInTimeZone(day, timezone, "EEE", { locale: pl })}
               </span>
               <strong>{formatInTimeZone(day, timezone, "d")}</strong>
-              <small>{lessonCountLabel(count)}</small>
+              <small>
+                {lessonCountLabel(count)}
+                {bookingCount ? ` · ${bookingCount} rez.` : ""}
+              </small>
               {allDayUnavailable && (
                 <span className="calendar-day-status">Niedostępny</span>
               )}
@@ -1056,6 +1069,9 @@ function CalendarGrid({
           );
           const dayBlocks = data.calendarBlocks.filter(
             (block) => localDateKey(block.startsAt, timezone) === dayKey,
+          );
+          const dayBookings = data.calendarBookings.filter(
+            (booking) => localDateKey(booking.startsAt, timezone) === dayKey,
           );
           const dayExternalEvents = data.externalGoogleEvents.filter(
             (event) =>
@@ -1417,6 +1433,40 @@ function CalendarGrid({
                   </div>
                 );
               })}
+              {dayBookings.map((booking) => {
+                const startMinutes =
+                  Number(formatInTimeZone(booking.startsAt, timezone, "H")) *
+                    60 +
+                  Number(formatInTimeZone(booking.startsAt, timezone, "m"));
+                const endMinutes =
+                  Number(formatInTimeZone(booking.endsAt, timezone, "H")) * 60 +
+                  Number(formatInTimeZone(booking.endsAt, timezone, "m"));
+                return (
+                  <Link
+                    data-event
+                    className="calendar-booking"
+                    href={bookingDetailHref(booking.id)}
+                    key={booking.id}
+                    draggable={BOOKING_CALENDAR_INTERACTION.draggable}
+                    aria-label={`Rezerwacja: ${booking.guestName}, ${booking.eventTypeName}`}
+                    title={`${booking.guestName} · ${booking.eventTypeName} · Rezerwacja potwierdzona · tylko do odczytu`}
+                    style={{
+                      top: ((startMinutes - startHour * 60) / 60) * hourHeight,
+                      height: Math.max(
+                        36,
+                        ((endMinutes - startMinutes) / 60) * hourHeight - 3,
+                      ),
+                    }}
+                  >
+                    <time>{formatTime(booking.startsAt, timezone)}</time>
+                    <strong>{booking.guestName}</strong>
+                    <small>
+                      <UserPlus size={12} aria-hidden="true" /> Rezerwacja ·{" "}
+                      {booking.eventTypeName}
+                    </small>
+                  </Link>
+                );
+              })}
               {dayLessons.map((lesson) => {
                 const localHour = Number(
                   formatInTimeZone(lesson.startsAt, timezone, "H"),
@@ -1566,6 +1616,9 @@ function AgendaView({
         const blocks = data.calendarBlocks.filter(
           (block) => localDateKey(block.startsAt, timezone) === key,
         );
+        const bookings = data.calendarBookings.filter(
+          (booking) => localDateKey(booking.startsAt, timezone) === key,
+        );
         const externalEvents = data.externalGoogleEvents.filter((event) =>
           externalEventOccursOn(event, key, timezone),
         );
@@ -1657,6 +1710,24 @@ function AgendaView({
                 <CalendarClock size={16} aria-hidden="true" />
               </div>
             ))}
+            {bookings.map((booking) => (
+              <Link
+                className="agenda-event-row agenda-event-row--booking"
+                href={bookingDetailHref(booking.id)}
+                key={booking.id}
+              >
+                <time>{formatTime(booking.startsAt, timezone)}</time>
+                <span>
+                  <strong>{booking.guestName}</strong>
+                  <small>
+                    Rezerwacja · {booking.eventTypeName} · tylko do odczytu
+                  </small>
+                </span>
+                <span className="status-badge status-badge--booking">
+                  Rezerwacja
+                </span>
+              </Link>
+            ))}
             {lessons.length ? (
               lessons.map((lesson) => {
                 const group = lesson.groupId
@@ -1701,9 +1772,12 @@ function AgendaView({
                   </Link>
                 );
               })
-            ) : (
+            ) : bookings.length ? null : (
               <p className="agenda-empty">
-                {unavailable.length || blocks.length || externalEvents.length
+                {unavailable.length ||
+                blocks.length ||
+                externalEvents.length ||
+                bookings.length
                   ? "Brak lekcji"
                   : "Wolny dzień"}
               </p>
@@ -1762,12 +1836,15 @@ function MonthView({
           const dayExternalEvents = data.externalGoogleEvents.filter((event) =>
             externalEventOccursOn(event, dayKey, timezone),
           );
+          const dayBookings = data.calendarBookings.filter(
+            (booking) => localDateKey(booking.startsAt, timezone) === dayKey,
+          );
           const allDayUnavailable = isAllDayUnavailable(data, day, timezone);
           const today = dayKey === localDateKey(new Date(), timezone);
           return (
             <button
               key={day.toISOString()}
-              aria-label={`${formatInTimeZone(day, timezone, "d MMMM yyyy", { locale: pl })} · ${lessonCountLabel(dayLessons.length)} · ${dayExternalEvents.length} wydarzeń Google${allDayUnavailable ? " · Niedostępny cały dzień" : ""}`}
+              aria-label={`${formatInTimeZone(day, timezone, "d MMMM yyyy", { locale: pl })} · ${lessonCountLabel(dayLessons.length)} · ${dayBookings.length} rezerwacji · ${dayExternalEvents.length} wydarzeń Google${allDayUnavailable ? " · Niedostępny cały dzień" : ""}`}
               className={`${today ? "today" : ""}${allDayUnavailable ? " month-day--unavailable" : ""}`}
               onClick={() => onDay(day)}
             >
@@ -1776,8 +1853,8 @@ function MonthView({
                 <small className="month-unavailable-label">Niedostępny</small>
               ) : (
                 <small className="month-count">
-                  {dayLessons.length || "—"}
-                  <span> lekcji</span>
+                  {dayLessons.length + dayBookings.length || "—"}
+                  <span> zdarzeń</span>
                 </small>
               )}
               {dayLessons.slice(0, 3).map((lesson) => (
@@ -1790,8 +1867,19 @@ function MonthView({
                   }
                 </span>
               ))}
-              {dayExternalEvents
+              {dayBookings
                 .slice(0, Math.max(0, 3 - dayLessons.length))
+                .map((booking) => (
+                  <span className="month-booking-event" key={booking.id}>
+                    {formatTime(booking.startsAt, timezone)} · Rezerwacja ·{" "}
+                    {booking.guestName}
+                  </span>
+                ))}
+              {dayExternalEvents
+                .slice(
+                  0,
+                  Math.max(0, 3 - dayLessons.length - dayBookings.length),
+                )
                 .map((event) => (
                   <span
                     className="month-google-event"

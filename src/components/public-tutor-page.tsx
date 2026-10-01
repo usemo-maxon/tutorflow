@@ -137,7 +137,9 @@ export function PublicTutorPage({
             : "Nie udało się umówić lekcji. Spróbuj ponownie.",
         );
       }
-      setConfirmation(body as PublicBookingConfirmation);
+      const confirmed = body as PublicBookingConfirmation;
+      setConfirmation(confirmed);
+      window.location.assign(confirmed.managementUrl);
     } catch (error) {
       setBookingError(
         error instanceof Error

@@ -136,6 +136,17 @@ interface PlanResultRow {
   note: string | null;
 }
 
+interface CalendarBookingRow {
+  id: string;
+  event_type_id: string;
+  event_type_name: string;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  guest_name: string;
+  status: "confirmed";
+}
+
 const localAllowed = () =>
   process.env.NODE_ENV !== "production" &&
   (Boolean(process.env.TUTORFLOW_DATA_DIR) || !isSupabaseConfigured());
@@ -179,6 +190,7 @@ type AppDataSection =
   | "attendance"
   | "availability"
   | "calendar-events"
+  | "booking-events"
   | "statistics"
   | "contacts"
   | "groups"
@@ -192,6 +204,7 @@ const scopeSections: Record<Exclude<AppDataScope, "full">, AppDataSection[]> = {
     "lesson-participants",
     "availability",
     "calendar-events",
+    "booking-events",
     "groups",
   ],
   students: [
@@ -299,6 +312,17 @@ async function loadTenantStore(
     .eq("workspace_id", workspaceId)
     .eq("teacher_id", teacherId)
     .neq("status", "cancelled");
+  let calendarBookingsQuery = supabase
+    .from("bookings")
+    .select(
+      "id,event_type_id,event_type_name,starts_at,ends_at,timezone,guest_name,status",
+    )
+    .eq("workspace_id", workspaceId)
+    .eq("tutor_id", teacherId)
+    .eq("source", "public_booking")
+    .eq("status", "confirmed")
+    .is("student_id", null)
+    .is("converted_lesson_id", null);
   if (range) {
     lessonsQuery = lessonsQuery
       .lt("starts_at", range.end)
@@ -311,6 +335,9 @@ async function loadTenantStore(
     externalEventsQuery = externalEventsQuery.or(
       `and(all_day.eq.false,starts_at.lt.${range.end},ends_at.gt.${range.start}),and(all_day.eq.true,start_date.lte.${endDate},end_date.gte.${startDate})`,
     );
+    calendarBookingsQuery = calendarBookingsQuery
+      .lt("starts_at", range.end)
+      .gt("ends_at", range.start);
   }
   const [
     studentsResult,
@@ -324,6 +351,7 @@ async function loadTenantStore(
     availabilityResult,
     availabilityExceptionsResult,
     calendarBlocksResult,
+    calendarBookingsResult,
     externalEventsResult,
     importsResult,
     contactsResult,
@@ -399,6 +427,9 @@ async function loadTenantStore(
     includesSection(scope, "calendar-events")
       ? calendarBlocksQuery
       : emptyQueryResult(),
+    includesSection(scope, "booking-events")
+      ? calendarBookingsQuery
+      : emptyQueryResult(),
     includesSection(scope, "calendar-events")
       ? externalEventsQuery
       : emptyQueryResult(),
@@ -473,6 +504,7 @@ async function loadTenantStore(
     availabilityResult,
     availabilityExceptionsResult,
     calendarBlocksResult,
+    calendarBookingsResult,
     externalEventsResult,
     importsResult,
     contactsResult,
@@ -838,6 +870,30 @@ async function loadTenantStore(
         timezone: row.timezone,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
+      })),
+      bookings: (
+        (calendarBookingsResult.data ?? []) as CalendarBookingRow[]
+      ).map((row) => ({
+        bookingId: row.id,
+        teacherId,
+        eventTypeId: row.event_type_id,
+        eventTypeName: row.event_type_name,
+        startsAt: row.starts_at,
+        endsAt: row.ends_at,
+        timezone: row.timezone,
+        guestEmail: "",
+        durationMinutes: Math.max(
+          0,
+          Math.round(
+            (Date.parse(row.ends_at) - Date.parse(row.starts_at)) / 60_000,
+          ),
+        ),
+        priceGrosz: 0,
+        currency: "PLN" as const,
+        format: "online" as const,
+        guestName: row.guest_name,
+        status: "confirmed" as const,
+        createdAt: row.starts_at,
       })),
       externalGoogleEvents: (externalEventsResult.data ?? []).map((row) => ({
         id: row.id,
@@ -2011,6 +2067,10 @@ export async function getAppData(
       calendarBlocks: data.calendarBlocks.filter(
         (block) => block.startsAt < range.end && block.endsAt > range.start,
       ),
+      calendarBookings: data.calendarBookings.filter(
+        (booking) =>
+          booking.startsAt < range.end && booking.endsAt > range.start,
+      ),
       externalGoogleEvents: data.externalGoogleEvents.filter((event) =>
         event.allDay
           ? Boolean(
@@ -2052,6 +2112,9 @@ function projectAppData(data: AppData, scope: AppDataScope): AppData {
       : [],
     calendarBlocks: includesSection(scope, "calendar-events")
       ? data.calendarBlocks
+      : [],
+    calendarBookings: includesSection(scope, "booking-events")
+      ? data.calendarBookings
       : [],
     externalGoogleEvents: includesSection(scope, "calendar-events")
       ? data.externalGoogleEvents

@@ -195,7 +195,26 @@ export const BookingAvailabilitySettingsSchema = z.object({
     .int()
     .min(1, "Okres rezerwacji musi obejmować co najmniej jeden dzień.")
     .max(365, "Okres rezerwacji może wynosić maksymalnie 365 dni."),
+  cancellationNoticeHours: z
+    .number()
+    .int()
+    .min(0, "Termin anulowania nie może być ujemny.")
+    .max(720, "Termin anulowania może wynosić maksymalnie 720 godzin."),
+  rescheduleNoticeHours: z
+    .number()
+    .int()
+    .min(0, "Termin zmiany nie może być ujemny.")
+    .max(720, "Termin zmiany może wynosić maksymalnie 720 godzin."),
+  reminder24HoursEnabled: z.boolean(),
 });
+
+export const BookingRescheduleInputSchema = z
+  .object({
+    startsAt: ISODateTimeSchema.transform((value) =>
+      new Date(value).toISOString(),
+    ),
+  })
+  .strict();
 
 const OptionalGuestText = (max: number) =>
   z

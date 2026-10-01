@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "teachers": [
+    {
+      "id": "browser-teacher-d28",
+      "name": "Anna Kowalska",
+      "email": "browser@example.test",
+      "passwordHash": "test-only",
+      "timezone": "Europe/Warsaw",
+      "subscription": { "status": "trial", "tier": "free", "readOnly": false, "trialEndsAt": "2026-12-01T00:00:00.000Z" },
+      "google": { "status": "not_connected" },
+      "telegram": { "status": "not_configured" },
+      "payu": { "status": "not_configured" },
+      "bookingAvailability": { "minimumNoticeHours": 0, "bookingHorizonDays": 30, "cancellationNoticeHours": 24, "rescheduleNoticeHours": 24, "reminder24HoursEnabled": true },
+      "publicProfile": { "enabled": true, "slug": "browser-d28", "photoUrl": "", "publicName": "Anna Kowalska", "headline": "", "about": "", "subjects": [], "levels": [], "lessonFormats": ["online"], "city": "Warszawa", "priceText": "", "contactLinks": [] }
+    }
+  ],
+  "students": [],
+  "contacts": [],
+  "groups": [],
+  "lessons": [],
+  "lessonStudentOutcomes": [],
+  "studentStatImports": [],
+  "availability": [],
+  "availabilityExceptions": [],
+  "calendarBlocks": [],
+  "externalGoogleEvents": [],
+  "bookingEventTypes": [
+    { "id": "99800000-0000-4000-8000-000000000099", "teacherId": "browser-teacher-d28", "name": "Lekcja indywidualna", "description": "", "durationMinutes": 60, "priceGrosz": 9000, "currency": "PLN", "format": "online", "active": true, "isPublic": true, "displayOrder": 0 }
+  ],
+  "bookings": [
+    { "bookingId": "browser-booking-d28", "teacherId": "browser-teacher-d28", "eventTypeId": "99800000-0000-4000-8000-000000000099", "eventTypeName": "Lekcja indywidualna", "durationMinutes": 60, "priceGrosz": 9000, "currency": "PLN", "format": "online", "startsAt": "2026-10-06T08:00:00.000Z", "endsAt": "2026-10-06T09:00:00.000Z", "timezone": "Europe/Warsaw", "guestName": "Jan Gość", "guestEmail": "jan@example.test", "status": "confirmed", "managementTokenHash": "0f007385b6f9d4b7eeb2748605afe1a984a0a3bfa3f014d09e2a784ce9e5cd1a", "createdAt": "2026-10-01T10:00:00.000Z" }
+  ],
+  "sessions": []
+}

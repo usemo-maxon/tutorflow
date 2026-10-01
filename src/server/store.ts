@@ -38,6 +38,7 @@ import { resolveExpiredTrial } from "./subscription";
 import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
 import type { BookingEventType } from "@/lib/booking-event-types";
 import type { PublicBookingRecord } from "@/lib/public-booking";
+import { selectCalendarBookings } from "@/lib/booking-schedule";
 
 export interface TeacherRecord extends Teacher {
   passwordHash: string;
@@ -93,7 +94,11 @@ export interface BookingEventTypeRecord extends BookingEventType {
   teacherId: string;
 }
 
-export type BookingRecord = PublicBookingRecord;
+export type BookingRecord = PublicBookingRecord & {
+  managementTokenHash?: string;
+  managementTokenCiphertext?: string;
+  confirmationEmailSentAt?: string;
+};
 
 export interface SessionRecord {
   token: string;
@@ -452,6 +457,7 @@ export function appDataFromStore(
         color: item.color ?? "#7F8A9A",
       }))
       .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+    calendarBookings: selectCalendarBookings(store.bookings ?? [], teacherId),
     externalGoogleEvents: (store.externalGoogleEvents ?? [])
       .filter((item) => item.teacherId === teacherId)
       .map(withoutTenant),

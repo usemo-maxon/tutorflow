@@ -16,9 +16,11 @@ import {
 import Link from "next/link";
 import { useMemo } from "react";
 import { useDashboardData } from "@/hooks/use-app-data";
+import { bookingDetailHref } from "@/lib/booking-schedule";
 import { useMinuteClock } from "@/hooks/use-minute-clock";
 import type {
   DashboardBriefingPreview,
+  DashboardBooking,
   DashboardLesson,
   TodayAction,
 } from "@/lib/dashboard";
@@ -58,7 +60,10 @@ export function TodayPage() {
   }
 
   const timezone = data.teacher.timezone;
-  const isNewTutor = data.studentCount === 0;
+  const isNewTutor =
+    data.studentCount === 0 &&
+    data.todaysBookings.length === 0 &&
+    data.upcomingBookings.length === 0;
   const teacherName = data.teacher.name.trim().split(/\s+/)[0];
 
   return (
@@ -113,6 +118,7 @@ export function TodayPage() {
             />
             <TodayLessonsSection
               lessons={data.todaysLessons}
+              bookings={data.todaysBookings}
               timezone={timezone}
               currentLessonId={currentLessonId}
               readOnly={data.teacher.readOnly}
@@ -133,7 +139,11 @@ export function TodayPage() {
               onAddStudent={() => openStudentComposer()}
             />
           </aside>
-          <UpcomingSection lessons={data.upcomingLessons} timezone={timezone} />
+          <UpcomingSection
+            lessons={data.upcomingLessons}
+            bookings={data.upcomingBookings}
+            timezone={timezone}
+          />
           <MonthlySummary
             lessonCount={data.monthlySummary.lessonCount}
             teachingMinutes={data.monthlySummary.teachingMinutes}
@@ -264,38 +274,59 @@ function BriefingPreview({ preview }: { preview?: DashboardBriefingPreview }) {
 
 function TodayLessonsSection({
   lessons,
+  bookings,
   timezone,
   currentLessonId,
   readOnly,
   onAddLesson,
 }: {
   lessons: DashboardLesson[];
+  bookings: DashboardBooking[];
   timezone: string;
   currentLessonId?: string;
   readOnly: boolean;
   onAddLesson: () => void;
 }) {
+  const schedule = [
+    ...lessons.map((lesson) => ({ kind: "lesson" as const, lesson })),
+    ...bookings.map((booking) => ({ kind: "booking" as const, booking })),
+  ].sort((left, right) =>
+    (left.kind === "lesson"
+      ? left.lesson.startsAt
+      : left.booking.startsAt
+    ).localeCompare(
+      right.kind === "lesson" ? right.lesson.startsAt : right.booking.startsAt,
+    ),
+  );
   return (
     <section className="today-schedule" aria-labelledby="today-heading">
       <div className="dashboard-section-heading">
         <div>
           <p className="eyebrow">Chronologia</p>
-          <h2 id="today-heading">Dzisiejsze lekcje</h2>
+          <h2 id="today-heading">Dzisiejszy plan</h2>
         </div>
         <span className="dashboard-section-count">
-          {lessonCount(lessons.length)}
+          {schedule.length} {schedule.length === 1 ? "zdarzenie" : "zdarzeń"}
         </span>
       </div>
-      {lessons.length ? (
+      {schedule.length ? (
         <ol className="today-lesson-list">
-          {lessons.map((lesson) => (
-            <TodayLessonRow
-              key={lesson.id}
-              lesson={lesson}
-              timezone={timezone}
-              current={lesson.id === currentLessonId}
-            />
-          ))}
+          {schedule.map((item) =>
+            item.kind === "lesson" ? (
+              <TodayLessonRow
+                key={`lesson:${item.lesson.id}`}
+                lesson={item.lesson}
+                timezone={timezone}
+                current={item.lesson.id === currentLessonId}
+              />
+            ) : (
+              <TodayBookingRow
+                key={`booking:${item.booking.id}`}
+                booking={item.booking}
+                timezone={timezone}
+              />
+            ),
+          )}
         </ol>
       ) : (
         <div className="today-empty">
@@ -317,6 +348,43 @@ function TodayLessonsSection({
         </div>
       )}
     </section>
+  );
+}
+
+function TodayBookingRow({
+  booking,
+  timezone,
+}: {
+  booking: DashboardBooking;
+  timezone: string;
+}) {
+  return (
+    <li className="today-lesson today-lesson--booking">
+      <div className="today-lesson__time">
+        <time dateTime={booking.startsAt}>
+          {formatTime(booking.startsAt, timezone)}
+        </time>
+        <span>{formatTime(booking.endsAt, timezone)}</span>
+      </div>
+      <span className="today-lesson__rail" aria-hidden="true" />
+      <div className="today-lesson__body">
+        <div className="today-lesson__identity">
+          <div>
+            <h3>{booking.guestName}</h3>
+            <p>{booking.eventTypeName}</p>
+            {booking.goalPreview && (
+              <p className="today-booking__goal">Cel: {booking.goalPreview}</p>
+            )}
+          </div>
+          <span className="status-badge status-badge--booking">Rezerwacja</span>
+        </div>
+        <div className="today-lesson__actions">
+          <Link className="text-link" href={bookingDetailHref(booking.id)}>
+            Otwórz rezerwację <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -449,11 +517,28 @@ function actionIcon(type: TodayAction["type"]) {
 
 function UpcomingSection({
   lessons,
+  bookings,
   timezone,
 }: {
   lessons: DashboardLesson[];
+  bookings: DashboardBooking[];
   timezone: string;
 }) {
+  const items = [
+    ...lessons.map((lesson) => ({ kind: "lesson" as const, lesson })),
+    ...bookings.map((booking) => ({ kind: "booking" as const, booking })),
+  ]
+    .sort((left, right) =>
+      (left.kind === "lesson"
+        ? left.lesson.startsAt
+        : left.booking.startsAt
+      ).localeCompare(
+        right.kind === "lesson"
+          ? right.lesson.startsAt
+          : right.booking.startsAt,
+      ),
+    )
+    .slice(0, 5);
   return (
     <section
       className="dashboard-rail-section dashboard-upcoming"
@@ -472,23 +557,44 @@ function UpcomingSection({
           <CalendarDays size={18} aria-hidden="true" />
         </Link>
       </div>
-      {lessons.length ? (
+      {items.length ? (
         <ol className="upcoming-list">
-          {lessons.slice(0, 5).map((lesson, index) => {
-            const day = formatShortDay(lesson.startsAt, timezone);
-            const previousDay = index
-              ? formatShortDay(lessons[index - 1].startsAt, timezone)
+          {items.map((item, index) => {
+            const event = item.kind === "lesson" ? item.lesson : item.booking;
+            const day = formatShortDay(event.startsAt, timezone);
+            const previous = index ? items[index - 1] : undefined;
+            const previousDay = previous
+              ? formatShortDay(
+                  previous.kind === "lesson"
+                    ? previous.lesson.startsAt
+                    : previous.booking.startsAt,
+                  timezone,
+                )
               : null;
             return (
-              <li key={lesson.id}>
+              <li key={`${item.kind}:${event.id}`}>
                 {day !== previousDay && (
                   <p className="upcoming-list__day">{capitalize(day)}</p>
                 )}
-                <Link href={`/app/lekcje/${lesson.id}`}>
-                  <time>{formatTime(lesson.startsAt, timezone)}</time>
+                <Link
+                  href={
+                    item.kind === "lesson"
+                      ? `/app/lekcje/${item.lesson.id}`
+                      : bookingDetailHref(item.booking.id)
+                  }
+                >
+                  <time>{formatTime(event.startsAt, timezone)}</time>
                   <span>
-                    <strong>{lesson.participantLabel}</strong>
-                    <small>{lesson.topic || "Lekcja"}</small>
+                    <strong>
+                      {item.kind === "lesson"
+                        ? item.lesson.participantLabel
+                        : item.booking.guestName}
+                    </strong>
+                    <small>
+                      {item.kind === "lesson"
+                        ? item.lesson.topic || "Lekcja"
+                        : `Rezerwacja · ${item.booking.eventTypeName}`}
+                    </small>
                   </span>
                   <ArrowRight size={15} aria-hidden="true" />
                 </Link>
@@ -498,7 +604,7 @@ function UpcomingSection({
         </ol>
       ) : (
         <p className="dashboard-calm-state">
-          Brak kolejnych lekcji w najbliższych 14 dniach.
+          Brak kolejnych lekcji i rezerwacji w najbliższych 14 dniach.
         </p>
       )}
     </section>
@@ -682,13 +788,6 @@ function TodayDashboardLoading() {
       </div>
     </div>
   );
-}
-
-function lessonCount(count: number) {
-  if (count === 1) return "1 lekcja";
-  const last = count % 10;
-  const lastTwo = count % 100;
-  return `${count} ${last >= 2 && last <= 4 && !(lastTwo >= 12 && lastTwo <= 14) ? "lekcje" : "lekcji"}`;
 }
 
 function teachingTime(minutes: number) {

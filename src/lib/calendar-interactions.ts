@@ -131,9 +131,26 @@ export function calendarBounds(
         Number(formatInTimeZone(event.endsAt!, timezone, "H")) +
         Number(formatInTimeZone(event.endsAt!, timezone, "m")) / 60,
     );
+  const bookingStarts = (data?.calendarBookings ?? []).map(
+    (booking) =>
+      Number(formatInTimeZone(booking.startsAt, timezone, "H")) +
+      Number(formatInTimeZone(booking.startsAt, timezone, "m")) / 60,
+  );
+  const bookingEnds = (data?.calendarBookings ?? []).map(
+    (booking) =>
+      Number(formatInTimeZone(booking.endsAt, timezone, "H")) +
+      Number(formatInTimeZone(booking.endsAt, timezone, "m")) / 60,
+  );
   return {
     startHour: Math.floor(
-      Math.min(7, ...starts, ...available, ...blockStarts, ...externalStarts),
+      Math.min(
+        7,
+        ...starts,
+        ...available,
+        ...blockStarts,
+        ...externalStarts,
+        ...bookingStarts,
+      ),
     ),
     endHour: Math.min(
       24,
@@ -143,6 +160,7 @@ export function calendarBounds(
           ...available,
           ...blockEnds,
           ...externalEnds,
+          ...bookingEnds,
           ...lessons.map(
             (lesson, index) => starts[index] + lesson.durationMinutes / 60,
           ),

@@ -4,6 +4,7 @@ import {
   convertTutorBooking,
   getTutorBooking,
 } from "@/server/booking-lifecycle";
+import { cancelTutorBooking } from "@/server/booking-management";
 import { ApiFailure, errorResponse } from "@/server/errors";
 
 export const runtime = "nodejs";
@@ -70,6 +71,25 @@ export async function POST(
     return Response.json(
       await convertTutorBooking(teacherId, bookingId, parsed.data),
     );
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ bookingId: string }> },
+) {
+  try {
+    if (request.headers.get("sec-fetch-site") === "cross-site") {
+      throw new ApiFailure(403, {
+        code: "CROSS_SITE_REQUEST",
+        message: "Żądanie zostało odrzucone.",
+      });
+    }
+    const teacherId = await authenticatedTeacherId();
+    const { bookingId } = await params;
+    return Response.json(await cancelTutorBooking(teacherId, bookingId));
   } catch (error) {
     return errorResponse(error);
   }

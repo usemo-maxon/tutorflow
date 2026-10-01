@@ -270,6 +270,18 @@ export interface CalendarBlock {
   updatedAt: ISODateTime;
 }
 
+/** Privacy-minimized representation of an active public booking for schedules. */
+export interface CalendarBooking {
+  id: EntityId;
+  guestName: string;
+  eventTypeName: string;
+  startsAt: ISODateTime;
+  endsAt: ISODateTime;
+  timezone: string;
+  status: "confirmed";
+  readOnly: true;
+}
+
 export interface ExternalGoogleEvent {
   id: EntityId;
   title: string;
@@ -298,6 +310,7 @@ export interface AppData {
   availability: AvailabilityRule[];
   availabilityExceptions: AvailabilityException[];
   calendarBlocks: CalendarBlock[];
+  calendarBookings: CalendarBooking[];
   externalGoogleEvents: ExternalGoogleEvent[];
   integrations: {
     google: IntegrationState;

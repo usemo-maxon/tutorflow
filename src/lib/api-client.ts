@@ -84,10 +84,13 @@ export async function fetchTutorBooking(
   bookingId: string,
   signal?: AbortSignal,
 ): Promise<TutorBookingDetail> {
-  const response = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, {
-    signal,
-    cache: "no-store",
-  });
+  const response = await fetch(
+    `/api/bookings/${encodeURIComponent(bookingId)}`,
+    {
+      signal,
+      cache: "no-store",
+    },
+  );
   return parseResponse(response);
 }
 
@@ -102,6 +105,16 @@ export async function convertTutorBooking(
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
     },
+  );
+  return parseResponse(response);
+}
+
+export async function cancelTutorBooking(
+  bookingId: string,
+): Promise<{ status: "cancelled" }> {
+  const response = await fetch(
+    `/api/bookings/${encodeURIComponent(bookingId)}`,
+    { method: "DELETE" },
   );
   return parseResponse(response);
 }

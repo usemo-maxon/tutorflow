@@ -12,8 +12,14 @@ import {
   localDateForTimezone,
 } from "@/lib/public-availability";
 import { PublicBookingInputSchema } from "@/lib/validation";
-import { isSupabaseConfigured } from "./env";
+import { isSupabaseConfigured, siteUrl } from "./env";
+import { createBookingManagementToken } from "./booking-management";
+import {
+  sendBookingConfirmationEmail,
+  type BookingEmailSender,
+} from "./booking-email";
 import { ApiFailure } from "./errors";
+import { encryptSecret } from "./crypto";
 import { mutateStore, queryStore } from "./store";
 import {
   createSupabaseAdminClient,
@@ -32,6 +38,18 @@ const slotUnavailable = () =>
     message: "Ten termin jest już niedostępny. Wybierz inny termin.",
   });
 
+function withoutBookingSecrets(
+  booking: import("./store").BookingRecord,
+): PublicBookingRecord {
+  const publicBooking: Partial<import("./store").BookingRecord> = {
+    ...booking,
+  };
+  delete publicBooking.managementTokenHash;
+  delete publicBooking.managementTokenCiphertext;
+  delete publicBooking.confirmationEmailSentAt;
+  return publicBooking as PublicBookingRecord;
+}
+
 function validateInput(input: unknown): PublicBookingInput {
   const parsed = PublicBookingInputSchema.safeParse(input);
   if (!parsed.success) {
@@ -43,22 +61,30 @@ function validateInput(input: unknown): PublicBookingInput {
   return parsed.data;
 }
 
+type CreatedBooking = {
+  booking: PublicBookingRecord;
+  tutorPublicName: string;
+  publicLocation?: string;
+};
+
 function publicConfirmation(
   booking: PublicBookingRecord,
+  managementUrl: string,
 ): PublicBookingConfirmation {
   return {
-    bookingId: booking.bookingId,
     eventTypeName: booking.eventTypeName,
     startsAt: booking.startsAt,
     endsAt: booking.endsAt,
     timezone: booking.timezone,
     guestEmail: booking.guestEmail,
+    managementUrl,
   };
 }
 
 async function createLocalPublicBooking(
   input: PublicBookingInput,
-): Promise<PublicBookingConfirmation> {
+  managementTokenHash: string,
+): Promise<CreatedBooking> {
   return mutateStore((store) => {
     const teacher = store.teachers.find(
       (item) =>
@@ -116,7 +142,7 @@ async function createLocalPublicBooking(
     if (!slot) throw slotUnavailable();
 
     const createdAt = new Date().toISOString();
-    const booking: PublicBookingRecord = {
+    const booking: import("./store").BookingRecord = {
       bookingId: randomUUID(),
       teacherId: teacher.id,
       eventTypeId: eventType.id,
@@ -135,68 +161,152 @@ async function createLocalPublicBooking(
       guestGoal: input.goal,
       guestMessage: input.message,
       status: "confirmed",
+      managementTokenHash,
       createdAt,
     };
     (store.bookings ??= []).push(booking);
-    return publicConfirmation(booking);
+    return {
+      booking,
+      tutorPublicName: teacher.publicProfile!.publicName,
+      publicLocation:
+        eventType.format === "offline"
+          ? teacher.publicProfile!.city || undefined
+          : undefined,
+    };
   });
 }
 
 export async function createPublicBooking(
   rawInput: unknown,
+  options: {
+    emailSender?: BookingEmailSender;
+    baseUrl?: string;
+  } = {},
 ): Promise<PublicBookingConfirmation> {
   const input = validateInput(rawInput);
+  const { token, tokenHash } = createBookingManagementToken();
+  const baseUrl = (options.baseUrl ?? siteUrl()).replace(/\/$/, "");
+  let created: CreatedBooking;
   if (!isSupabaseConfigured() && process.env.NODE_ENV !== "production") {
-    return createLocalPublicBooking(input);
+    created = await createLocalPublicBooking(input, tokenHash);
+  } else {
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .rpc("create_public_booking", {
+        p_slug: input.slug,
+        p_event_type_id: input.eventTypeId,
+        p_starts_at: input.startsAt,
+        p_guest_name: input.name,
+        p_guest_email: input.email,
+        p_guest_phone: input.phone ?? null,
+        p_guest_level: input.level ?? null,
+        p_guest_goal: input.goal ?? null,
+        p_guest_message: input.message ?? null,
+        p_management_token_hash: tokenHash,
+        p_management_token_ciphertext: encryptSecret({ token }),
+      })
+      .single();
+
+    if (error) {
+      if (error.message.includes("PUBLIC_BOOKING_SLOT_UNAVAILABLE")) {
+        throw slotUnavailable();
+      }
+      if (error.message.includes("PUBLIC_BOOKING_OFFER_NOT_FOUND")) {
+        throw offerNotFound();
+      }
+      if (error.message.includes("PUBLIC_BOOKING_INVALID_GUEST")) {
+        throw new ApiFailure(400, {
+          code: "VALIDATION_ERROR",
+          message: "Sprawdź podane dane.",
+        });
+      }
+      throw error;
+    }
+
+    const row = data as {
+      booking_id: string;
+      tutor_id: string;
+      event_type_id: string;
+      event_type_name: string;
+      duration_minutes: number;
+      price_grosz: number;
+      currency: "PLN";
+      format: "online" | "offline";
+      starts_at: string;
+      ends_at: string;
+      timezone: string;
+      guest_name: string;
+      guest_email: string;
+      tutor_public_name: string;
+      public_location: string | null;
+      created_at: string;
+    };
+    created = {
+      booking: {
+        bookingId: row.booking_id,
+        teacherId: row.tutor_id,
+        eventTypeId: row.event_type_id,
+        eventTypeName: row.event_type_name,
+        durationMinutes: row.duration_minutes,
+        priceGrosz: row.price_grosz,
+        currency: row.currency,
+        format: row.format,
+        startsAt: row.starts_at,
+        endsAt: row.ends_at,
+        timezone: row.timezone,
+        guestName: row.guest_name,
+        guestEmail: row.guest_email,
+        status: "confirmed",
+        createdAt: row.created_at,
+      },
+      tutorPublicName: row.tutor_public_name,
+      publicLocation: row.public_location ?? undefined,
+    };
   }
 
+  const managementUrl = `${baseUrl}/rezerwacja/${token}`;
+  const calendarUrl = `${managementUrl}/kalendarz.ics`;
+  try {
+    await (options.emailSender ?? sendBookingConfirmationEmail)({
+      deliveryKey: `booking-confirmation/${created.booking.bookingId}`,
+      to: created.booking.guestEmail,
+      tutorPublicName: created.tutorPublicName,
+      eventTypeName: created.booking.eventTypeName,
+      startsAt: created.booking.startsAt,
+      endsAt: created.booking.endsAt,
+      timezone: created.booking.timezone,
+      format: created.booking.format,
+      publicLocation: created.publicLocation,
+      managementUrl,
+      calendarUrl,
+    });
+    await markConfirmationEmailSent(created.booking.bookingId);
+  } catch (error) {
+    console.error("Booking confirmation email failed", {
+      bookingId: created.booking.bookingId,
+      reason: error instanceof Error ? error.name : "UnknownError",
+    });
+  }
+  return publicConfirmation(created.booking, managementUrl);
+}
+
+async function markConfirmationEmailSent(bookingId: string) {
+  const sentAt = new Date().toISOString();
+  if (!isSupabaseConfigured() && process.env.NODE_ENV !== "production") {
+    await mutateStore((store) => {
+      const booking = (store.bookings ?? []).find(
+        (item) => item.bookingId === bookingId,
+      );
+      if (booking && !booking.confirmationEmailSentAt)
+        booking.confirmationEmailSentAt = sentAt;
+    });
+    return;
+  }
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
-    .rpc("create_public_booking", {
-      p_slug: input.slug,
-      p_event_type_id: input.eventTypeId,
-      p_starts_at: input.startsAt,
-      p_guest_name: input.name,
-      p_guest_email: input.email,
-      p_guest_phone: input.phone ?? null,
-      p_guest_level: input.level ?? null,
-      p_guest_goal: input.goal ?? null,
-      p_guest_message: input.message ?? null,
-    })
-    .single();
-
-  if (error) {
-    if (error.message.includes("PUBLIC_BOOKING_SLOT_UNAVAILABLE")) {
-      throw slotUnavailable();
-    }
-    if (error.message.includes("PUBLIC_BOOKING_OFFER_NOT_FOUND")) {
-      throw offerNotFound();
-    }
-    if (error.message.includes("PUBLIC_BOOKING_INVALID_GUEST")) {
-      throw new ApiFailure(400, {
-        code: "VALIDATION_ERROR",
-        message: "Sprawdź podane dane.",
-      });
-    }
-    throw error;
-  }
-
-  const row = data as {
-    booking_id: string;
-    event_type_name: string;
-    starts_at: string;
-    ends_at: string;
-    timezone: string;
-    guest_email: string;
-  };
-  return {
-    bookingId: row.booking_id,
-    eventTypeName: row.event_type_name,
-    startsAt: row.starts_at,
-    endsAt: row.ends_at,
-    timezone: row.timezone,
-    guestEmail: row.guest_email,
-  };
+  const { error } = await supabase.rpc("mark_booking_confirmation_email_sent", {
+    p_booking_id: bookingId,
+  });
+  if (error) throw error;
 }
 
 /** Authenticated tutor-domain access; RLS still scopes production reads. */
@@ -205,16 +315,16 @@ export async function getOwnPublicBookings(
 ): Promise<PublicBookingRecord[]> {
   if (!isSupabaseConfigured() && process.env.NODE_ENV !== "production") {
     return queryStore((store) =>
-      (store.bookings ?? []).filter(
-        (booking) => booking.teacherId === teacherId,
-      ),
+      (store.bookings ?? [])
+        .filter((booking) => booking.teacherId === teacherId)
+        .map(withoutBookingSecrets),
     );
   }
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id,tutor_id,event_type_id,event_type_name,duration_minutes,price_grosz,currency,format,starts_at,ends_at,timezone,guest_name,guest_email,guest_phone,guest_level,guest_goal,guest_message,status,student_id,converted_lesson_id,converted_at,created_at",
+      "id,tutor_id,event_type_id,event_type_name,duration_minutes,price_grosz,currency,format,starts_at,ends_at,timezone,guest_name,guest_email,guest_phone,guest_level,guest_goal,guest_message,status,student_id,converted_lesson_id,converted_at,cancelled_at,cancelled_by,rescheduled_at,reschedule_count,created_at",
     )
     .eq("tutor_id", teacherId)
     .eq("source", "public_booking")
@@ -242,6 +352,10 @@ export async function getOwnPublicBookings(
     studentId: row.student_id ?? undefined,
     lessonId: row.converted_lesson_id ?? undefined,
     convertedAt: row.converted_at ?? undefined,
+    cancelledAt: row.cancelled_at ?? undefined,
+    cancelledBy: row.cancelled_by ?? undefined,
+    rescheduledAt: row.rescheduled_at ?? undefined,
+    rescheduleCount: row.reschedule_count,
     createdAt: row.created_at,
   }));
 }

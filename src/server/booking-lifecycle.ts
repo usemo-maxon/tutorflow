@@ -38,11 +38,27 @@ type BookingRow = {
   student_id: string | null;
   converted_lesson_id: string | null;
   converted_at: string | null;
+  cancelled_at: string | null;
+  cancelled_by: "guest" | "tutor" | null;
+  rescheduled_at: string | null;
+  reschedule_count: number;
   created_at: string;
 };
 
+function withoutBookingSecrets(
+  booking: import("./store").BookingRecord,
+): PublicBookingRecord {
+  const publicBooking: Partial<import("./store").BookingRecord> = {
+    ...booking,
+  };
+  delete publicBooking.managementTokenHash;
+  delete publicBooking.managementTokenCiphertext;
+  delete publicBooking.confirmationEmailSentAt;
+  return publicBooking as PublicBookingRecord;
+}
+
 const bookingSelect =
-  "id,tutor_id,event_type_id,event_type_name,duration_minutes,price_grosz,currency,format,starts_at,ends_at,timezone,guest_name,guest_email,guest_phone,guest_level,guest_goal,guest_message,status,student_id,converted_lesson_id,converted_at,created_at";
+  "id,tutor_id,event_type_id,event_type_name,duration_minutes,price_grosz,currency,format,starts_at,ends_at,timezone,guest_name,guest_email,guest_phone,guest_level,guest_goal,guest_message,status,student_id,converted_lesson_id,converted_at,cancelled_at,cancelled_by,rescheduled_at,reschedule_count,created_at";
 
 function notFound(): ApiFailure {
   return new ApiFailure(404, {
@@ -74,6 +90,10 @@ function rowToBooking(row: BookingRow): PublicBookingRecord {
     studentId: row.student_id ?? undefined,
     lessonId: row.converted_lesson_id ?? undefined,
     convertedAt: row.converted_at ?? undefined,
+    cancelledAt: row.cancelled_at ?? undefined,
+    cancelledBy: row.cancelled_by ?? undefined,
+    rescheduledAt: row.rescheduled_at ?? undefined,
+    rescheduleCount: row.reschedule_count,
     createdAt: row.created_at,
   };
 }
@@ -137,13 +157,9 @@ export async function listTutorBookings(
   if (!isSupabaseConfigured() && process.env.NODE_ENV !== "production") {
     return queryStore((store) =>
       (store.bookings ?? [])
-        .filter(
-          (booking) =>
-            booking.teacherId === teacherId &&
-            booking.status !== "cancelled" &&
-            Date.parse(booking.endsAt) >= Date.now(),
-        )
-        .sort((a, b) => a.startsAt.localeCompare(b.startsAt)),
+        .filter((booking) => booking.teacherId === teacherId)
+        .map(withoutBookingSecrets)
+        .sort((a, b) => b.startsAt.localeCompare(a.startsAt)),
     );
   }
   const supabase = await createSupabaseServerClient();
@@ -152,9 +168,7 @@ export async function listTutorBookings(
     .select(bookingSelect)
     .eq("tutor_id", teacherId)
     .eq("source", "public_booking")
-    .neq("status", "cancelled")
-    .gte("ends_at", new Date().toISOString())
-    .order("starts_at", { ascending: true });
+    .order("starts_at", { ascending: false });
   if (error) throw error;
   return (data as BookingRow[]).map(rowToBooking);
 }
@@ -169,6 +183,7 @@ export async function getTutorBooking(
         (item) => item.bookingId === bookingId && item.teacherId === teacherId,
       );
       if (!booking) throw notFound();
+      const publicBooking = withoutBookingSecrets(booking);
       const students = store.students
         .filter((item) => item.teacherId === teacherId)
         .map((item) => ({
@@ -180,9 +195,9 @@ export async function getTutorBooking(
           status: item.status,
         }));
       return {
-        ...booking,
-        proposedStudent: proposedStudent(booking),
-        matchingStudents: matchingCandidates(booking, students),
+        ...publicBooking,
+        proposedStudent: proposedStudent(publicBooking),
+        matchingStudents: matchingCandidates(publicBooking, students),
       };
     });
   }
@@ -388,7 +403,10 @@ async function convertLocalBooking(
         defaultDurationMinutes: booking.durationMinutes,
         defaultFormat: booking.format,
         defaultLocation: "",
-        defaultPrice: { amount: booking.priceGrosz, currency: booking.currency },
+        defaultPrice: {
+          amount: booking.priceGrosz,
+          currency: booking.currency,
+        },
         timezone: booking.timezone,
         groupIds: [],
         packageRemainingLessons: null,
@@ -417,7 +435,8 @@ async function convertLocalBooking(
       mode: "single",
       timezone: booking.timezone,
       status: "scheduled",
-      syncStatus: teacher.google.status === "connected" ? "pending" : "disabled",
+      syncStatus:
+        teacher.google.status === "connected" ? "pending" : "disabled",
       topic: booking.eventTypeName,
       planItems: [],
       homework: "",

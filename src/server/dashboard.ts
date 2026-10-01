@@ -10,6 +10,7 @@ import {
   TODAY_UPCOMING_LIMIT,
   type DashboardData,
   type DashboardLesson,
+  type DashboardBooking,
   type TodayAction,
 } from "@/lib/dashboard";
 import { hasEntitlement } from "@/lib/entitlements";
@@ -58,6 +59,16 @@ export interface DashboardOutcomeSource {
   nextStep?: string | null;
 }
 
+export interface DashboardBookingSource {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  guestName: string;
+  eventTypeName: string;
+  goalPreview?: string;
+  status: "confirmed" | "cancelled" | "converted";
+}
+
 export interface DashboardSource {
   now: string;
   teacher: DashboardData["teacher"] & {
@@ -70,7 +81,9 @@ export interface DashboardSource {
   students: Pick<Student, "id" | "name" | "subject" | "level" | "status">[];
   groups: Pick<StudentGroup, "id" | "name" | "subject" | "level">[];
   todaysLessons: DashboardLessonSource[];
+  todaysBookings: DashboardBookingSource[];
   upcomingLessons: DashboardLessonSource[];
+  upcomingBookings: DashboardBookingSource[];
   unfinishedLessons: DashboardLessonSource[];
   recentCompletedLessons: DashboardLessonSource[];
   outcomes: DashboardOutcomeSource[];
@@ -159,6 +172,22 @@ export function buildDashboardData(source: DashboardSource): DashboardData {
     .sort(byStartsAt)
     .slice(0, TODAY_LESSON_LIMIT)
     .map(toLesson);
+  const toBooking = (booking: DashboardBookingSource): DashboardBooking => ({
+    id: booking.id,
+    startsAt: booking.startsAt,
+    endsAt: booking.endsAt,
+    guestName: booking.guestName,
+    eventTypeName: booking.eventTypeName,
+    goalPreview: booking.goalPreview,
+    status: "confirmed",
+    kind: "booking",
+    readOnly: true,
+  });
+  const todaysBookings = source.todaysBookings
+    .filter((booking) => booking.status === "confirmed")
+    .sort(byStartsAt)
+    .slice(0, TODAY_LESSON_LIMIT)
+    .map(toBooking);
   const now = Date.parse(source.now);
   const current = todaysLessons.find(
     (lesson) =>
@@ -192,6 +221,7 @@ export function buildDashboardData(source: DashboardSource): DashboardData {
     },
     nextLesson: current ?? next,
     todaysLessons,
+    todaysBookings,
     actions: visibleActions,
     hiddenActionCount: Math.max(0, allActions.length - visibleActions.length),
     upcomingLessons: source.upcomingLessons
@@ -199,6 +229,11 @@ export function buildDashboardData(source: DashboardSource): DashboardData {
       .sort(byStartsAt)
       .slice(0, TODAY_UPCOMING_LIMIT)
       .map(toLesson),
+    upcomingBookings: source.upcomingBookings
+      .filter((booking) => booking.status === "confirmed")
+      .sort(byStartsAt)
+      .slice(0, TODAY_UPCOMING_LIMIT)
+      .map(toBooking),
     monthlySummary: {
       lessonCount: monthLessons.length,
       completedLessonCount: completedLessons.length,
@@ -430,11 +465,39 @@ export function dashboardSourceFromAppData(
     todaysLessons: lessons.filter((lesson) =>
       between(lesson, ranges.todayStart, ranges.todayEnd),
     ),
+    todaysBookings: data.calendarBookings
+      .filter(
+        (booking) =>
+          booking.startsAt >= ranges.todayStart &&
+          booking.startsAt < ranges.todayEnd,
+      )
+      .map((booking) => ({
+        id: booking.id,
+        startsAt: booking.startsAt,
+        endsAt: booking.endsAt,
+        guestName: booking.guestName,
+        eventTypeName: booking.eventTypeName,
+        status: booking.status,
+      })),
     upcomingLessons: lessons.filter(
       (lesson) =>
         lesson.startsAt >= ranges.todayEnd &&
         lesson.startsAt < ranges.upcomingEnd,
     ),
+    upcomingBookings: data.calendarBookings
+      .filter(
+        (booking) =>
+          booking.startsAt >= ranges.todayEnd &&
+          booking.startsAt < ranges.upcomingEnd,
+      )
+      .map((booking) => ({
+        id: booking.id,
+        startsAt: booking.startsAt,
+        endsAt: booking.endsAt,
+        guestName: booking.guestName,
+        eventTypeName: booking.eventTypeName,
+        status: booking.status,
+      })),
     unfinishedLessons: lessons.filter(
       (lesson) =>
         lesson.status === "needs_completion" &&
@@ -465,7 +528,10 @@ function lessonLabel(
   return students.get(lesson.participantIds[0])?.name ?? "uczniem";
 }
 
-function byStartsAt(left: DashboardLessonSource, right: DashboardLessonSource) {
+function byStartsAt(
+  left: { startsAt: string; id: string },
+  right: { startsAt: string; id: string },
+) {
   return (
     left.startsAt.localeCompare(right.startsAt) ||
     left.id.localeCompare(right.id)

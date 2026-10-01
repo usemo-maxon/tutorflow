@@ -28,6 +28,18 @@ export interface DashboardLesson {
   meetingUrl?: string;
 }
 
+export interface DashboardBooking {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  guestName: string;
+  eventTypeName: string;
+  goalPreview?: string;
+  status: "confirmed";
+  kind: "booking";
+  readOnly: true;
+}
+
 export type DashboardBriefingPreview =
   | { kind: "first_lesson"; studentName: string }
   | {
@@ -94,9 +106,11 @@ export interface DashboardData {
   today: { dateKey: string; startsAt: string; endsAt: string };
   nextLesson?: DashboardLesson & { briefing?: DashboardBriefingPreview };
   todaysLessons: DashboardLesson[];
+  todaysBookings: DashboardBooking[];
   actions: TodayAction[];
   hiddenActionCount: number;
   upcomingLessons: DashboardLesson[];
+  upcomingBookings: DashboardBooking[];
   monthlySummary: DashboardMonthlySummary;
   studentCount: number;
   partialErrors: Array<"actions" | "briefing" | "monthly_summary">;

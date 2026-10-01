@@ -72,7 +72,9 @@ function source(overrides: Partial<DashboardSource> = {}): DashboardSource {
       { id: "group-a", name: "Grupa B1", subject: "Angielski", level: "B1" },
     ],
     todaysLessons: [],
+    todaysBookings: [],
     upcomingLessons: [],
+    upcomingBookings: [],
     unfinishedLessons: [],
     recentCompletedLessons: [],
     outcomes: [],
@@ -115,6 +117,73 @@ describe("dashboardRanges", () => {
 });
 
 describe("buildDashboardData", () => {
+  it("places confirmed bookings in today's schedule and upcoming without turning them into lessons", () => {
+    const todayBooking = {
+      id: "booking-today",
+      startsAt: "2026-09-16T15:30:00.000Z",
+      endsAt: "2026-09-16T16:30:00.000Z",
+      guestName: "Anna Nowak",
+      eventTypeName: "Pierwsze spotkanie",
+      goalPreview: "Swobodniej mówić w pracy",
+      status: "confirmed" as const,
+    };
+    const futureBooking = {
+      ...todayBooking,
+      id: "booking-future",
+      startsAt: "2026-09-18T15:30:00.000Z",
+      endsAt: "2026-09-18T16:30:00.000Z",
+    };
+    const data = buildDashboardData(
+      source({
+        todaysBookings: [
+          todayBooking,
+          { ...todayBooking, id: "cancelled", status: "cancelled" },
+        ],
+        upcomingBookings: [futureBooking],
+      }),
+    );
+
+    expect(data.todaysBookings).toEqual([
+      expect.objectContaining({
+        id: "booking-today",
+        kind: "booking",
+        status: "confirmed",
+        readOnly: true,
+      }),
+    ]);
+    expect(data.upcomingBookings[0].id).toBe("booking-future");
+    expect(data.todaysLessons).toEqual([]);
+    expect(data.actions).toEqual([]);
+  });
+
+  it("keeps a converted booking out while its resulting normal lesson remains", () => {
+    const resultingLesson = lesson(
+      "converted-lesson",
+      "2026-09-16T15:30:00.000Z",
+      "2026-09-16T16:30:00.000Z",
+    );
+    const data = buildDashboardData(
+      source({
+        todaysLessons: [resultingLesson],
+        todaysBookings: [
+          {
+            id: "converted-booking",
+            startsAt: resultingLesson.startsAt,
+            endsAt: resultingLesson.endsAt,
+            guestName: "Anna Nowak",
+            eventTypeName: "Pierwsze spotkanie",
+            status: "converted",
+          },
+        ],
+      }),
+    );
+
+    expect(data.todaysLessons.map((item) => item.id)).toEqual([
+      "converted-lesson",
+    ]);
+    expect(data.todaysBookings).toEqual([]);
+  });
+
   it("selects the nearest future lesson after completed chronology", () => {
     const data = buildDashboardData(
       source({

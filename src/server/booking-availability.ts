@@ -54,16 +54,18 @@ export async function getOwnBookingAvailabilitySettings(
   teacherId: string,
 ): Promise<BookingAvailabilitySettings> {
   if (!isSupabaseConfigured() && process.env.NODE_ENV !== "production") {
-    return queryStore(
-      (store) =>
-        store.teachers.find((teacher) => teacher.id === teacherId)
-          ?.bookingAvailability ?? DEFAULT_BOOKING_AVAILABILITY,
-    );
+    return queryStore((store) => ({
+      ...DEFAULT_BOOKING_AVAILABILITY,
+      ...store.teachers.find((teacher) => teacher.id === teacherId)
+        ?.bookingAvailability,
+    }));
   }
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase
     .from("booking_availability_settings")
-    .select("minimum_notice_hours,booking_horizon_days")
+    .select(
+      "minimum_notice_hours,booking_horizon_days,cancellation_notice_hours,reschedule_notice_hours,reminder_24_hours_enabled",
+    )
     .eq("tutor_id", teacherId)
     .maybeSingle();
   if (error) throw error;
@@ -71,6 +73,9 @@ export async function getOwnBookingAvailabilitySettings(
     ? {
         minimumNoticeHours: data.minimum_notice_hours,
         bookingHorizonDays: data.booking_horizon_days,
+        cancellationNoticeHours: data.cancellation_notice_hours,
+        rescheduleNoticeHours: data.reschedule_notice_hours,
+        reminder24HoursEnabled: data.reminder_24_hours_enabled,
       }
     : DEFAULT_BOOKING_AVAILABILITY;
 }
@@ -100,6 +105,13 @@ export async function saveOwnBookingAvailabilitySettings(
       tutor_id: teacherId,
       minimum_notice_hours: settings.minimumNoticeHours,
       booking_horizon_days: settings.bookingHorizonDays,
+      cancellation_notice_hours: settings.cancellationNoticeHours,
+      reschedule_notice_hours:
+        settings.rescheduleNoticeHours ??
+        DEFAULT_BOOKING_AVAILABILITY.rescheduleNoticeHours,
+      reminder_24_hours_enabled:
+        settings.reminder24HoursEnabled ??
+        DEFAULT_BOOKING_AVAILABILITY.reminder24HoursEnabled,
     },
     { onConflict: "tutor_id" },
   );

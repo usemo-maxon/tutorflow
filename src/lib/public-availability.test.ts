@@ -29,7 +29,11 @@ const calculate = (data = baseData(), overrides = {}) =>
     durationMinutes: 60,
     startDate: "2026-01-05",
     endDate: "2026-01-05",
-    settings: { minimumNoticeHours: 0, bookingHorizonDays: 30 },
+    settings: {
+      minimumNoticeHours: 0,
+      bookingHorizonDays: 30,
+      cancellationNoticeHours: 24,
+    },
     now: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
   });
@@ -65,6 +69,34 @@ describe("calculatePublicAvailability", () => {
       }),
     )[0].slots;
     expect(lesson).toEqual([]);
+  });
+
+  it("uses the same confirmed-unconverted booking state as the active schedule", () => {
+    const bookings = [
+      {
+        startsAt: "2026-01-05T08:30:00.000Z",
+        endsAt: "2026-01-05T09:30:00.000Z",
+        status: "confirmed" as const,
+      },
+      {
+        startsAt: "2026-01-05T09:30:00.000Z",
+        endsAt: "2026-01-05T10:00:00.000Z",
+        status: "cancelled" as const,
+      },
+      {
+        startsAt: "2026-01-05T09:30:00.000Z",
+        endsAt: "2026-01-05T10:00:00.000Z",
+        status: "converted" as const,
+      },
+    ];
+    const slots = calculate(baseData(), { bookings })[0].slots;
+
+    expect(slots.map((slot) => slot.startsAt.slice(11, 16))).toEqual([]);
+    expect(
+      calculate(baseData(), {
+        bookings: bookings.filter((booking) => booking.status !== "confirmed"),
+      })[0].slots,
+    ).toHaveLength(5);
   });
 
   it("respects availability exceptions", () => {
@@ -135,7 +167,11 @@ describe("calculatePublicAvailability", () => {
         ],
       }),
       now: new Date("2026-01-05T08:10:00.000Z"),
-      settings: { minimumNoticeHours: 1, bookingHorizonDays: 30 },
+      settings: {
+        minimumNoticeHours: 1,
+        bookingHorizonDays: 30,
+        cancellationNoticeHours: 24,
+      },
     })[0].slots;
     expect(notice.map((slot) => slot.startsAt.slice(11, 16))).toEqual([
       "09:15",
@@ -147,7 +183,11 @@ describe("calculatePublicAvailability", () => {
     const horizon = calculate(baseData(), {
       startDate: "2026-02-05",
       endDate: "2026-02-05",
-      settings: { minimumNoticeHours: 0, bookingHorizonDays: 30 },
+      settings: {
+        minimumNoticeHours: 0,
+        bookingHorizonDays: 30,
+        cancellationNoticeHours: 24,
+      },
     })[0].slots;
     expect(horizon).toEqual([]);
   });
@@ -172,7 +212,11 @@ describe("calculatePublicAvailability", () => {
       durationMinutes: 15,
       startDate: "2026-03-29",
       endDate: "2026-03-29",
-      settings: { minimumNoticeHours: 0, bookingHorizonDays: 365 },
+      settings: {
+        minimumNoticeHours: 0,
+        bookingHorizonDays: 365,
+        cancellationNoticeHours: 24,
+      },
       now: new Date("2026-01-01T00:00:00.000Z"),
     });
     const localTimes = days[0].slots.map((slot) =>

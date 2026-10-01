@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => {
     updates,
     client: {
       from,
+      rpc: vi.fn(async () => ({ data: null, error: null })),
       storage: {
         from: vi.fn(() => ({
           remove: vi.fn(async () => ({ error: null })),
@@ -50,8 +51,9 @@ vi.mock("@/server/supabase", () => ({
 import { GET as googleSync } from "@/app/api/cron/google-sync/route";
 import { GET as maintenance } from "@/app/api/cron/maintenance/route";
 import { GET as telegramReminders } from "@/app/api/cron/telegram-reminders/route";
+import { GET as bookingReminders } from "@/app/api/cron/booking-reminders/route";
 
-const handlers = [telegramReminders, googleSync, maintenance];
+const handlers = [telegramReminders, bookingReminders, googleSync, maintenance];
 
 afterEach(() => {
   delete process.env.CRON_SECRET;

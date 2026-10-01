@@ -303,6 +303,25 @@ describe("calendar drag and selection interactions", () => {
       startHour: 3,
       endHour: 24,
     });
+    expect(
+      calendarBounds([], "Europe/Warsaw", {
+        ...boundedData,
+        calendarBlocks: [],
+        externalGoogleEvents: [],
+        calendarBookings: [
+          {
+            id: "booking-early",
+            guestName: "Anna",
+            eventTypeName: "Pierwsze spotkanie",
+            startsAt: "2035-01-10T03:30:00.000Z",
+            endsAt: "2035-01-10T05:00:00.000Z",
+            timezone: "Europe/Warsaw",
+            status: "confirmed",
+            readOnly: true,
+          },
+        ],
+      }),
+    ).toEqual({ startHour: 4, endHour: 22 });
   });
 
   it("builds Monday-first, month, and DST-short-day query ranges", () => {

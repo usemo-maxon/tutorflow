@@ -61,6 +61,7 @@ function appData(
     availability: [],
     availabilityExceptions: [],
     calendarBlocks: [],
+    calendarBookings: [],
     externalGoogleEvents: [],
     financials: {} as AppData["financials"],
   };

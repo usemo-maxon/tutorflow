@@ -5,16 +5,23 @@ import type {
   AvailabilityException,
   AvailabilityRule,
 } from "./domain";
+import { isActivePublicBooking } from "./public-booking";
 
 export const PUBLIC_SLOT_INTERVAL_MINUTES = 15;
 export const DEFAULT_BOOKING_AVAILABILITY = {
   minimumNoticeHours: 12,
   bookingHorizonDays: 30,
+  cancellationNoticeHours: 24,
+  rescheduleNoticeHours: 24,
+  reminder24HoursEnabled: true,
 } as const;
 
 export type BookingAvailabilitySettings = {
   minimumNoticeHours: number;
   bookingHorizonDays: number;
+  cancellationNoticeHours: number;
+  rescheduleNoticeHours?: number;
+  reminder24HoursEnabled?: boolean;
 };
 
 export type PublicAvailabilityDay = {
@@ -173,7 +180,7 @@ function isBusy(
   if (
     bookings.some(
       (booking) =>
-        booking.status === "confirmed" &&
+        isActivePublicBooking(booking) &&
         overlaps(
           startTime,
           endTime,
