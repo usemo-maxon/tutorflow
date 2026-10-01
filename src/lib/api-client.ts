@@ -14,6 +14,12 @@ import type {
 import type { StudentMemory } from "./student-memory";
 import type { NextLessonBriefing } from "./next-lesson-briefing";
 import type { GroupContinuity } from "./group-continuity";
+import type {
+  BookingConversionInput,
+  BookingConversionResult,
+  PublicBookingRecord,
+  TutorBookingDetail,
+} from "./public-booking";
 
 export class ClientApiError extends Error {
   constructor(
@@ -62,6 +68,42 @@ export async function mutateApp(action: AppAction): Promise<MutationResponse> {
     body: JSON.stringify(action),
   });
   return parseResponse<MutationResponse>(response);
+}
+
+export async function fetchTutorBookings(
+  signal?: AbortSignal,
+): Promise<PublicBookingRecord[]> {
+  const response = await fetch("/api/bookings", {
+    signal,
+    cache: "no-store",
+  });
+  return parseResponse(response);
+}
+
+export async function fetchTutorBooking(
+  bookingId: string,
+  signal?: AbortSignal,
+): Promise<TutorBookingDetail> {
+  const response = await fetch(`/api/bookings/${encodeURIComponent(bookingId)}`, {
+    signal,
+    cache: "no-store",
+  });
+  return parseResponse(response);
+}
+
+export async function convertTutorBooking(
+  bookingId: string,
+  input: BookingConversionInput,
+): Promise<BookingConversionResult> {
+  const response = await fetch(
+    `/api/bookings/${encodeURIComponent(bookingId)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  return parseResponse(response);
 }
 
 export async function completeOnboarding(): Promise<{

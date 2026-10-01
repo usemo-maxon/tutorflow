@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 const settingsNav = [
   ["/app/ustawienia/profil", "Profil"],
+  ["/app/ustawienia/strona-publiczna", "Strona publiczna"],
   ["/app/ustawienia/dostepnosc", "Dostępność"],
   ["/app/ustawienia/integracje", "Integracje"],
   ["/app/ustawienia/subskrypcja", "Subskrypcja"],

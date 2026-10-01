@@ -36,13 +36,17 @@ import type {
 } from "@/lib/domain";
 import { resolveExpiredTrial } from "./subscription";
 import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
+import type { BookingEventType } from "@/lib/booking-event-types";
+import type { PublicBookingRecord } from "@/lib/public-booking";
 
 export interface TeacherRecord extends Teacher {
   passwordHash: string;
+  bookingAvailability?: import("@/lib/public-availability").BookingAvailabilitySettings;
   google: AppData["integrations"]["google"];
   telegram: AppData["integrations"]["telegram"];
   payu: AppData["integrations"]["payu"];
   demo?: boolean;
+  publicProfile?: import("@/lib/public-profile").TutorPublicProfile;
 }
 
 export interface StudentRecord extends Student {
@@ -85,6 +89,12 @@ export interface StudentStatImportRecord extends StudentStatImport {
   teacherId: string;
 }
 
+export interface BookingEventTypeRecord extends BookingEventType {
+  teacherId: string;
+}
+
+export type BookingRecord = PublicBookingRecord;
+
 export interface SessionRecord {
   token: string;
   teacherId: string;
@@ -104,6 +114,8 @@ export interface StoreShape {
   availabilityExceptions?: AvailabilityExceptionRecord[];
   calendarBlocks?: CalendarBlockRecord[];
   externalGoogleEvents?: ExternalGoogleEventRecord[];
+  bookingEventTypes?: BookingEventTypeRecord[];
+  bookings?: BookingRecord[];
   sessions: SessionRecord[];
 }
 
@@ -131,6 +143,8 @@ async function ensureStore(): Promise<void> {
       availability: [],
       availabilityExceptions: [],
       calendarBlocks: [],
+      bookingEventTypes: [],
+      bookings: [],
       sessions: [],
     });
   }

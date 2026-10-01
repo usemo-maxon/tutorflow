@@ -37,6 +37,20 @@ export const MoneySchema = z.object({
   currency: z.literal("PLN"),
 });
 
+export const BookingEventTypeInputSchema = z
+  .object({
+    name: z.string().trim().min(1, "Podaj nazwę rodzaju zajęć.").max(120),
+    description: z.string().trim().max(500).optional(),
+    durationMinutes: z.number().int().positive().max(720),
+    priceGrosz: MinorUnitsSchema.max(100_000_000),
+    currency: z.literal("PLN"),
+    format: z.enum(["online", "offline"]),
+    active: z.boolean(),
+    isPublic: z.boolean(),
+    displayOrder: z.number().int().min(0).max(10_000),
+  })
+  .strict();
+
 export const StudentCreateSchema = z
   .object({
     firstName: z.string().trim().min(1).max(100),
@@ -169,6 +183,54 @@ export const LessonCreateSchema = z
       });
     }
   });
+
+export const BookingAvailabilitySettingsSchema = z.object({
+  minimumNoticeHours: z
+    .number()
+    .int()
+    .min(0, "Minimalne wyprzedzenie nie może być ujemne.")
+    .max(720, "Minimalne wyprzedzenie może wynosić maksymalnie 720 godzin."),
+  bookingHorizonDays: z
+    .number()
+    .int()
+    .min(1, "Okres rezerwacji musi obejmować co najmniej jeden dzień.")
+    .max(365, "Okres rezerwacji może wynosić maksymalnie 365 dni."),
+});
+
+const OptionalGuestText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .transform((value) => value || undefined);
+
+export const PublicBookingInputSchema = z
+  .object({
+    slug: z
+      .string()
+      .trim()
+      .min(3)
+      .max(60)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    eventTypeId: EntityIdSchema,
+    startsAt: ISODateTimeSchema.transform((value) =>
+      new Date(value).toISOString(),
+    ),
+    name: z.string().trim().min(1, "Podaj imię.").max(120),
+    email: z
+      .string()
+      .trim()
+      .pipe(z.email("Podaj poprawny adres e-mail.").max(255))
+      .transform((value) => value.trim().toLowerCase()),
+    phone: OptionalGuestText(50),
+    level: OptionalGuestText(80),
+    goal: OptionalGuestText(500),
+    message: OptionalGuestText(2_000),
+    // A visually hidden honeypot. Legitimate visitors leave it empty.
+    website: z.string().max(0).optional(),
+  })
+  .strict();
 
 export const CalendarBlockCreateSchema = z
   .object({

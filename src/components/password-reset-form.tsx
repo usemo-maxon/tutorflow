@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { authRequest, ClientApiError } from "@/lib/api-client";
@@ -62,9 +63,9 @@ export function PasswordResetForm() {
       <button className="button button--primary" disabled={busy}>
         {busy ? "Wysyłanie…" : update ? "Zmień hasło" : "Wyślij link"}
       </button>
-      <a className="button button--secondary" href="/logowanie">
+      <Link className="button button--secondary" href="/logowanie">
         Wróć do logowania
-      </a>
+      </Link>
     </form>
   );
 }

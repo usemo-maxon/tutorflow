@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-html-link-for-pages -- Provider connection endpoints require full document navigation. */
+
 import {
   AlertTriangle,
   CalendarDays,
