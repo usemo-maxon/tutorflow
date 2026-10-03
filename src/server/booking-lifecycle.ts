@@ -42,6 +42,7 @@ type BookingRow = {
   cancelled_by: "guest" | "tutor" | null;
   rescheduled_at: string | null;
   reschedule_count: number;
+  acquisition_source: string | null;
   created_at: string;
 };
 
@@ -58,7 +59,7 @@ function withoutBookingSecrets(
 }
 
 const bookingSelect =
-  "id,tutor_id,event_type_id,event_type_name,duration_minutes,price_grosz,currency,format,starts_at,ends_at,timezone,guest_name,guest_email,guest_phone,guest_level,guest_goal,guest_message,status,student_id,converted_lesson_id,converted_at,cancelled_at,cancelled_by,rescheduled_at,reschedule_count,created_at";
+  "id,tutor_id,event_type_id,event_type_name,duration_minutes,price_grosz,currency,format,starts_at,ends_at,timezone,guest_name,guest_email,guest_phone,guest_level,guest_goal,guest_message,status,student_id,converted_lesson_id,converted_at,cancelled_at,cancelled_by,rescheduled_at,reschedule_count,acquisition_source,created_at";
 
 function notFound(): ApiFailure {
   return new ApiFailure(404, {
@@ -94,6 +95,7 @@ function rowToBooking(row: BookingRow): PublicBookingRecord {
     cancelledBy: row.cancelled_by ?? undefined,
     rescheduledAt: row.rescheduled_at ?? undefined,
     rescheduleCount: row.reschedule_count,
+    acquisitionSource: row.acquisition_source ?? undefined,
     createdAt: row.created_at,
   };
 }

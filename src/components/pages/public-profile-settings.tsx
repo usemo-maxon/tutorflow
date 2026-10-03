@@ -23,6 +23,11 @@ import type { TutorPublicProfile } from "@/lib/public-profile";
 import { normalizePublicSlug } from "@/lib/public-profile";
 import { PublicTutorPage } from "@/components/public-tutor-page";
 import {
+  conversionPercent,
+  type FunnelEvent,
+  type TrafficSource,
+} from "@/lib/public-booking-analytics";
+import {
   DEFAULT_BOOKING_AVAILABILITY,
   type BookingAvailabilitySettings,
 } from "@/lib/public-availability";
@@ -46,6 +51,128 @@ const draftFromEventType = (eventType: BookingEventType): EventTypeDraft => ({
   priceInput: groszToPriceInput(eventType.priceGrosz),
 });
 
+function PublicPageInsights({
+  slug,
+  days,
+  onDays,
+  analytics,
+}: {
+  slug: string;
+  days: 7 | 30 | 90;
+  onDays: (days: 7 | 30 | 90) => void;
+  analytics: {
+    funnel: Record<FunnelEvent, number>;
+    sources: Array<{ source: TrafficSource; bookings: number }>;
+  } | null;
+}) {
+  const publicUrl =
+    typeof window === "undefined"
+      ? `/${slug}`
+      : `${window.location.origin}/${slug}`;
+  const copy = (url = publicUrl) => void navigator.clipboard?.writeText(url);
+  const labels: Record<FunnelEvent, string> = {
+    profile_view: "Wyświetlenia",
+    event_type_selected: "Wybrano typ",
+    slot_selected: "Wybrano termin",
+    booking_started: "Rozpoczęto zapis",
+    booking_completed: "Rezerwacje",
+  };
+  const sourceLabel: Record<TrafficSource, string> = {
+    instagram: "Instagram",
+    tiktok: "TikTok",
+    facebook: "Facebook",
+    linkedin: "LinkedIn",
+    google: "Google",
+    direct: "Direct",
+    other: "Other",
+  };
+  const count = analytics?.funnel.booking_completed ?? 0;
+  return (
+    <section className="settings-form public-insights">
+      <div className="event-type-settings__heading">
+        <div>
+          <p className="eyebrow">Statystyki</p>
+          <h2>Strona publiczna</h2>
+          <p>Proste, pierwszostronne dane bez śledzenia osób.</p>
+        </div>
+        <select
+          aria-label="Zakres statystyk"
+          value={days}
+          onChange={(event) =>
+            onDays(Number(event.target.value) as 7 | 30 | 90)
+          }
+        >
+          <option value={7}>7 dni</option>
+          <option value={30}>30 dni</option>
+          <option value={90}>90 dni</option>
+        </select>
+      </div>
+      {!analytics || analytics.funnel.profile_view === 0 ? (
+        <div className="public-insights__empty">
+          <strong>Nie masz jeszcze danych.</strong>
+          <span>Udostępnij swoją stronę, aby zacząć zbierać statystyki.</span>
+          <button
+            type="button"
+            className="button button--secondary"
+            onClick={() => copy()}
+          >
+            Kopiuj link
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="public-insights__funnel">
+            {(Object.keys(labels) as FunnelEvent[]).map((event) => (
+              <div key={event}>
+                <span>{labels[event]}</span>
+                <strong>{analytics.funnel[event] ?? 0}</strong>
+              </div>
+            ))}
+          </div>
+          <p className="form-note">
+            profil → rezerwacja:{" "}
+            {conversionPercent(count, analytics.funnel.profile_view)}%
+          </p>
+          {analytics.sources.length > 0 && (
+            <div className="public-insights__sources">
+              <strong>Źródła rezerwacji</strong>
+              {analytics.sources.map((item) => (
+                <span key={item.source}>
+                  {sourceLabel[item.source]} <b>{item.bookings}</b>
+                </span>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      <div className="public-share-links">
+        <button
+          type="button"
+          className="button button--secondary"
+          onClick={() => copy()}
+        >
+          Kopiuj link
+        </button>
+        <small>
+          Dodaj ten link do bio na Instagramie, TikToku lub Facebooku.
+        </small>
+        {(["instagram", "tiktok", "facebook"] as const).map((source) => (
+          <button
+            type="button"
+            className="button button--quiet"
+            key={source}
+            onClick={() =>
+              copy(`${publicUrl}?utm_source=${source}&utm_medium=social`)
+            }
+          >
+            Kopiuj: {source}
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function PublicProfileSettings() {
   const teacher = useSessionTeacher();
   const [profile, setProfile] = useState<TutorPublicProfile | null>(null);
@@ -57,6 +184,11 @@ export function PublicProfileSettings() {
   const [savingEventType, setSavingEventType] = useState(false);
   const [savingAvailability, setSavingAvailability] = useState(false);
   const [message, setMessage] = useState("");
+  const [analyticsDays, setAnalyticsDays] = useState<7 | 30 | 90>(30);
+  const [analytics, setAnalytics] = useState<{
+    funnel: Record<FunnelEvent, number>;
+    sources: Array<{ source: TrafficSource; bookings: number }>;
+  } | null>(null);
 
   useEffect(() => {
     void Promise.all([
@@ -86,6 +218,15 @@ export function PublicProfileSettings() {
       })
       .catch(() => setMessage("Nie udało się pobrać ustawień."));
   }, []);
+
+  useEffect(() => {
+    void fetch(`/api/public-profile/analytics?days=${analyticsDays}`, {
+      cache: "no-store",
+    })
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((data) => setAnalytics(data))
+      .catch(() => setAnalytics(null));
+  }, [analyticsDays]);
 
   const update = <K extends keyof TutorPublicProfile>(
     key: K,
@@ -475,6 +616,12 @@ export function PublicProfileSettings() {
               </Link>
             </div>
           </form>
+          <PublicPageInsights
+            slug={profile.slug}
+            days={analyticsDays}
+            onDays={setAnalyticsDays}
+            analytics={analytics}
+          />
           <form
             className="settings-form event-type-settings"
             onSubmit={(event) => {

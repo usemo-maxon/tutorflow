@@ -9,6 +9,10 @@ export type PublicBookingInput = {
   goal?: string;
   message?: string;
   website?: string;
+  source?: string;
+  utmSource?: string;
+  utmMedium?: string;
+  utmCampaign?: string;
 };
 
 export type PublicBookingConfirmation = {
@@ -46,6 +50,7 @@ export type PublicBookingRecord = {
   cancelledBy?: "guest" | "tutor";
   rescheduledAt?: string;
   rescheduleCount?: number;
+  acquisitionSource?: string;
   createdAt: string;
 };
 

@@ -44,7 +44,6 @@ export function GuestBookingPage({
   const [selectedDate, setSelectedDate] = useState("");
   const [selectedSlot, setSelectedSlot] =
     useState<Availability["days"][number]["slots"][number]>();
-  const [loadingSlots, setLoadingSlots] = useState(false);
   const [availabilityRefresh, setAvailabilityRefresh] = useState(0);
 
   useEffect(() => {
@@ -58,8 +57,6 @@ export function GuestBookingPage({
     const startDate = format(first, "yyyy-MM-dd");
     const endDate = format(addDays(first, 6), "yyyy-MM-dd");
     const controller = new AbortController();
-    setLoadingSlots(true);
-    setError("");
     void fetch(
       `/api/public/bookings/${encodeURIComponent(token)}/availability?startDate=${startDate}&endDate=${endDate}`,
       { cache: "no-store", signal: controller.signal },
@@ -70,6 +67,7 @@ export function GuestBookingPage({
         };
         if (!response.ok)
           throw new Error(body.message || "Nie udało się pobrać terminów.");
+        setError("");
         setAvailability(body);
         setSelectedDate(
           body.days.find((day) => day.slots.length)?.date ??
@@ -86,7 +84,7 @@ export function GuestBookingPage({
             : "Nie udało się pobrać terminów.",
         );
       })
-      .finally(() => setLoadingSlots(false));
+      .finally(() => undefined);
     return () => controller.abort();
   }, [availabilityRefresh, booking, rangeOffset, rescheduling, token]);
 
@@ -101,6 +99,8 @@ export function GuestBookingPage({
       </GuestShell>
     );
   }
+
+  const loadingSlots = rescheduling && !availability && !error;
 
   const date = new Intl.DateTimeFormat("pl-PL", {
     day: "numeric",

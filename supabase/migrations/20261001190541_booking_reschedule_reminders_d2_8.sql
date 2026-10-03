@@ -23,6 +23,13 @@ grant select (
   rescheduled_at, reschedule_count
 ) on public.bookings to authenticated;
 
+-- These RPCs must retain table access after the token columns are removed from
+-- authenticated grants. Each validates the acting tutor through auth.uid().
+alter function public.convert_public_booking(uuid, text, uuid, jsonb) security definer;
+alter function private.cancel_public_booking_transition(uuid, text, text, uuid) security definer;
+alter function public.cancel_public_booking_as_tutor(uuid) security definer;
+revoke execute on function private.cancel_public_booking_transition(uuid, text, text, uuid) from authenticated;
+
 -- The canonical D2.3/D2.4 predicate remains the only availability algorithm.
 -- A transaction-local exclusion lets the current booking release its own range
 -- while a reschedule is being evaluated.

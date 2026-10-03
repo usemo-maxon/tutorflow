@@ -20,6 +20,10 @@ import {
 } from "./booking-email";
 import { ApiFailure } from "./errors";
 import { encryptSecret } from "./crypto";
+import {
+  attributionForRequest,
+  recordPublicFunnelEvent,
+} from "./public-booking-analytics";
 import { mutateStore, queryStore } from "./store";
 import {
   createSupabaseAdminClient,
@@ -84,6 +88,7 @@ function publicConfirmation(
 async function createLocalPublicBooking(
   input: PublicBookingInput,
   managementTokenHash: string,
+  acquisitionSource = "direct",
 ): Promise<CreatedBooking> {
   return mutateStore((store) => {
     const teacher = store.teachers.find(
@@ -162,6 +167,7 @@ async function createLocalPublicBooking(
       guestMessage: input.message,
       status: "confirmed",
       managementTokenHash,
+      acquisitionSource,
       createdAt,
     };
     (store.bookings ??= []).push(booking);
@@ -184,11 +190,16 @@ export async function createPublicBooking(
   } = {},
 ): Promise<PublicBookingConfirmation> {
   const input = validateInput(rawInput);
+  const attribution = attributionForRequest(input);
   const { token, tokenHash } = createBookingManagementToken();
   const baseUrl = (options.baseUrl ?? siteUrl()).replace(/\/$/, "");
   let created: CreatedBooking;
   if (!isSupabaseConfigured() && process.env.NODE_ENV !== "production") {
-    created = await createLocalPublicBooking(input, tokenHash);
+    created = await createLocalPublicBooking(
+      input,
+      tokenHash,
+      attribution.source,
+    );
   } else {
     const supabase = createSupabaseAdminClient();
     const { data, error } = await supabase
@@ -204,6 +215,10 @@ export async function createPublicBooking(
         p_guest_message: input.message ?? null,
         p_management_token_hash: tokenHash,
         p_management_token_ciphertext: encryptSecret({ token }),
+        p_acquisition_source: attribution.source,
+        p_utm_source: attribution.utmSource ?? null,
+        p_utm_medium: attribution.utmMedium ?? null,
+        p_utm_campaign: attribution.utmCampaign ?? null,
       })
       .single();
 
@@ -263,6 +278,9 @@ export async function createPublicBooking(
       publicLocation: row.public_location ?? undefined,
     };
   }
+
+  // Recording is explicitly best-effort: a booking has committed at this point.
+  void recordPublicFunnelEvent(input.slug, "booking_completed", attribution);
 
   const managementUrl = `${baseUrl}/rezerwacja/${token}`;
   const calendarUrl = `${managementUrl}/kalendarz.ics`;
@@ -324,7 +342,7 @@ export async function getOwnPublicBookings(
   const { data, error } = await supabase
     .from("bookings")
     .select(
-      "id,tutor_id,event_type_id,event_type_name,duration_minutes,price_grosz,currency,format,starts_at,ends_at,timezone,guest_name,guest_email,guest_phone,guest_level,guest_goal,guest_message,status,student_id,converted_lesson_id,converted_at,cancelled_at,cancelled_by,rescheduled_at,reschedule_count,created_at",
+      "id,tutor_id,event_type_id,event_type_name,duration_minutes,price_grosz,currency,format,starts_at,ends_at,timezone,guest_name,guest_email,guest_phone,guest_level,guest_goal,guest_message,status,student_id,converted_lesson_id,converted_at,cancelled_at,cancelled_by,rescheduled_at,reschedule_count,acquisition_source,created_at",
     )
     .eq("tutor_id", teacherId)
     .eq("source", "public_booking")
@@ -356,6 +374,7 @@ export async function getOwnPublicBookings(
     cancelledBy: row.cancelled_by ?? undefined,
     rescheduledAt: row.rescheduled_at ?? undefined,
     rescheduleCount: row.reschedule_count,
+    acquisitionSource: row.acquisition_source ?? undefined,
     createdAt: row.created_at,
   }));
 }

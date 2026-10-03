@@ -1,7 +1,14 @@
 "use client";
 
 /* eslint-disable @next/next/no-img-element -- Supabase public URLs are runtime-selected. */
-import { type FormEvent, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import { attributionFromSearch } from "@/lib/public-booking-analytics";
 import type { PublicBookingEventType } from "@/lib/booking-event-types";
 import { formatEventTypePrice } from "@/lib/booking-event-types";
 import type { PublicBookingConfirmation } from "@/lib/public-booking";
@@ -69,6 +76,37 @@ export function PublicTutorPage({
   const visibleDay = availability?.days.find(
     (day) => day.date === selectedDate,
   );
+  const attribution = useMemo(
+    () =>
+      typeof window === "undefined"
+        ? { source: "direct" as const }
+        : attributionFromSearch(new URLSearchParams(window.location.search)),
+    [],
+  );
+  const track = useCallback(
+    (
+      event:
+        | "profile_view"
+        | "event_type_selected"
+        | "slot_selected"
+        | "booking_started",
+    ) => {
+      if (preview) return;
+      void fetch(
+        `/api/public/tutors/${encodeURIComponent(profile.slug)}/analytics`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          keepalive: true,
+          body: JSON.stringify({ event, ...attribution }),
+        },
+      ).catch(() => undefined);
+    },
+    [attribution, preview, profile.slug],
+  );
+  useEffect(() => {
+    track("profile_view");
+  }, [track]);
 
   useEffect(() => {
     if (!selectedEventType || preview) return;
@@ -90,9 +128,18 @@ export function PublicTutorPage({
       .then((result) => {
         setAvailability(result);
         setAvailabilityError(undefined);
-        setSelectedDate(
-          result.days.find((day) => day.slots.length)?.date ??
-            result.days[0]?.date,
+        setSelectedDate((current) =>
+          result.days.some((day) => day.date === current && day.slots.length)
+            ? current
+            : (result.days.find((day) => day.slots.length)?.date ??
+              result.days[0]?.date),
+        );
+        setSelectedSlot((current) =>
+          result.days.some((day) =>
+            day.slots.some((slot) => slot.startsAt === current?.startsAt),
+          )
+            ? current
+            : undefined,
         );
       })
       .catch((error: unknown) => {
@@ -109,6 +156,7 @@ export function PublicTutorPage({
     event.preventDefault();
     if (!selectedEventType || !selectedSlot) return;
     setBookingPending(true);
+    track("booking_started");
     setBookingError(undefined);
     try {
       const response = await fetch(
@@ -120,6 +168,7 @@ export function PublicTutorPage({
             eventTypeId: selectedEventType.id,
             startsAt: selectedSlot.startsAt,
             ...guest,
+            ...attribution,
           }),
         },
       );
@@ -226,7 +275,25 @@ export function PublicTutorPage({
           </a>
         )}
       </section>
+      {eventTypes.length > 0 && !preview && (
+        <a
+          className="public-book-button public-book-button--sticky"
+          href={selectedEventType ? "#termin" : "#wybierz-rodzaj-lekcji"}
+        >
+          Umów lekcję
+        </a>
+      )}
       <div className="public-tutor-content">
+        {selectedEventType && (
+          <ol
+            className="public-booking-progress"
+            aria-label="Postęp rezerwacji"
+          >
+            <li className="is-complete">1. Rodzaj lekcji</li>
+            <li className={selectedSlot ? "is-complete" : ""}>2. Termin</li>
+            <li className={selectedSlot ? "is-current" : ""}>3. Twoje dane</li>
+          </ol>
+        )}
         {profile.about && (
           <section>
             <h2>O mnie</h2>
@@ -298,6 +365,7 @@ export function PublicTutorPage({
                     onClick={() => {
                       if (selected) return;
                       setSelectedEventTypeId(eventType.id);
+                      track("event_type_selected");
                       setSelectedSlot(undefined);
                       setAvailability(undefined);
                       setAvailabilityError(undefined);
@@ -411,6 +479,7 @@ export function PublicTutorPage({
                           aria-pressed={selected}
                           onClick={() => {
                             setSelectedSlot(slot);
+                            track("slot_selected");
                             setBookingError(undefined);
                           }}
                         >

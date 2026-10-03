@@ -1,5 +1,5 @@
 begin;
-select plan(23);
+select plan(24);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
@@ -41,6 +41,7 @@ select has_table('public', 'booking_reminder_deliveries', 'booking reminder deli
 select ok(not has_function_privilege('anon', 'public.reschedule_public_booking_by_token(text,timestamp with time zone)', 'execute'), 'anonymous Data API cannot call reschedule RPC directly');
 select ok(has_function_privilege('service_role', 'public.reschedule_public_booking_by_token(text,timestamp with time zone)', 'execute'), 'trusted server may call reschedule RPC');
 select ok(not has_column_privilege('authenticated', 'public.bookings', 'management_token_ciphertext', 'select'), 'encrypted management token remains server-only');
+select ok(not has_function_privilege('authenticated', 'private.cancel_public_booking_transition(uuid,text,text,uuid)', 'execute'), 'authenticated callers cannot invoke the internal cancellation transition');
 
 set local role service_role;
 select lives_ok(format($sql$

@@ -254,6 +254,9 @@ function BookingDetail({
           label="Format"
           value={booking.format === "online" ? "Online" : "Stacjonarnie"}
         />
+        {booking.acquisitionSource && (
+          <Fact label="Źródło" value={sourceLabel(booking.acquisitionSource)} />
+        )}
         <Fact label="Poziom" value={booking.guestLevel || "Nie podano"} />
         <Fact label="Cel" value={booking.guestGoal || "Nie podano"} />
       </dl>
@@ -458,6 +461,22 @@ function Fact({ label, value }: { label: string; value: string }) {
       <dt>{label}</dt>
       <dd>{value}</dd>
     </div>
+  );
+}
+
+function sourceLabel(source: string) {
+  return (
+    (
+      {
+        instagram: "Instagram",
+        tiktok: "TikTok",
+        facebook: "Facebook",
+        linkedin: "LinkedIn",
+        google: "Google",
+        direct: "Link bezpośredni",
+        other: "Inne",
+      } as Record<string, string>
+    )[source] ?? "Inne"
   );
 }
 

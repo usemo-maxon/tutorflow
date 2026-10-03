@@ -248,6 +248,10 @@ export const PublicBookingInputSchema = z
     message: OptionalGuestText(2_000),
     // A visually hidden honeypot. Legitimate visitors leave it empty.
     website: z.string().max(0).optional(),
+    source: z.string().trim().max(80).optional(),
+    utmSource: z.string().trim().max(80).optional(),
+    utmMedium: z.string().trim().max(80).optional(),
+    utmCampaign: z.string().trim().max(80).optional(),
   })
   .strict();
 

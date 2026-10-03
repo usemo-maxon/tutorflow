@@ -211,6 +211,70 @@ h3 {
   color: var(--brand-primary);
   font-weight: 650;
 }
+.public-insights {
+  display: grid;
+  gap: 14px;
+}
+.public-insights__empty {
+  display: grid;
+  gap: 8px;
+  padding: 15px;
+  border-radius: 10px;
+  background: var(--surface-subtle);
+  color: var(--muted);
+}
+.public-insights__empty strong {
+  color: var(--ink);
+}
+.public-insights__empty .button {
+  width: fit-content;
+  margin-top: 4px;
+}
+.public-insights__funnel {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+.public-insights__funnel div {
+  display: grid;
+  gap: 5px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+.public-insights__funnel span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+}
+.public-insights__funnel strong {
+  font-size: 20px;
+}
+.public-insights__sources {
+  display: grid;
+  gap: 7px;
+  max-width: 360px;
+}
+.public-insights__sources span {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+}
+.public-insights__sources b {
+  color: var(--ink);
+}
+.public-share-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.public-share-links small {
+  flex: 1 1 220px;
+  color: var(--muted);
+}
 .public-profile-preview {
   position: sticky;
   top: 18px;
@@ -325,6 +389,34 @@ h3 {
   font-size: 16px;
   font-weight: 800;
   text-align: center;
+}
+.public-book-button--sticky {
+  display: none;
+}
+.public-booking-progress {
+  display: flex;
+  gap: 6px;
+  margin: -4px 0 3px;
+  padding: 0;
+  color: #677870;
+  font-size: 12px;
+  font-weight: 750;
+  list-style: none;
+  overflow-x: auto;
+}
+.public-booking-progress li {
+  flex: 0 0 auto;
+  padding: 6px 8px;
+  border-radius: 999px;
+  background: #edf2ee;
+}
+.public-booking-progress .is-complete {
+  background: #dcefe3;
+  color: #16694f;
+}
+.public-booking-progress .is-current {
+  background: #147b5e;
+  color: white;
 }
 .public-tutor-content {
   display: grid;
@@ -817,7 +909,20 @@ h3 {
     padding: 34px 20px 25px;
   }
   .public-tutor-content {
-    padding: 26px 20px 48px;
+    padding: 26px 20px 92px;
+  }
+  .public-book-button--sticky {
+    position: fixed;
+    z-index: 20;
+    right: 16px;
+    bottom: max(14px, env(safe-area-inset-bottom));
+    left: 16px;
+    display: block;
+    width: auto;
+    margin: 0;
+  }
+  .public-insights__funnel {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .public-tutor-facts {
     grid-template-columns: 1fr;
