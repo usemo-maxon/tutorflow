@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import "./motion-tokens.css";
 import "./redesign.css";
+import "./workspace-motion.css";
 
 const manrope = localFont({
   src: "./fonts/manrope-variable.ttf",
