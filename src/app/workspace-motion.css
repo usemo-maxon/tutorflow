@@ -37,8 +37,24 @@
       box-shadow var(--motion-duration-short-3) var(--motion-easing-standard),
       transform var(--motion-duration-short-3) var(--motion-easing-standard);
   }
+  .button:active:not(:disabled) {
+    transform: translateY(1px) scale(0.98);
+  }
   .icon-button:active:not(:disabled) {
     transform: scale(0.96);
+  }
+  .text-link svg,
+  .student-row__open span,
+  .quick-actions svg {
+    transition: translate var(--motion-duration-short-4)
+      var(--motion-easing-standard);
+  }
+  .text-link:is(:hover, :focus-visible) svg,
+  .student-row:is(:hover, :focus-within) .student-row__open span {
+    translate: 3px 0;
+  }
+  .quick-actions :is(button, a):is(:hover, :focus-visible) svg {
+    translate: 0 -2px;
   }
   .dialog-overlay[data-state="open"] {
     animation: workspace-fade var(--motion-duration-short-4)
@@ -80,6 +96,145 @@
   .empty-state {
     animation: workspace-surface var(--motion-duration-short-4)
       var(--motion-easing-emphasized-decelerate);
+  }
+  .toast {
+    transform-origin: right bottom;
+  }
+
+  /* Productive choreography: reading order is visible without delaying work. */
+  .page-enter
+    :is(
+      .today-action-grid__main,
+      .today-action-grid__rail,
+      .student-list,
+      .attention-list,
+      .quick-actions,
+      .stats-ledger,
+      .student-metrics
+    )
+    > * {
+    animation: workspace-item var(--motion-duration-medium-1)
+      var(--motion-easing-emphasized-decelerate) both;
+    animation-delay: calc(
+      var(--motion-sequencing-stagger-medium) * var(--motion-item-order, 0)
+    );
+  }
+  .page-enter .today-lesson-list > li {
+    animation: workspace-item var(--motion-duration-medium-1)
+      var(--motion-easing-emphasized-decelerate) both;
+    animation-delay: calc(
+      var(--motion-duration-short-2) + var(--motion-sequencing-stagger-medium) *
+        var(--motion-item-order, 0)
+    );
+  }
+  .page-enter
+    :is(
+      .today-lesson-list,
+      .student-list,
+      .attention-list,
+      .quick-actions,
+      .stats-ledger,
+      .student-metrics
+    )
+    > :nth-child(2) {
+    --motion-item-order: 1;
+  }
+  .page-enter
+    :is(
+      .today-lesson-list,
+      .student-list,
+      .attention-list,
+      .quick-actions,
+      .stats-ledger,
+      .student-metrics
+    )
+    > :nth-child(3) {
+    --motion-item-order: 2;
+  }
+  .page-enter
+    :is(
+      .today-lesson-list,
+      .student-list,
+      .attention-list,
+      .quick-actions,
+      .stats-ledger,
+      .student-metrics
+    )
+    > :nth-child(4) {
+    --motion-item-order: 3;
+  }
+  .page-enter
+    :is(.today-lesson-list, .student-list, .attention-list)
+    > :nth-child(5) {
+    --motion-item-order: 4;
+  }
+  .page-enter
+    :is(.today-lesson-list, .student-list, .attention-list)
+    > :nth-child(6) {
+    --motion-item-order: 5;
+  }
+  .page-enter :is(.today-lesson-list, .student-list) > :nth-child(n + 7) {
+    --motion-item-order: 6;
+  }
+
+  /* Progress appears as a connected learning story, not three unrelated cards. */
+  .page-enter .progress-thread .thread-node > div {
+    animation: workspace-context var(--motion-duration-medium-1)
+      var(--motion-easing-emphasized-decelerate) both;
+    animation-delay: calc(
+      var(--motion-duration-short-2) + var(--motion-sequencing-stagger-medium) *
+        var(--thread-order, 0)
+    );
+  }
+  .page-enter .progress-thread .thread-node:nth-child(2) {
+    --thread-order: 1;
+  }
+  .page-enter .progress-thread .thread-node:nth-child(3) {
+    --thread-order: 2;
+  }
+  .page-enter .progress-thread .thread-symbol {
+    animation: workspace-marker var(--motion-duration-short-4)
+      var(--motion-easing-emphasized-decelerate) both;
+    animation-delay: calc(
+      var(--motion-duration-short-2) + var(--motion-sequencing-stagger-medium) *
+        var(--thread-order, 0)
+    );
+  }
+  .page-enter .progress-thread .thread-node:not(:last-child)::after {
+    animation: workspace-connect var(--motion-duration-medium-2)
+      var(--motion-easing-standard) both;
+    animation-delay: calc(
+      var(--motion-duration-short-3) + var(--motion-sequencing-stagger-medium) *
+        var(--thread-order, 0)
+    );
+    transform-origin: top;
+  }
+
+  /* Data visualization follows the same grounded, bottom-up visual model. */
+  .page-enter .bar-chart .bar,
+  .page-enter .score-track > span {
+    animation: workspace-grow var(--motion-duration-long-2)
+      var(--motion-easing-emphasized-decelerate) both;
+    animation-delay: calc(
+      var(--motion-duration-short-2) + var(--motion-sequencing-stagger-medium) *
+        var(--motion-item-order, 0)
+    );
+    transform-origin: bottom;
+  }
+  .page-enter :is(.bar-chart, .score-chart) > :nth-child(2) {
+    --motion-item-order: 1;
+  }
+  .page-enter :is(.bar-chart, .score-chart) > :nth-child(3) {
+    --motion-item-order: 2;
+  }
+  .page-enter :is(.bar-chart, .score-chart) > :nth-child(4) {
+    --motion-item-order: 3;
+  }
+  .page-enter :is(.bar-chart, .score-chart) > :nth-child(5) {
+    --motion-item-order: 4;
+  }
+  .page-enter :is(.bar-chart, .score-chart) > :nth-child(6) {
+    --motion-item-order: 5;
   }
   .calendar-event:is(:hover, :focus-visible),
   .calendar-booking:is(:hover, :focus-visible),
@@ -139,6 +294,56 @@
     opacity: 0.55;
   }
 }
+@keyframes workspace-item {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes workspace-context {
+  from {
+    opacity: 0;
+    translate: 7px 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+@keyframes workspace-marker {
+  from {
+    opacity: 0;
+    scale: 0.82;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+@keyframes workspace-connect {
+  from {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+@keyframes workspace-grow {
+  from {
+    opacity: 0.35;
+    transform: scaleY(0.08);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .dialog-content,
   .dialog-overlay,
@@ -150,5 +355,13 @@
   .empty-state,
   .skeleton {
     animation: none !important;
+  }
+  .button:active:not(:disabled),
+  .icon-button:active:not(:disabled),
+  .text-link svg,
+  .student-row__open span,
+  .quick-actions svg {
+    transform: none !important;
+    translate: none !important;
   }
 }

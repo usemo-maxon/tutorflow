@@ -66,6 +66,28 @@
 .landing .button svg {
   flex-shrink: 0;
 }
+.landing .landing-faq summary {
+  position: relative;
+  padding-right: 34px;
+  list-style: none;
+}
+.landing .landing-faq summary::-webkit-details-marker {
+  display: none;
+}
+.landing .landing-faq summary::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  background:
+    linear-gradient(var(--brand-primary), var(--brand-primary)) center / 16px
+      2px no-repeat,
+    linear-gradient(var(--brand-primary), var(--brand-primary)) center / 2px
+      16px no-repeat;
+  translate: 0 -50%;
+}
 
 @media (prefers-reduced-motion: no-preference) {
   /* A single reading-order entrance, complete within 500ms. */
@@ -183,6 +205,13 @@
   .landing .landing-faq details[open] > p {
     animation: landing-rise var(--motion-duration-short-4)
       var(--motion-easing-emphasized-decelerate);
+  }
+  .landing .landing-faq summary::after {
+    transition: rotate var(--motion-duration-short-4)
+      var(--motion-easing-standard);
+  }
+  .landing .landing-faq details[open] > summary::after {
+    rotate: 45deg;
   }
   .landing .button svg {
     transition: transform var(--motion-duration-short-4)
