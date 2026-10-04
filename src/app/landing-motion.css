@@ -1,0 +1,309 @@
+/* Motion Design Agent: Material 3 easing, Carbon expressive marketing pacing.
+   Each movement uses shared motion tokens. The finite preview explains continuity:
+   appointments settle, the next lesson opens, then past → present → next connects. */
+@import "./motion-tokens.css";
+
+.landing {
+  --lesson-phase: var(--motion-duration-medium-2);
+  --landing-cascade: var(--motion-sequencing-stagger-medium);
+}
+.landing .hero-product-preview {
+  position: relative;
+  animation: none;
+}
+.lesson-replay {
+  display: flex;
+  visibility: hidden;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  margin: 12px auto -8px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--brand-primary);
+  font-size: 11px;
+  font-weight: 650;
+}
+.lesson-replay:hover {
+  background: rgb(255 255 255 / 65%);
+}
+.landing .hero-copy h1 em {
+  position: relative;
+}
+.landing .hero-copy h1 em::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 3%;
+  bottom: -5px;
+  height: 3px;
+  border-radius: 50%;
+  background: linear-gradient(
+    90deg,
+    var(--brand-primary),
+    #00c8e6 70%,
+    transparent
+  );
+  opacity: 0.45;
+  transform-origin: left;
+}
+.landing .workflow-grid article {
+  position: relative;
+}
+.landing .workflow-grid article::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--brand-primary), #00c8e6);
+  transform-origin: left;
+}
+.landing .button svg {
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* A single reading-order entrance, complete within 500ms. */
+  .landing .hero-copy > * {
+    animation: landing-rise var(--motion-duration-medium-2)
+      var(--motion-easing-emphasized-decelerate) both;
+    animation-delay: calc(var(--copy-order, 0) * var(--landing-cascade));
+  }
+  .landing .hero-copy > :nth-child(2) {
+    --copy-order: 1;
+  }
+  .landing .hero-copy > :nth-child(3) {
+    --copy-order: 2;
+  }
+  .landing .hero-copy > :nth-child(4) {
+    --copy-order: 3;
+  }
+  .landing .hero-copy > :nth-child(5) {
+    --copy-order: 4;
+  }
+  .landing .hero-copy h1 em::after {
+    animation: landing-line var(--motion-duration-long-2)
+      var(--motion-easing-emphasized-decelerate) both;
+  }
+
+  /* The scene starts only when visible, including on a small screen. */
+  .landing [data-lesson-motion="ready"] {
+    animation: lesson-settle var(--motion-duration-long-2)
+      var(--motion-easing-emphasized-decelerate) both;
+  }
+  .landing [data-lesson-motion="ready"] .lesson-replay {
+    visibility: visible;
+  }
+  .landing [data-lesson-motion="ready"] .preview-agenda > div {
+    animation: lesson-slot var(--motion-duration-medium-2)
+      var(--motion-easing-emphasized-decelerate) both;
+    animation-delay: calc(var(--slot-order, 0) * var(--landing-cascade));
+  }
+  .landing .preview-agenda > :nth-child(2) {
+    --slot-order: 1;
+  }
+  .landing .preview-agenda > :nth-child(3) {
+    --slot-order: 2;
+  }
+  .landing [data-lesson-motion="ready"] .hero-workspace {
+    animation: lesson-open var(--motion-duration-long-2)
+      var(--motion-easing-emphasized-decelerate) var(--lesson-phase) both;
+    transform-origin: top center;
+  }
+  .landing [data-lesson-motion="ready"] .thread-node > div {
+    animation: lesson-context var(--motion-duration-medium-2)
+      var(--motion-easing-emphasized-decelerate) both;
+    animation-delay: calc((var(--thread-order, 0) + 2) * var(--lesson-phase));
+  }
+  .landing .progress-thread--hero .thread-node:nth-child(2) {
+    --thread-order: 1;
+  }
+  .landing .progress-thread--hero .thread-node:nth-child(3) {
+    --thread-order: 2;
+  }
+  .landing [data-lesson-motion="ready"] .thread-node:not(:last-child)::after {
+    background: linear-gradient(var(--brand-primary), #52b9f4);
+    transform-origin: top;
+    animation: lesson-connect var(--motion-duration-medium-2)
+      var(--motion-easing-standard) both;
+    animation-delay: calc((var(--thread-order, 0) + 2) * var(--lesson-phase));
+  }
+  .landing
+    [data-lesson-motion="ready"]
+    .thread-node--now
+    .thread-symbol::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    border: 1px solid var(--brand-primary);
+    border-radius: inherit;
+    animation: lesson-focus var(--motion-duration-long-2)
+      var(--motion-easing-standard) calc(3 * var(--lesson-phase)) both;
+  }
+  .landing .thread-symbol {
+    position: relative;
+  }
+  .landing [data-lesson-motion="ready"] .thread-node--done .thread-symbol svg {
+    animation: lesson-check var(--motion-duration-medium-2)
+      var(--motion-easing-emphasized-decelerate) calc(2 * var(--lesson-phase))
+      both;
+  }
+
+  /* Section details follow their heading; rules connect the three lesson stages. */
+  .landing
+    [data-reveal-state="visible"]
+    :is(.workflow-grid, .feature-ribbon, .landing-pricing-grid)
+    > *,
+  .landing .feature-ribbon[data-reveal-state="visible"] > article {
+    animation: landing-rise var(--motion-duration-medium-2)
+      var(--motion-easing-emphasized-decelerate) both;
+    animation-delay: calc(var(--item-order, 0) * var(--landing-cascade));
+  }
+  .landing
+    :is(.workflow-grid, .feature-ribbon, .landing-pricing-grid)
+    > :nth-child(2) {
+    --item-order: 1;
+  }
+  .landing :is(.workflow-grid, .feature-ribbon) > :nth-child(3) {
+    --item-order: 2;
+  }
+  .landing .feature-ribbon > :nth-child(4) {
+    --item-order: 3;
+  }
+  .landing [data-reveal-state="visible"] .workflow-grid article::before {
+    animation: landing-line var(--motion-duration-long-2)
+      var(--motion-easing-standard) both;
+    animation-delay: calc(var(--item-order, 0) * var(--landing-cascade));
+  }
+  .landing .landing-faq details[open] > p {
+    animation: landing-rise var(--motion-duration-short-4)
+      var(--motion-easing-emphasized-decelerate);
+  }
+  .landing .button svg {
+    transition: transform var(--motion-duration-short-4)
+      var(--motion-easing-standard);
+  }
+  .landing .button:is(:hover, :focus-visible) svg {
+    transform: translateX(4px);
+  }
+  .landing .button:active svg {
+    transform: translateX(2px);
+  }
+  .landing .pricing-card,
+  .landing .feature-ribbon article > svg {
+    transition:
+      translate var(--motion-duration-medium-2) var(--motion-easing-standard),
+      box-shadow var(--motion-duration-medium-2) var(--motion-easing-standard);
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .landing .pricing-card:hover {
+      translate: 0 -4px;
+      box-shadow: 0 16px 36px rgb(16 46 82 / 9%);
+    }
+    .landing .feature-ribbon article:hover > svg {
+      translate: 0 -3px;
+    }
+  }
+}
+
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes landing-line {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes lesson-settle {
+  from {
+    transform: translateY(16px);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes lesson-slot {
+  from {
+    opacity: 0.3;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lesson-open {
+  from {
+    opacity: 0.4;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lesson-context {
+  from {
+    opacity: 0.25;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes lesson-connect {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes lesson-focus {
+  from {
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+@keyframes lesson-check {
+  from {
+    opacity: 0;
+    transform: scale(0.65);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing .lesson-replay {
+    display: none;
+  }
+  .landing *,
+  .landing *::before,
+  .landing *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

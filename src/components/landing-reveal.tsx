@@ -15,6 +15,7 @@ export function LandingReveal({ children }: { children: ReactNode }) {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             entry.target.removeAttribute("data-reveal-pending");
+            entry.target.setAttribute("data-reveal-state", "visible");
             observer.unobserve(entry.target);
           }
         });
@@ -25,12 +26,15 @@ export function LandingReveal({ children }: { children: ReactNode }) {
       if (section.getBoundingClientRect().top > window.innerHeight) {
         section.setAttribute("data-reveal-pending", "");
         observer.observe(section);
+      } else {
+        section.setAttribute("data-reveal-state", "visible");
       }
     });
     const revealAll = () =>
-      sections?.forEach((section) =>
-        section.removeAttribute("data-reveal-pending"),
-      );
+      sections?.forEach((section) => {
+        section.removeAttribute("data-reveal-pending");
+        section.setAttribute("data-reveal-state", "visible");
+      });
     media.addEventListener("change", revealAll);
     return () => {
       observer.disconnect();

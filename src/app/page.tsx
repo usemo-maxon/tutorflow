@@ -1,5 +1,7 @@
 import { BrandLogo } from "@/components/brand-logo";
 import { LandingReveal } from "@/components/landing-reveal";
+import { LessonPreviewMotion } from "@/components/lesson-preview-motion";
+import "./landing-motion.css";
 import Link from "next/link";
 import {
   ArrowRight,
@@ -90,7 +92,7 @@ export default async function LandingPage() {
             </p>
           </div>
 
-          <div className="hero-product-preview">
+          <LessonPreviewMotion>
             <div className="preview-caption">
               <span>TWÓJ DZIEŃ</span>
               <span>Przykładowy plan</span>
@@ -172,7 +174,7 @@ export default async function LandingPage() {
                 Zacznij bezpłatnie
               </Link>
             </div>
-          </div>
+          </LessonPreviewMotion>
         </section>
 
         <section className="landing-workflow" id="jak-dziala" data-reveal>
