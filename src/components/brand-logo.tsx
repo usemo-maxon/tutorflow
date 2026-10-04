@@ -1,28 +1,29 @@
 import Image from "next/image";
 
-/** Original easy4tutor artwork, exported without changing its geometry or colors. */
+/** Supplied blue artwork. CSS frames its existing symbol and wordmark without redrawing it. */
 export function BrandLogo() {
   return (
     <span className="brand-artwork">
-      <Image
-        className="brand-symbol"
-        src="/brand/easy4tutor-symbol.png"
-        width={498}
-        height={404}
-        alt=""
-        aria-hidden="true"
-        loading="eager"
-        unoptimized
-      />
-      <Image
-        className="brand-wordmark"
-        src="/brand/easy4tutor-wordmark.png"
-        width={906}
-        height={190}
-        alt="easy4tutor"
-        loading="eager"
-        unoptimized
-      />
+      <span className="brand-symbol brand-image-frame" aria-hidden="true">
+        <Image
+          src="/brand/easy4tutor-blue-original.png"
+          width={1254}
+          height={1254}
+          alt=""
+          loading="eager"
+          sizes="320px"
+        />
+      </span>
+      <span className="brand-wordmark brand-image-frame">
+        <Image
+          src="/brand/easy4tutor-blue-original.png"
+          width={1254}
+          height={1254}
+          alt="easy4tutor"
+          loading="eager"
+          sizes="320px"
+        />
+      </span>
       <span className="brand-compact-label sr-only">easy4tutor</span>
     </span>
   );

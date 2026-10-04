@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import "./globals.css";
+import "./motion-tokens.css";
+import "./redesign.css";
 
 const manrope = localFont({
   src: "./fonts/manrope-variable.ttf",

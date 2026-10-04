@@ -130,7 +130,11 @@ export function CalendarPage() {
     () => calendarQueryRange(anchor, view, session.timezone),
     [anchor, session.timezone, view],
   );
-  const { data, isPending } = useAppData(session.id, queryRange, "calendar");
+  const { data, isPending, error, refetch } = useAppData(
+    session.id,
+    queryRange,
+    "calendar",
+  );
   const mutation = useAppMutation(session.id);
   const queryClient = useQueryClient();
   const { openLessonComposer, showToast, showError } = useAppUi();
@@ -140,6 +144,9 @@ export function CalendarPage() {
     searchParams.get("student") ?? "",
   );
   const [dragged, setDragged] = useState<CalendarDragEntry | null>(null);
+  const [inspectedLesson, setInspectedLesson] = useState<Lesson | null>(null);
+  const [reschedule, setReschedule] = useState({ date: "", time: "" });
+  const inspectTrigger = useRef<HTMLElement | null>(null);
   const [rangeChoice, setRangeChoice] = useState<
     | (CalendarRangeSelection & {
         point: { x: number; y: number };
@@ -221,11 +228,33 @@ export function CalendarPage() {
     );
   }, [data, rangeDays, timezone]);
 
-  if (isPending || !data) return <PageLoading />;
+  if (isPending) return <PageLoading />;
+  if (error || !data)
+    return (
+      <div className="route-error" role="alert">
+        <AlertTriangle size={24} aria-hidden="true" />
+        <h1>Nie udało się wczytać kalendarza</h1>
+        <p>Spróbuj ponownie, aby zobaczyć aktualne terminy.</p>
+        <button className="button button--secondary" onClick={() => refetch()}>
+          Spróbuj ponownie
+        </button>
+      </div>
+    );
   const readOnly = data.teacher.subscription.readOnly;
   const planningStudent = data.students.find(
     (student) => student.id === planningStudentId,
   );
+  function inspectLesson(lesson: Lesson) {
+    inspectTrigger.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    setInspectedLesson(lesson);
+    setReschedule({
+      date: localDateKey(lesson.startsAt, timezone),
+      time: formatTime(lesson.startsAt, timezone),
+    });
+  }
   function move(direction: -1 | 1) {
     setAnchor((current) =>
       view === "month"
@@ -384,6 +413,7 @@ export function CalendarPage() {
             onClick={() =>
               openLessonComposer({
                 studentIds: planningStudentId ? [planningStudentId] : undefined,
+                date: localDateKey(anchor, timezone),
               })
             }
           >
@@ -414,12 +444,35 @@ export function CalendarPage() {
           >
             <ChevronRight size={19} />
           </button>
-          <strong>
+          <strong aria-live="polite" aria-atomic="true">
             {view === "month"
               ? formatInTimeZone(anchor, timezone, "LLLL yyyy", { locale: pl })
-              : `${formatInTimeZone(rangeDays[0], timezone, "d MMM", { locale: pl })} – ${formatInTimeZone(rangeDays.at(-1)!, timezone, "d MMM yyyy", { locale: pl })}`}
+              : view === "day"
+                ? formatInTimeZone(anchor, timezone, "d MMMM yyyy", {
+                    locale: pl,
+                  })
+                : `${formatInTimeZone(rangeDays[0], timezone, "d MMM", { locale: pl })} – ${formatInTimeZone(rangeDays.at(-1)!, timezone, "d MMM yyyy", { locale: pl })}`}
           </strong>
         </div>
+        <label className="calendar-date-jump">
+          Przejdź do daty
+          <input
+            type="date"
+            value={localDateKey(anchor, timezone)}
+            onChange={(event) => {
+              if (!event.target.value) return;
+              try {
+                setAnchor(
+                  new Date(
+                    localInputToUtc(event.target.value, "12:00", timezone),
+                  ),
+                );
+              } catch (error) {
+                showError(error);
+              }
+            }}
+          />
+        </label>
         <div className="segmented-control segmented-control--compact view-switch">
           {(
             [
@@ -481,6 +534,22 @@ export function CalendarPage() {
             Zakończ planowanie <X size={15} />
           </button>
         )}
+        <div className="calendar-context">
+          <span>{timezone.replaceAll("_", " ")}</span>
+          <Link href="/app/ustawienia/dostepnosc">Dostępność</Link>
+          <Link href="/app/ustawienia/integracje">Integracje</Link>
+        </div>
+      </div>
+      <div className="calendar-help">
+        <p>Kliknij lekcję, aby zobaczyć szczegóły lub zmienić termin.</p>
+        <details>
+          <summary>Jak planować zajęcia?</summary>
+          <p>
+            Wybierz wolne miejsce lub zaznacz zakres godzin. Lekcję możesz
+            przenieść przeciągnięciem albo zmienić jej datę w szczegółach. Wybór
+            ucznia włącza tryb planowania.
+          </p>
+        </details>
       </div>
       {(view === "week" || view === "day") && (
         <CalendarGrid
@@ -498,6 +567,7 @@ export function CalendarPage() {
           readOnly={readOnly || mutation.isPending}
           onDragEnd={() => setDragged(null)}
           onDeleteBlock={deleteBlock}
+          onInspect={inspectLesson}
         />
       )}
       {view === "month" && (
@@ -513,6 +583,7 @@ export function CalendarPage() {
       )}
       {view === "agenda" && (
         <AgendaView
+          onInspect={inspectLesson}
           days={rangeDays}
           data={data}
           timezone={timezone}
@@ -525,8 +596,165 @@ export function CalendarPage() {
           onDeleteBlock={deleteBlock}
         />
       )}
+      <Dialog.Root
+        open={Boolean(inspectedLesson)}
+        onOpenChange={(open) => {
+          if (!open) setInspectedLesson(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content
+            className="dialog-content dialog-content--alert"
+            aria-describedby="calendar-inspect-description"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              if (!recurrenceMove && !availabilityMove)
+                inspectTrigger.current?.focus();
+            }}
+          >
+            <header className="dialog-header">
+              <Dialog.Title>Szczegóły lekcji</Dialog.Title>
+              <Dialog.Close
+                className="icon-button"
+                aria-label="Zamknij szczegóły"
+              >
+                <X size={20} />
+              </Dialog.Close>
+            </header>
+            <Dialog.Description id="calendar-inspect-description">
+              Sprawdź zajęcia lub zmień ich termin bez opuszczania kalendarza.
+            </Dialog.Description>
+            {inspectedLesson && (
+              <>
+                <div className="calendar-inspect-meta">
+                  <strong>
+                    {data.groups.find(
+                      (group) => group.id === inspectedLesson.groupId,
+                    )?.name ??
+                      inspectedLesson.participantIds
+                        .map(
+                          (id) =>
+                            data.students.find((student) => student.id === id)
+                              ?.name,
+                        )
+                        .filter(Boolean)
+                        .join(", ")}
+                  </strong>
+                  <p>
+                    {inspectedLesson.subject ||
+                      inspectedLesson.topic ||
+                      "Temat do ustalenia"}{" "}
+                    · {inspectedLesson.durationMinutes} min
+                  </p>
+                  <LessonStatusBadge status={inspectedLesson.status} />
+                </div>
+                <form
+                  className="form-stack"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (
+                      !canDragCalendarLesson(inspectedLesson, readOnly) ||
+                      mutation.isPending
+                    )
+                      return;
+                    try {
+                      const entry = lessonDragEntry(inspectedLesson);
+                      const startsAt = localInputToUtc(
+                        reschedule.date,
+                        reschedule.time,
+                        timezone,
+                      );
+                      setInspectedLesson(null);
+                      if (entry.kind === "lesson" && entry.seriesId)
+                        setRecurrenceMove({
+                          entry,
+                          startsAt,
+                          kind:
+                            entry.status === "completed"
+                              ? "historical"
+                              : "scope",
+                          scope:
+                            entry.status === "completed" ? "future" : "single",
+                        });
+                      else void moveCalendarEntry(entry, startsAt);
+                    } catch (error) {
+                      showError(error);
+                    }
+                  }}
+                >
+                  <div className="form-row">
+                    <label className="field">
+                      Data
+                      <input
+                        type="date"
+                        required
+                        disabled={
+                          !canDragCalendarLesson(inspectedLesson, readOnly)
+                        }
+                        value={reschedule.date}
+                        onChange={(event) =>
+                          setReschedule((current) => ({
+                            ...current,
+                            date: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      Godzina
+                      <input
+                        type="time"
+                        required
+                        step="60"
+                        disabled={
+                          !canDragCalendarLesson(inspectedLesson, readOnly)
+                        }
+                        value={reschedule.time}
+                        onChange={(event) =>
+                          setReschedule((current) => ({
+                            ...current,
+                            time: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <p className="muted">
+                    Strefa czasowa: {timezone}. Czas trwania pozostaje bez
+                    zmian.
+                  </p>
+                  <footer className="dialog-footer">
+                    <Link
+                      className="button button--secondary"
+                      href={`/app/lekcje/${inspectedLesson.id}`}
+                    >
+                      Otwórz lekcję
+                    </Link>
+                    <button
+                      type="submit"
+                      className="button button--primary"
+                      disabled={
+                        mutation.isPending ||
+                        !canDragCalendarLesson(inspectedLesson, readOnly) ||
+                        (reschedule.date ===
+                          localDateKey(inspectedLesson.startsAt, timezone) &&
+                          reschedule.time ===
+                            formatTime(inspectedLesson.startsAt, timezone))
+                      }
+                    >
+                      Zapisz termin
+                    </button>
+                  </footer>
+                </form>
+              </>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <div className="mobile-calendar-agenda">
         <AgendaView
+          onInspect={inspectLesson}
           days={rangeDays}
           data={data}
           timezone={timezone}
@@ -943,6 +1171,7 @@ function CalendarGrid({
   readOnly,
   onDragEnd,
   onDeleteBlock,
+  onInspect,
 }: {
   days: Date[];
   lessons: Lesson[];
@@ -952,6 +1181,7 @@ function CalendarGrid({
   readOnly: boolean;
   onDragEnd: () => void;
   onDeleteBlock: (blockId: string) => void;
+  onInspect: (lesson: Lesson) => void;
   onSlot: (day: Date, time: string, lesson?: Lesson) => void;
   dragged: CalendarDragEntry | null;
   onDrag: (entry: CalendarDragEntry) => void;
@@ -980,13 +1210,25 @@ function CalendarGrid({
     anchorMinute: number;
   } | null>(null);
   const suppressClick = useRef(false);
+  const gridViewport = useRef<HTMLDivElement>(null);
   const { startHour, endHour } = calendarBounds(lessons, timezone, data);
+  const visibleDates = days.map((day) => localDateKey(day, timezone)).join(",");
+  useEffect(() => {
+    const current = new Date();
+    const initialHour = visibleDates.includes(localDateKey(current, timezone))
+      ? Number(formatInTimeZone(current, timezone, "H")) - 1
+      : 8;
+    if (gridViewport.current)
+      gridViewport.current.scrollTop =
+        Math.max(0, initialHour - startHour) * hourHeight;
+  }, [visibleDates, startHour, timezone]);
   const hours = Array.from(
     { length: endHour - startHour },
     (_, i) => startHour + i,
   );
   return (
     <div
+      ref={gridViewport}
       className={`calendar-grid-shell${days.length === 1 ? " calendar-grid-shell--day" : ""}`}
       style={
         {
@@ -1524,6 +1766,14 @@ function CalendarGrid({
                           formatTime(lesson.startsAt, timezone),
                           lesson,
                         );
+                      } else if (
+                        !event.ctrlKey &&
+                        !event.metaKey &&
+                        !event.shiftKey &&
+                        !event.altKey
+                      ) {
+                        event.preventDefault();
+                        onInspect(lesson);
                       }
                     }}
                   >
@@ -1599,12 +1849,14 @@ function AgendaView({
   timezone,
   openLessonComposer,
   onDeleteBlock,
+  onInspect,
 }: {
   days: Date[];
   data: import("@/lib/domain").AppData;
   timezone: string;
   openLessonComposer: (preset?: { date?: string; time?: string }) => void;
   onDeleteBlock: (blockId: string) => void;
+  onInspect: (lesson: Lesson) => void;
 }) {
   return (
     <div className="calendar-agenda">
@@ -1737,6 +1989,17 @@ function AgendaView({
                   <Link
                     className="agenda-event-row"
                     href={`/app/lekcje/${lesson.id}`}
+                    onClick={(event) => {
+                      if (
+                        !event.ctrlKey &&
+                        !event.metaKey &&
+                        !event.shiftKey &&
+                        !event.altKey
+                      ) {
+                        event.preventDefault();
+                        onInspect(lesson);
+                      }
+                    }}
                     key={lesson.id}
                     style={calendarColorStyle(lesson.color)}
                   >

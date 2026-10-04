@@ -53,11 +53,13 @@ const draftFromEventType = (eventType: BookingEventType): EventTypeDraft => ({
 
 function PublicPageInsights({
   slug,
+  published,
   days,
   onDays,
   analytics,
 }: {
   slug: string;
+  published: boolean;
   days: 7 | 30 | 90;
   onDays: (days: 7 | 30 | 90) => void;
   analytics: {
@@ -69,7 +71,10 @@ function PublicPageInsights({
     typeof window === "undefined"
       ? `/${slug}`
       : `${window.location.origin}/${slug}`;
-  const copy = (url = publicUrl) => void navigator.clipboard?.writeText(url);
+  const copy = (url = publicUrl) => {
+    if (!published) return;
+    void navigator.clipboard?.writeText(url);
+  };
   const labels: Record<FunnelEvent, string> = {
     profile_view: "Wyświetlenia",
     event_type_selected: "Wybrano typ",
@@ -110,11 +115,16 @@ function PublicPageInsights({
       {!analytics || analytics.funnel.profile_view === 0 ? (
         <div className="public-insights__empty">
           <strong>Nie masz jeszcze danych.</strong>
-          <span>Udostępnij swoją stronę, aby zacząć zbierać statystyki.</span>
+          <span>
+            {published
+              ? "Udostępnij swoją stronę, aby zacząć zbierać statystyki."
+              : "Włącz stronę i zapisz profil, aby udostępnić działający link."}
+          </span>
           <button
             type="button"
             className="button button--secondary"
             onClick={() => copy()}
+            disabled={!published}
           >
             Kopiuj link
           </button>
@@ -150,11 +160,14 @@ function PublicPageInsights({
           type="button"
           className="button button--secondary"
           onClick={() => copy()}
+          disabled={!published}
         >
           Kopiuj link
         </button>
         <small>
-          Dodaj ten link do bio na Instagramie, TikToku lub Facebooku.
+          {published
+            ? "Dodaj ten link do bio na Instagramie, TikToku lub Facebooku."
+            : "Link będzie dostępny po opublikowaniu i zapisaniu strony."}
         </small>
         {(["instagram", "tiktok", "facebook"] as const).map((source) => (
           <button
@@ -164,6 +177,7 @@ function PublicPageInsights({
             onClick={() =>
               copy(`${publicUrl}?utm_source=${source}&utm_medium=social`)
             }
+            disabled={!published}
           >
             Kopiuj: {source}
           </button>
@@ -176,6 +190,9 @@ function PublicPageInsights({
 export function PublicProfileSettings() {
   const teacher = useSessionTeacher();
   const [profile, setProfile] = useState<TutorPublicProfile | null>(null);
+  const [savedProfile, setSavedProfile] = useState<TutorPublicProfile | null>(
+    null,
+  );
   const [eventTypes, setEventTypes] = useState<BookingEventType[]>([]);
   const [availabilitySettings, setAvailabilitySettings] =
     useState<BookingAvailabilitySettings>(DEFAULT_BOOKING_AVAILABILITY);
@@ -209,7 +226,9 @@ export function PublicProfileSettings() {
           !availabilityResult.response.ok
         )
           throw new Error("LOAD_FAILED");
-        setProfile(profileResult.data as TutorPublicProfile);
+        const loadedProfile = profileResult.data as TutorPublicProfile;
+        setProfile(loadedProfile);
+        setSavedProfile(loadedProfile);
         setEventTypes(eventTypesResult.data as BookingEventType[]);
         setAvailabilitySettings({
           ...DEFAULT_BOOKING_AVAILABILITY,
@@ -252,8 +271,14 @@ export function PublicProfileSettings() {
     setSaving(false);
     if (!response.ok)
       return setMessage(data.message || "Nie udało się zapisać.");
-    setProfile(data);
-    setMessage("Zmiany strony zapisane.");
+    const saved = data as TutorPublicProfile;
+    setProfile(saved);
+    setSavedProfile(saved);
+    setMessage(
+      saved.enabled
+        ? "Strona została opublikowana i link jest już aktywny."
+        : "Zmiany zapisane. Strona publiczna pozostaje wyłączona.",
+    );
   }
 
   async function photo(file?: File) {
@@ -435,7 +460,11 @@ export function PublicProfileSettings() {
         <LoaderCircle className="spin" /> Ładowanie strony publicznej…
       </section>
     );
-  const publicHref = `/${profile.slug}`;
+  const publicHref = savedProfile ? `/${savedProfile.slug}` : undefined;
+  const isPublished = Boolean(savedProfile?.enabled);
+  const hasUnsavedProfileChanges = savedProfile
+    ? JSON.stringify(profile) !== JSON.stringify(savedProfile)
+    : false;
   return (
     <section className="public-profile-settings">
       <div className="settings-copy">
@@ -606,18 +635,36 @@ export function PublicProfileSettings() {
                   ? "Zapisz opublikowaną stronę"
                   : "Zapisz stronę"}
               </button>
-              <Link
-                className="button button--secondary"
-                href={publicHref}
-                target="_blank"
-              >
-                <ExternalLink size={16} />
-                Otwórz stronę publiczną
-              </Link>
+              {isPublished && publicHref ? (
+                <Link
+                  className="button button--secondary"
+                  href={publicHref}
+                  target="_blank"
+                >
+                  <ExternalLink size={16} />
+                  Otwórz opublikowaną stronę
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  disabled
+                >
+                  <ExternalLink size={16} />
+                  Najpierw opublikuj i zapisz
+                </button>
+              )}
             </div>
+            {hasUnsavedProfileChanges && (
+              <p className="form-note">
+                Masz niezapisane zmiany. Publiczny link nadal pokazuje ostatnią
+                zapisaną wersję.
+              </p>
+            )}
           </form>
           <PublicPageInsights
-            slug={profile.slug}
+            slug={savedProfile?.slug ?? profile.slug}
+            published={isPublished}
             days={analyticsDays}
             onDays={setAnalyticsDays}
             analytics={analytics}

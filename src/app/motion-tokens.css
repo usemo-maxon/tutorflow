@@ -1,0 +1,9 @@
+/* Material Design 3 subset from motion-design/tokens/{duration,easing}.tokens.json. */
+:root {
+  --motion-duration-short-3: 150ms;
+  --motion-duration-short-4: 200ms;
+  --motion-duration-medium-2: 300ms;
+  --motion-duration-long-2: 500ms;
+  --motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+}

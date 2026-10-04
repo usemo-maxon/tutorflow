@@ -28,6 +28,7 @@ import { formatDay, formatShortDay, formatTime } from "@/lib/format";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
 import { LessonStatusBadge } from "../ui/status-badge";
+import { NewBookings } from "./new-bookings";
 
 export function TodayPage() {
   const session = useSessionTeacher();
@@ -100,6 +101,42 @@ export function TodayPage() {
           </button>
         </div>
       )}
+
+      {!isNewTutor && (
+        <nav className="day-overview" aria-label="Przegląd dnia">
+          <Link href="/app/kalendarz">
+            <CalendarDays size={20} aria-hidden="true" />
+            <span>
+              <strong>
+                {
+                  data.todaysLessons.filter(
+                    (lesson) => lesson.status !== "cancelled",
+                  ).length
+                }
+              </strong>
+              <small>Lekcje dzisiaj</small>
+            </span>
+            <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+          <Link href="/app/rezerwacje">
+            <Clock3 size={20} aria-hidden="true" />
+            <span>
+              <strong>{data.todaysBookings.length}</strong>
+              <small>Rezerwacje dzisiaj</small>
+            </span>
+            <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+          <Link href="/app/uczniowie">
+            <Users size={20} aria-hidden="true" />
+            <span>
+              <strong>{data.studentCount}</strong>
+              <small>Twoi uczniowie</small>
+            </span>
+            <ArrowRight size={16} aria-hidden="true" />
+          </Link>
+        </nav>
+      )}
+      <NewBookings teacherId={session.id} timezone={timezone} now={now} />
 
       {isNewTutor ? (
         <NewTutorState

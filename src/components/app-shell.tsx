@@ -169,6 +169,7 @@ function ShellBody({
           onAction={handleGlobalCreate}
         />
         <nav className="sidebar-nav" aria-label="Główna nawigacja">
+          <p className="sidebar-section-label">Twój obszar pracy</p>
           {nav.map(({ href, label, icon: Icon }) => {
             const active =
               pathname === href ||
@@ -294,6 +295,23 @@ function ShellBody({
       </header>
 
       <main id="main-content" className="app-main" tabIndex={-1}>
+        <div className="workspace-bar">
+          <span>
+            Obszar nauczyciela <span aria-hidden="true">/</span>{" "}
+            <strong>
+              {nav.find((item) =>
+                pathname.startsWith(
+                  item.href.startsWith("/app/ustawienia")
+                    ? "/app/ustawienia"
+                    : item.href,
+                ),
+              )?.label ?? "Lekcja"}
+            </strong>
+          </span>
+          <Link href="/app/ustawienia/dostepnosc">
+            <CalendarDays size={15} aria-hidden="true" /> Ustaw dostępność
+          </Link>
+        </div>
         {!online && (
           <div className="offline-banner" role="status">
             Brak połączenia. Niezapisane zmiany mogą zostać utracone.

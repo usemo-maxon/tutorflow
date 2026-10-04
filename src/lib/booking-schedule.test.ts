@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { PublicBookingRecord } from "./public-booking";
 import { formatTime } from "./format";
+import { selectNewBookings } from "./new-bookings";
 import {
   BOOKING_CALENDAR_INTERACTION,
   bookingDetailHref,
@@ -33,6 +34,36 @@ function booking(
     ...overrides,
   };
 }
+
+describe("new dashboard bookings", () => {
+  it("shows active upcoming and ongoing bookings, newest signup first, even beyond the dashboard range", () => {
+    const items = [
+      booking("older"),
+      booking("newest", {
+        createdAt: "2026-10-02T12:00:00Z",
+        startsAt: "2026-12-01T15:00:00Z",
+        endsAt: "2026-12-01T16:00:00Z",
+      }),
+      booking("cancelled", { status: "cancelled" }),
+      booking("converted", { status: "converted" }),
+      booking("linked", { lessonId: "lesson-a" }),
+      booking("foreign", { teacherId: "teacher-b" }),
+      booking("ended", { endsAt: "2026-10-02T16:00:00Z" }),
+    ];
+    expect(
+      selectNewBookings(
+        items,
+        "teacher-a",
+        new Date("2026-10-02T16:00:00Z"),
+      ).map((item) => item.bookingId),
+    ).toEqual(["newest", "older"]);
+    expect(items[0].bookingId).toBe("older");
+  });
+
+  it("handles an empty inbox", () => {
+    expect(selectNewBookings([], "teacher-a", new Date())).toEqual([]);
+  });
+});
 
 describe("booking schedule representation", () => {
   it("includes only confirmed unconverted bookings in the bounded tutor range", () => {
