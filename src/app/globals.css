@@ -3571,8 +3571,6 @@ h3 {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
-  max-height: calc(100dvh - 230px);
-  overflow-y: auto;
 }
 .calendar-corner {
   grid-column: 1;

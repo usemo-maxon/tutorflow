@@ -1210,25 +1210,13 @@ function CalendarGrid({
     anchorMinute: number;
   } | null>(null);
   const suppressClick = useRef(false);
-  const gridViewport = useRef<HTMLDivElement>(null);
   const { startHour, endHour } = calendarBounds(lessons, timezone, data);
-  const visibleDates = days.map((day) => localDateKey(day, timezone)).join(",");
-  useEffect(() => {
-    const current = new Date();
-    const initialHour = visibleDates.includes(localDateKey(current, timezone))
-      ? Number(formatInTimeZone(current, timezone, "H")) - 1
-      : 8;
-    if (gridViewport.current)
-      gridViewport.current.scrollTop =
-        Math.max(0, initialHour - startHour) * hourHeight;
-  }, [visibleDates, startHour, timezone]);
   const hours = Array.from(
     { length: endHour - startHour },
     (_, i) => startHour + i,
   );
   return (
     <div
-      ref={gridViewport}
       className={`calendar-grid-shell${days.length === 1 ? " calendar-grid-shell--day" : ""}`}
       style={
         {
