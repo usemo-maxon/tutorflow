@@ -629,9 +629,8 @@
   max-width: 520px;
 }
 .calendar-grid-shell {
-  max-height: 70vh;
-  overflow: auto;
-  overscroll-behavior: contain;
+  max-height: none;
+  overflow: hidden;
   border-radius: 16px;
   box-shadow: var(--shadow-panel);
 }
