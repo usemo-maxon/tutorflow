@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "teachers": [],
+  "students": [],
+  "contacts": [],
+  "groups": [],
+  "lessons": [],
+  "lessonStudentOutcomes": [],
+  "studentStatImports": [],
+  "availability": [],
+  "availabilityExceptions": [],
+  "calendarBlocks": [],
+  "bookingEventTypes": [],
+  "bookings": [],
+  "sessions": []
+}

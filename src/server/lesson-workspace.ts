@@ -16,6 +16,8 @@ import {
   getLessonStudentOutcomes,
   upsertLessonStudentOutcome,
 } from "./student-outcomes";
+import { getStudentMemory } from "./student-memory";
+import { composeNextLessonBriefing } from "@/lib/next-lesson-briefing";
 
 const localAdapterEnabled = () =>
   process.env.NODE_ENV !== "production" &&
@@ -25,12 +27,15 @@ export async function getLessonWorkspace(
   teacherId: string,
   lessonId: string,
 ): Promise<LessonWorkspaceData> {
+  let workspace: LessonWorkspaceData;
   if (localAdapterEnabled()) {
-    return local.queryStore((store) =>
+    workspace = await local.queryStore((store) =>
       workspaceFromLocalStore(store, teacherId, lessonId),
     );
+  } else {
+    workspace = await getRelationalWorkspace(teacherId, lessonId);
   }
-  return getRelationalWorkspace(teacherId, lessonId);
+  return withBriefing(teacherId, workspace);
 }
 
 export async function mutateLessonWorkspace(
@@ -57,7 +62,32 @@ export async function mutateLessonWorkspace(
     return getLessonWorkspace(teacherId, lessonId);
   }
   await mutateRelationalWorkspace(teacherId, lessonId, action);
-  return getRelationalWorkspace(teacherId, lessonId);
+  return withBriefing(
+    teacherId,
+    await getRelationalWorkspace(teacherId, lessonId),
+  );
+}
+
+async function withBriefing(
+  teacherId: string,
+  workspace: LessonWorkspaceData,
+): Promise<LessonWorkspaceData> {
+  if (
+    workspace.lesson.status !== "scheduled" &&
+    workspace.lesson.status !== "needs_completion"
+  ) {
+    return workspace;
+  }
+  const generatedAt = new Date().toISOString();
+  const memories = await Promise.all(
+    workspace.participants.map((participant) =>
+      getStudentMemory(teacherId, participant.studentId, generatedAt),
+    ),
+  );
+  return {
+    ...workspace,
+    briefing: composeNextLessonBriefing(workspace, memories, generatedAt),
+  };
 }
 
 async function writeContext(teacherId: string) {
@@ -145,7 +175,9 @@ async function getRelationalWorkspace(
     ),
     supabase
       .from("lesson_plan_items")
-      .select("id,position,content")
+      .select(
+        "id,position,content,title,instructions,estimated_minutes,completed",
+      )
       .eq("workspace_id", workspaceId)
       .eq("lesson_id", lessonId)
       .order("position"),
@@ -168,11 +200,12 @@ async function getRelationalWorkspace(
       .eq("lesson_id", lessonId),
     supabase
       .from("materials")
-      .select("id,title,description,type,file_url,external_url")
+      .select(
+        "id,title,description,type,text_content,file_url,external_url,subject,level,archived_at,created_at,updated_at",
+      )
       .eq("workspace_id", workspaceId)
-      .is("archived_at", null)
       .order("title")
-      .limit(100),
+      .limit(500),
     lesson.group_id
       ? supabase
           .from("groups")
@@ -221,6 +254,8 @@ async function getRelationalWorkspace(
   const [
     studentsResult,
     attendanceResult,
+    studentMaterialsResult,
+    groupMaterialsResult,
     consumedPackageResult,
     chargeResult,
   ] = await Promise.all([
@@ -236,6 +271,20 @@ async function getRelationalWorkspace(
       .select("student_id,status")
       .eq("workspace_id", workspaceId)
       .eq("lesson_id", lessonId),
+    studentIds.length
+      ? supabase
+          .from("student_material_assignments")
+          .select("student_id,material_id")
+          .eq("workspace_id", workspaceId)
+          .in("student_id", studentIds)
+      : Promise.resolve({ data: [], error: null }),
+    lesson.group_id
+      ? supabase
+          .from("group_material_assignments")
+          .select("group_id,material_id")
+          .eq("workspace_id", workspaceId)
+          .eq("group_id", lesson.group_id)
+      : Promise.resolve({ data: [], error: null }),
     lesson.student_id && lesson.billing_type === "package"
       ? supabase
           .from("package_usages")
@@ -261,12 +310,16 @@ async function getRelationalWorkspace(
   if (
     studentsResult.error ||
     attendanceResult.error ||
+    studentMaterialsResult.error ||
+    groupMaterialsResult.error ||
     consumedPackageResult.error ||
     chargeResult.error
   ) {
     databaseFailure(
       studentsResult.error ??
         attendanceResult.error ??
+        studentMaterialsResult.error ??
+        groupMaterialsResult.error ??
         consumedPackageResult.error ??
         chargeResult.error,
     );
@@ -318,9 +371,18 @@ async function getRelationalWorkspace(
   const attachedIds = new Set(
     (linksResult.data ?? []).map((row) => row.material_id as string),
   );
-  const library = (libraryResult.data ?? []).map((row) =>
-    materialView(row, attachedIds.has(row.id)),
-  );
+  const studentMaterialRows = studentMaterialsResult.data ?? [];
+  const groupMaterialRows = groupMaterialsResult.data ?? [];
+  const assignedIds = new Set([
+    ...studentMaterialRows.map((row) => row.material_id as string),
+    ...groupMaterialRows.map((row) => row.material_id as string),
+  ]);
+  const library = (libraryResult.data ?? [])
+    .filter(
+      (row) =>
+        !row.archived_at || attachedIds.has(row.id) || assignedIds.has(row.id),
+    )
+    .map((row) => materialView(row, attachedIds.has(row.id)));
   const participants = participantRows.map((row) => {
     const student = students.get(row.student_id)!;
     return {
@@ -375,7 +437,10 @@ async function getRelationalWorkspace(
       planItems: (planResult.data ?? []).map((item) => ({
         id: item.id,
         position: item.position,
-        text: item.content,
+        title: item.title?.trim() || item.content,
+        instructions: item.instructions ?? "",
+        minutes: item.estimated_minutes ?? undefined,
+        completed: Boolean(item.completed),
       })),
       privateNote: privateNote?.content ?? "",
       privateNoteUpdatedAt: privateNote?.updated_at,
@@ -397,6 +462,13 @@ async function getRelationalWorkspace(
       : undefined,
     materials: library.filter((item) => item.attached),
     materialLibrary: library.filter((item) => !item.attached),
+    availableMaterials: availableMaterials(
+      library,
+      studentMaterialRows,
+      groupMaterialRows,
+      students,
+      group?.name,
+    ),
     packageContext:
       packageRow && balanceResult.data
         ? {
@@ -444,6 +516,59 @@ async function getRelationalWorkspace(
   };
 }
 
+function availableMaterials(
+  library: LessonWorkspaceMaterial[],
+  studentRows: Array<{ student_id: string; material_id: string }>,
+  groupRows: Array<{ group_id: string; material_id: string }>,
+  students: ReadonlyMap<string, { display_name?: string | null }>,
+  groupName?: string | null,
+) {
+  const byId = new Map(library.map((material) => [material.id, material]));
+  const student = studentRows.flatMap((row) => {
+    const material = byId.get(row.material_id);
+    if (!material || material.attached) return [];
+    return [
+      {
+        ...material,
+        source: "student" as const,
+        sourceLabel: students.get(row.student_id)?.display_name ?? "Uczeń",
+      },
+    ];
+  });
+  const group = groupRows.flatMap((row) => {
+    const material = byId.get(row.material_id);
+    if (!material || material.attached) return [];
+    return [
+      {
+        ...material,
+        source: "group" as const,
+        sourceLabel: groupName ?? "Grupa",
+      },
+    ];
+  });
+  const reserved = new Set([
+    ...student.map((item) => item.id),
+    ...group.map((item) => item.id),
+  ]);
+  return {
+    student: uniqueMaterials(student),
+    group: uniqueMaterials(group),
+    library: library
+      .filter((item) => !item.attached && !reserved.has(item.id))
+      .map((item) => ({ ...item, source: "library" as const })),
+  };
+}
+
+function uniqueMaterials(items: LessonWorkspaceMaterial[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.id}:${item.sourceLabel ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function materialView(
   row: {
     id: string;
@@ -452,6 +577,12 @@ function materialView(
     type: "link" | "file" | "note";
     file_url: string | null;
     external_url: string | null;
+    text_content: string | null;
+    subject: string | null;
+    level: string | null;
+    archived_at: string | null;
+    created_at: string;
+    updated_at: string;
   },
   attached: boolean,
 ): LessonWorkspaceMaterial {
@@ -460,8 +591,17 @@ function materialView(
     title: row.title,
     description: row.description ?? "",
     type: row.type,
-    url: row.external_url ?? row.file_url ?? undefined,
+    url:
+      row.type === "file"
+        ? `/api/materials/${row.id}/open`
+        : (row.external_url ?? undefined),
     attached,
+    textContent: row.text_content ?? undefined,
+    subject: row.subject ?? "",
+    level: row.level ?? "",
+    archived: Boolean(row.archived_at),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -482,6 +622,19 @@ async function mutateRelationalWorkspace(
   const now = new Date().toISOString();
   const editable = !["cancelled", "no_show"].includes(lesson.status);
 
+  if (action.type === "applyTemplate") {
+    if (!editable || lesson.status === "completed") lifecycleConflict();
+    const { error: templateError } = await supabase.rpc(
+      "apply_lesson_template",
+      {
+        target_lesson_id: lessonId,
+        target_template_id: action.templateId,
+      },
+    );
+    if (templateError) databaseFailure(templateError);
+    return;
+  }
+
   if (action.type === "updateColor") {
     const { error: colorError } = await supabase.rpc(
       "update_lesson_color_relational",
@@ -500,58 +653,14 @@ async function mutateRelationalWorkspace(
 
   if (action.type === "updatePlan") {
     if (!editable) lifecycleConflict();
-    if (lesson.updated_at !== action.expectedUpdatedAt) staleWrite();
-    const { data: updated, error: updateError } = await supabase
-      .from("lessons")
-      .update({ title: action.topic, updated_at: now })
-      .eq("workspace_id", workspaceId)
-      .eq("id", lessonId)
-      .eq("updated_at", action.expectedUpdatedAt)
-      .select("id")
-      .maybeSingle();
-    if (updateError) databaseFailure(updateError);
-    if (!updated) staleWrite();
-    const keepIds = action.items.map((item) => item.id);
-    if (action.items.length) {
-      const { error: upsertError } = await supabase
-        .from("lesson_plan_items")
-        .upsert(
-          action.items.map((item, position) => ({
-            id: item.id,
-            workspace_id: workspaceId,
-            lesson_id: lessonId,
-            position,
-            content: item.text,
-            updated_at: now,
-          })),
-          { onConflict: "id" },
-        );
-      if (upsertError) databaseFailure(upsertError);
-      const { error: deleteError } = await supabase
-        .from("lesson_plan_items")
-        .delete()
-        .eq("workspace_id", workspaceId)
-        .eq("lesson_id", lessonId)
-        .not("id", "in", `(${keepIds.join(",")})`);
-      if (deleteError) databaseFailure(deleteError);
-    } else {
-      const { error: deleteError } = await supabase
-        .from("lesson_plan_items")
-        .delete()
-        .eq("workspace_id", workspaceId)
-        .eq("lesson_id", lessonId);
-      if (deleteError) databaseFailure(deleteError);
-    }
-    await upsertNote(
-      supabase,
-      workspaceId,
-      lessonId,
-      teacherId,
-      "objectives",
-      "private",
-      action.objectives,
-      now,
-    );
+    const { error: planError } = await supabase.rpc("replace_lesson_plan", {
+      target_lesson_id: lessonId,
+      expected_updated_at: action.expectedUpdatedAt,
+      lesson_topic: action.topic,
+      lesson_objective: action.objectives,
+      plan_items: action.items,
+    });
+    if (planError) databaseFailure(planError);
     return;
   }
   if (action.type === "saveNote") {
@@ -913,7 +1022,14 @@ function workspaceFromLocalStore(
       syncStatus: lesson.syncStatus,
       topic: lesson.topic,
       objectives: lesson.planObjectives ?? "",
-      planItems: lesson.planItems,
+      planItems: lesson.planItems.map((item) => ({
+        id: item.id,
+        position: item.position,
+        title: item.title?.trim() || item.text,
+        instructions: item.instructions ?? "",
+        minutes: item.minutes,
+        completed: Boolean(item.completed),
+      })),
       privateNote: lesson.generalNotes,
       summary: lesson.studentSummary ?? "",
       createdAt: lesson.createdAt,
@@ -962,6 +1078,7 @@ function workspaceFromLocalStore(
       attached: true,
     })),
     materialLibrary: [],
+    availableMaterials: { student: [], group: [], library: [] },
     packageContext:
       students.length === 1 &&
       typeof students[0].packageRemainingLessons === "number"
@@ -1000,12 +1117,26 @@ function mutateLocalWorkspace(
     });
   }
   const now = new Date().toISOString();
+  if (action.type === "applyTemplate") {
+    throw new ApiFailure(503, {
+      code: "TEMPLATES_REQUIRE_DATABASE",
+      message: "Szablony lekcji wymagają połączenia z bazą danych.",
+    });
+  }
   if (action.type === "updatePlan") {
     if (lesson.updatedAt && lesson.updatedAt !== action.expectedUpdatedAt)
       staleWrite();
     lesson.topic = action.topic;
     lesson.planObjectives = action.objectives;
-    lesson.planItems = action.items;
+    lesson.planItems = action.items.map((item) => ({
+      id: item.id,
+      position: item.position,
+      text: item.title,
+      title: item.title,
+      instructions: item.instructions,
+      minutes: item.minutes,
+      completed: item.completed,
+    }));
   } else if (action.type === "updateColor") {
     const targets =
       action.scope !== "single" && lesson.seriesId
@@ -1093,10 +1224,7 @@ function mutateLocalWorkspace(
               typeof student.packageRemainingLessons === "number",
           )
         : undefined;
-    if (
-      packageStudent &&
-      (packageStudent.packageRemainingLessons ?? 0) <= 0
-    ) {
+    if (packageStudent && (packageStudent.packageRemainingLessons ?? 0) <= 0) {
       throw new ApiFailure(409, {
         code: "PACKAGE_EXHAUSTED",
         message: "Pakiet nie ma wolnej lekcji. Zajęcia nie zostały zakończone.",

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   signUp: vi.fn(),
   signInWithPassword: vi.fn(),
+  acceptanceUpsert: vi.fn(),
 }));
 
 vi.mock("@/server/env", () => ({
@@ -16,6 +17,9 @@ vi.mock("@/server/supabase", () => ({
       signUp: mocks.signUp,
       signInWithPassword: mocks.signInWithPassword,
     },
+  })),
+  createSupabaseAdminClient: vi.fn(() => ({
+    from: vi.fn(() => ({ upsert: mocks.acceptanceUpsert })),
   })),
   getSupabasePublicConfig: vi.fn(),
 }));
@@ -33,6 +37,7 @@ describe("registration authentication destinations", () => {
       data: { user: { id: "teacher-1" } },
       error: null,
     });
+    mocks.acceptanceUpsert.mockResolvedValue({ error: null });
   });
 
   it("sends email registration confirmation to /app/start", async () => {
@@ -44,6 +49,7 @@ describe("registration authentication destinations", () => {
           name: "Anna Nowak",
           email: "anna@example.test",
           password: "bezpieczne-haslo",
+          termsAccepted: true,
         }),
       }),
       { params: Promise.resolve({ action: "register" }) },

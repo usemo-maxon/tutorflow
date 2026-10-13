@@ -12,11 +12,13 @@ import {
   createSupabaseAdminClient,
   createSupabaseServerClient,
 } from "@/server/supabase";
+import { isLegalOperatorComplete } from "@/lib/legal/config";
 
 export async function GET() {
   try {
     const teacher = await currentTeacher();
     if (!teacher) throw unauthenticated();
+    if (!isLegalOperatorComplete()) throw new ApiFailure(503,{code:"LEGAL_OPERATOR_DATA_MISSING",message:"Płatności są niedostępne do czasu uzupełnienia danych usługodawcy."});
     return Response.json({
       founderAvailable:
         teacher.subscription.tier === "founder" ||

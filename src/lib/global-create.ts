@@ -1,5 +1,11 @@
 export type GlobalCreateAction =
-  "lesson" | "student" | "group" | "block" | "payment" | "package";
+  | "lesson"
+  | "student"
+  | "group"
+  | "material"
+  | "block"
+  | "payment"
+  | "package";
 
 export type PaymentsCreateAction = Extract<
   GlobalCreateAction,
@@ -25,6 +31,7 @@ export const GLOBAL_CREATE_GROUPS = [
       { id: "lesson", label: "Lekcję" },
       { id: "student", label: "Ucznia" },
       { id: "group", label: "Grupę" },
+      { id: "material", label: "Materiał" },
     ],
   },
   {
@@ -44,6 +51,7 @@ export const GLOBAL_CREATE_GROUPS = [
 
 const GLOBAL_CREATE_ROUTES: Partial<Record<GlobalCreateAction, string>> = {
   group: "/app/uczniowie/grupy?action=new",
+  material: "/app/materialy?action=new",
   block: "/app/kalendarz?action=block",
   payment: "/app/platnosci?action=payment",
   package: "/app/platnosci?action=package",

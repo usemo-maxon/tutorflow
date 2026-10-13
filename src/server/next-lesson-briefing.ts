@@ -15,6 +15,7 @@ export async function getNextLessonBriefing(
   // Workspace lookup is the ownership boundary and supplies the immutable
   // participant snapshot from lesson_participants.
   const workspace = await getLessonWorkspace(teacherId, lessonId);
+  if (workspace.briefing) return workspace.briefing;
   const memories = await Promise.all(
     workspace.participants.map((participant) =>
       getStudentMemory(teacherId, participant.studentId, generatedAt),

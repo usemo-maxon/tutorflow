@@ -147,7 +147,9 @@ describe("canonical launch regression baseline", () => {
         {
           id: randomUUID(),
           position: firstWorkspace.lesson.planItems.length,
-          text: "Informacja zwrotna i utrwalenie zwrotów",
+          title: "Informacja zwrotna i utrwalenie zwrotów",
+          instructions: "",
+          completed: false,
         },
       ],
       expectedUpdatedAt: firstWorkspace.lesson.updatedAt,

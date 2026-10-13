@@ -6,6 +6,7 @@ import type {
   SyncStatus,
 } from "./domain";
 import { CalendarColorSchema } from "./validation";
+import type { NextLessonBriefing } from "./next-lesson-briefing";
 
 export interface LessonWorkspaceParticipant {
   id: string;
@@ -25,6 +26,23 @@ export interface LessonWorkspaceMaterial {
   type: "link" | "file" | "note";
   url?: string;
   attached: boolean;
+  source?: "student" | "group" | "library" | "template";
+  sourceLabel?: string;
+  textContent?: string;
+  subject?: string;
+  level?: string;
+  archived?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface LessonPlanItem {
+  id: string;
+  position: number;
+  title: string;
+  instructions: string;
+  minutes?: number;
+  completed: boolean;
 }
 
 export interface LessonWorkspaceHomework {
@@ -67,7 +85,7 @@ export interface LessonWorkspaceData {
     syncStatus: SyncStatus;
     topic: string;
     objectives: string;
-    planItems: Array<{ id: string; position: number; text: string }>;
+    planItems: LessonPlanItem[];
     privateNote: string;
     privateNoteUpdatedAt?: string;
     summary: string;
@@ -79,6 +97,11 @@ export interface LessonWorkspaceData {
   homework?: LessonWorkspaceHomework;
   materials: LessonWorkspaceMaterial[];
   materialLibrary: LessonWorkspaceMaterial[];
+  availableMaterials: {
+    student: LessonWorkspaceMaterial[];
+    group: LessonWorkspaceMaterial[];
+    library: LessonWorkspaceMaterial[];
+  };
   packageContext?: {
     id: string;
     name: string;
@@ -96,6 +119,7 @@ export interface LessonWorkspaceData {
   };
   previousLesson?: LessonWorkspaceAdjacentLesson;
   nextLesson?: LessonWorkspaceAdjacentLesson;
+  briefing?: NextLessonBriefing;
 }
 
 const entityId = z.string().uuid();
@@ -129,13 +153,18 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
     type: z.literal("updatePlan"),
     topic: z.string().trim().max(500),
     objectives: z.string().trim().max(5_000),
-    items: z.array(
-      z.object({
-        id: entityId,
-        position: z.number().int().nonnegative(),
-        text: z.string().trim().min(1).max(2_000),
-      }),
-    ),
+    items: z
+      .array(
+        z.object({
+          id: entityId,
+          position: z.number().int().nonnegative(),
+          title: z.string().trim().min(1).max(160),
+          instructions: z.string().trim().max(5_000).default(""),
+          minutes: z.number().int().min(1).max(480).optional(),
+          completed: z.boolean().default(false),
+        }),
+      )
+      .max(100),
     expectedUpdatedAt: isoDateTime,
   }),
   z.object({
@@ -164,6 +193,7 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
       }),
   }),
   z.object({ type: z.literal("detachMaterial"), materialId: entityId }),
+  z.object({ type: z.literal("applyTemplate"), templateId: entityId }),
   z.object({
     type: z.literal("markAttendance"),
     studentId: entityId,
@@ -207,3 +237,22 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
 ]);
 
 export type LessonWorkspaceAction = z.infer<typeof LessonWorkspaceActionSchema>;
+
+export function plannedMinutes(
+  items: readonly Pick<LessonPlanItem, "minutes">[],
+) {
+  return items.reduce((total, item) => total + (item.minutes ?? 0), 0);
+}
+
+export function movePlanItem(
+  items: readonly LessonPlanItem[],
+  itemId: string,
+  direction: -1 | 1,
+) {
+  const index = items.findIndex((item) => item.id === itemId);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= items.length) return [...items];
+  const reordered = [...items];
+  [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+  return reordered.map((item, position) => ({ ...item, position }));
+}

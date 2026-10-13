@@ -6,8 +6,10 @@ import { isSupabaseConfigured, siteUrl } from "@/server/env";
 import { ApiFailure, errorResponse } from "@/server/errors";
 import {
   createSupabaseServerClient,
+  createSupabaseAdminClient,
   getSupabasePublicConfig,
 } from "@/server/supabase";
+import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal/config";
 import {
   createSession,
   createTeacher,
@@ -27,6 +29,7 @@ const loginSchema = z.object({
 const registerSchema = loginSchema.extend({
   name: z.string().trim().min(2, "Podaj imię i nazwisko."),
   password: z.string().min(8, "Hasło musi mieć co najmniej 8 znaków."),
+  termsAccepted: z.literal(true, { error: "Zaakceptuj Regulamin." }),
 });
 
 export async function GET(
@@ -138,6 +141,12 @@ export async function POST(
             ? { email: "Ten adres e-mail jest już używany." }
             : undefined,
         });
+      }
+      if (data.user) {
+        const { error: acceptanceError } = await createSupabaseAdminClient()
+          .from("legal_acceptances")
+          .upsert({ user_id: data.user.id, document_type: "terms", document_version: LEGAL_DOCUMENT_VERSION }, { onConflict: "user_id,document_type,document_version" });
+        if (acceptanceError) throw new Error("LEGAL_ACCEPTANCE_STORE_FAILED");
       }
       return Response.json({
         teacher: data.session && data.user ? { id: data.user.id } : undefined,

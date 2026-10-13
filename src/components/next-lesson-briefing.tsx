@@ -15,12 +15,17 @@ export function NextLessonBriefingPanel({
   teacherId,
   lessonId,
   timezone,
+  briefing,
 }: {
   teacherId: string;
   lessonId: string;
   timezone: string;
+  briefing?: NextLessonBriefing;
 }) {
-  const query = useNextLessonBriefing(teacherId, lessonId);
+  const query = useNextLessonBriefing(teacherId, lessonId, !briefing);
+
+  if (briefing)
+    return <NextLessonBriefingView briefing={briefing} timezone={timezone} />;
 
   if (query.isPending) return <BriefingSkeleton />;
   if (!query.data || query.error) {

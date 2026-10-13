@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { safeRelativePath } from "@/lib/auth-redirect";
 import { createSupabaseServerClient } from "@/server/supabase";
+import { createSupabaseAdminClient } from "@/server/supabase";
+import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal/config";
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +49,16 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
+      if (url.searchParams.get("legal") === LEGAL_DOCUMENT_VERSION && data.user) {
+        await createSupabaseAdminClient().from("legal_acceptances").upsert({
+          user_id: data.user.id,
+          document_type: "terms",
+          document_version: LEGAL_DOCUMENT_VERSION,
+        }, { onConflict: "user_id,document_type,document_version" });
+      }
       return noStoreRedirect(
         origin,
         safeRelativePath(url.searchParams.get("next")),

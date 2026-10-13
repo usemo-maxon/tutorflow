@@ -8,6 +8,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { resolveEntitlements } from "@/lib/entitlements";
 import {
   ANNUAL_SAVING_GROSZ,
@@ -252,7 +253,7 @@ export function SubscriptionSettings({
                 {checkout === billing && (
                   <LoaderCircle className="spin" size={16} />
                 )}
-                {subscription.status === "trial" ? "Aktywuj" : "Przejdź na"}{" "}
+                Kupuję i płacę —{" "}
                 {billing === "monthly" && founderAvailable
                   ? `Founder — ${formatPrice(selectedPrice)}`
                   : `Pro — ${formatPrice(selectedPrice)}`}
@@ -285,7 +286,7 @@ export function SubscriptionSettings({
                   {checkout === "monthly" && (
                     <LoaderCircle className="spin" size={16} />
                   )}
-                  Wybierz ofertę Founder
+                  Kupuję i płacę — Founder
                 </button>
               )}
             </PlanCard>
@@ -324,6 +325,7 @@ export function SubscriptionSettings({
             Plan zmieni się dopiero po potwierdzeniu płatności przez PayU.
           </p>
         )}
+        <p className="integration-note">Wybrany plan, cena brutto i okres rozliczeniowy są pokazane powyżej. Subskrypcja odnawia się automatycznie zgodnie z wybranym okresem rozliczeniowym, dopóki jej nie anulujesz. Anulowanie zatrzymuje kolejne odnowienie. <Link href="/regulamin">Regulamin i informacje o odstąpieniu</Link>.</p>
         {checkoutError && (
           <div className="form-alert" role="alert">
             {checkoutError}

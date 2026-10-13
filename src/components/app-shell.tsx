@@ -6,6 +6,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import dynamic from "next/dynamic";
 import {
   BarChart3,
+  BookOpenText,
   CalendarDays,
   CalendarCheck2,
   ChevronDown,
@@ -55,6 +56,7 @@ const nav = [
   { href: "/app/dzisiaj", label: copy.nav.today, icon: Clock3 },
   { href: "/app/kalendarz", label: copy.nav.calendar, icon: CalendarDays },
   { href: "/app/uczniowie", label: copy.nav.students, icon: Users },
+  { href: "/app/materialy", label: "Materiały", icon: BookOpenText },
   { href: "/app/rezerwacje", label: "Rezerwacje", icon: CalendarCheck2 },
   { href: "/app/platnosci", label: copy.nav.payments, icon: CircleDollarSign },
   { href: "/app/statystyki", label: copy.nav.statistics, icon: BarChart3 },

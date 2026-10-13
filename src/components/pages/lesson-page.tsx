@@ -1,25 +1,31 @@
 "use client";
 
+import * as Dialog from "@radix-ui/react-dialog";
 import { formatInTimeZone } from "date-fns-tz";
 import { pl } from "date-fns/locale";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   BookOpen,
   CalendarDays,
   Check,
   CheckCircle2,
   ChevronRight,
   CircleUserRound,
+  Clock3,
   ExternalLink,
   FileText,
   Link2,
   LoaderCircle,
+  Layers3,
   NotebookPen,
   Paperclip,
   Plus,
   Trash2,
   Users,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -34,7 +40,13 @@ import { ClientApiError } from "@/lib/api-client";
 import type {
   LessonWorkspaceAction,
   LessonWorkspaceData,
+  LessonPlanItem,
 } from "@/lib/lesson-workspace";
+import { movePlanItem, plannedMinutes } from "@/lib/lesson-workspace";
+import type {
+  LessonTemplate,
+  LessonTemplatesData,
+} from "@/lib/lesson-templates";
 import { formatMoney, localInputToUtc } from "@/lib/format";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
@@ -49,6 +61,8 @@ import type { RecurrenceMutationScope } from "@/lib/domain";
 import { difficultyLabel } from "@/lib/lesson-completion";
 import { LessonCompletionDialog } from "../lesson-completion-dialog";
 import { NextLessonBriefingPanel } from "../next-lesson-briefing";
+import { MaterialPicker, MaterialPreview } from "../context-materials";
+import type { MaterialLibraryItem } from "@/lib/materials";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -98,9 +112,7 @@ function LessonWorkspaceView({
   const now = useMinuteClock();
   const [topic, setTopic] = useState(data.lesson.topic);
   const [objectives, setObjectives] = useState(data.lesson.objectives);
-  const [agenda, setAgenda] = useState(
-    data.lesson.planItems.map((item) => item.text).join("\n"),
-  );
+  const [planItems, setPlanItems] = useState(data.lesson.planItems);
   const [privateNote, setPrivateNote] = useState(data.lesson.privateNote);
   const [summary, setSummary] = useState(data.lesson.summary);
   const [homeworkTitle, setHomeworkTitle] = useState(
@@ -114,7 +126,9 @@ function LessonWorkspaceView({
   );
   const [materialTitle, setMaterialTitle] = useState("");
   const [materialUrl, setMaterialUrl] = useState("");
-  const [selectedMaterial, setSelectedMaterial] = useState("");
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [materialPreview, setMaterialPreview] =
+    useState<MaterialLibraryItem | null>(null);
   const [color, setColor] = useState(data.lesson.color);
   const [colorScope, setColorScope] =
     useState<RecurrenceMutationScope>("single");
@@ -123,10 +137,13 @@ function LessonWorkspaceView({
   const [completionMode, setCompletionMode] = useState<
     "complete" | "edit" | undefined
   >();
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templates, setTemplates] = useState<LessonTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
   const dirty =
     topic !== data.lesson.topic ||
     objectives !== data.lesson.objectives ||
-    agenda !== data.lesson.planItems.map((item) => item.text).join("\n") ||
+    JSON.stringify(planItems) !== JSON.stringify(data.lesson.planItems) ||
     privateNote !== data.lesson.privateNote ||
     summary !== data.lesson.summary ||
     homeworkTitle !== (data.homework?.title ?? "") ||
@@ -171,22 +188,17 @@ function LessonWorkspaceView({
     }
   }
 
-  async function savePlan() {
-    const lines = agenda
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
+  async function savePlan(items = planItems) {
+    const normalized = items
+      .filter((item) => item.title.trim())
+      .map((item, position) => ({ ...item, position }));
     const result = await run(
       "plan",
       {
         type: "updatePlan",
         topic,
         objectives,
-        items: lines.map((text, position) => ({
-          id: lesson.planItems[position]?.id ?? crypto.randomUUID(),
-          position,
-          text,
-        })),
+        items: normalized,
         expectedUpdatedAt: lesson.updatedAt,
       },
       "Plan zajęć zapisany",
@@ -194,7 +206,7 @@ function LessonWorkspaceView({
     if (result) {
       setTopic(result.lesson.topic);
       setObjectives(result.lesson.objectives);
-      setAgenda(result.lesson.planItems.map((item) => item.text).join("\n"));
+      setPlanItems(result.lesson.planItems);
     }
   }
 
@@ -262,6 +274,15 @@ function LessonWorkspaceView({
     }
   }
 
+  async function attachMaterial(materialId: string) {
+    const result = await run(
+      "material",
+      { type: "attachMaterial", materialId },
+      "Materiał dołączony do lekcji",
+    );
+    if (result) setMaterialPickerOpen(false);
+  }
+
   async function saveColor() {
     const result = await run(
       "color",
@@ -277,6 +298,80 @@ function LessonWorkspaceView({
     );
     if (result) setColor(result.lesson.color);
   }
+
+  async function openTemplates() {
+    setTemplatesOpen(true);
+    setTemplatesLoading(true);
+    try {
+      const response = await fetch("/api/lesson-templates", {
+        cache: "no-store",
+      });
+      const body = (await response.json()) as
+        LessonTemplatesData | { message: string };
+      if (!response.ok)
+        throw new Error(
+          "message" in body ? body.message : "Nie udało się pobrać szablonów.",
+        );
+      setTemplates((body as LessonTemplatesData).templates);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Nie udało się pobrać szablonów.",
+      );
+      setTemplatesOpen(false);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }
+
+  async function applyTemplate(template: LessonTemplate) {
+    const result = await run(
+      "template",
+      { type: "applyTemplate", templateId: template.id },
+      "Zawartość szablonu dodana do lekcji",
+    );
+    if (result) {
+      setObjectives(result.lesson.objectives);
+      setPlanItems(result.lesson.planItems);
+      setPrivateNote(result.lesson.privateNote);
+      setTemplatesOpen(false);
+    }
+  }
+
+  function addPlanItem() {
+    setPlanItems((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        position: current.length,
+        title: "",
+        instructions: "",
+        completed: false,
+      },
+    ]);
+  }
+
+  function updatePlanItem(id: string, patch: Partial<LessonPlanItem>) {
+    setPlanItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    );
+  }
+
+  function reorderPlanItem(id: string, direction: -1 | 1) {
+    setPlanItems((current) => movePlanItem(current, id, direction));
+  }
+
+  async function togglePlanItem(id: string) {
+    const next = planItems.map((item) =>
+      item.id === id ? { ...item, completed: !item.completed } : item,
+    );
+    setPlanItems(next);
+    await savePlan(next);
+  }
+
+  const totalMinutes = plannedMinutes(planItems);
+  const overrun = Math.max(0, totalMinutes - lesson.durationMinutes);
 
   return (
     <main
@@ -330,6 +425,17 @@ function LessonWorkspaceView({
           </span>
         </div>
         <div className="lesson-hero__actions">
+          {!locked &&
+            lesson.status !== "completed" &&
+            !data.teacher.readOnly && (
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={() => void openTemplates()}
+              >
+                <Layers3 size={16} aria-hidden="true" /> Użyj szablonu
+              </button>
+            )}
           {lesson.meetingUrl && (
             <a
               className="button button--primary"
@@ -347,11 +453,13 @@ function LessonWorkspaceView({
       </header>
 
       <LessonStateBanner data={data} />
-      {(lesson.status === "scheduled" || lesson.status === "needs_completion") && (
+      {(lesson.status === "scheduled" ||
+        lesson.status === "needs_completion") && (
         <NextLessonBriefingPanel
           teacherId={teacherId}
           lessonId={lessonId}
           timezone={data.teacher.timezone}
+          briefing={data.briefing}
         />
       )}
       {lesson.status === "completed" && (
@@ -425,8 +533,8 @@ function LessonWorkspaceView({
           <WorkspaceSection
             icon={<BookOpen size={19} />}
             step="Przygotowanie"
-            title="Plan zajęć"
-            description="Temat, cele i prosty przebieg pod ręką podczas lekcji."
+            title="Przygotuj lekcję"
+            description="Cel tej lekcji, kolejność pracy i czas — wszystko w jednym miejscu."
             saveState={saveStates.plan}
             actionLabel="Zapisz plan"
             onAction={() => void savePlan()}
@@ -434,6 +542,33 @@ function LessonWorkspaceView({
               locked || lesson.status === "completed" || data.teacher.readOnly
             }
           >
+            {!objectives.trim() && !planItems.length && (
+              <div className="lesson-plan-empty">
+                <div>
+                  <strong>Ta lekcja nie ma jeszcze planu.</strong>
+                  <p>
+                    Zacznij od gotowego szablonu albo ułóż pierwszy punkt.
+                    Kontekst ucznia powyżej pozostaje tylko podpowiedzią.
+                  </p>
+                </div>
+                <div>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => void openTemplates()}
+                  >
+                    <Layers3 size={16} /> Użyj szablonu
+                  </button>
+                  <button
+                    className="button button--quiet"
+                    type="button"
+                    onClick={addPlanItem}
+                  >
+                    <Plus size={16} /> Zacznij od pustego planu
+                  </button>
+                </div>
+              </div>
+            )}
             <label className="field">
               <span>Temat</span>
               <input
@@ -443,26 +578,138 @@ function LessonWorkspaceView({
               />
             </label>
             <label className="field">
-              <span>Cele</span>
+              <span>Cel na dziś</span>
               <textarea
                 rows={3}
                 value={objectives}
                 onChange={(event) => setObjectives(event.target.value)}
-                placeholder="Co uczeń powinien umieć po zajęciach?"
+                placeholder="Co konkretnie ma wydarzyć się na tej lekcji?"
               />
+              <small>
+                Dotyczy tylko tej lekcji. Nie zmienia „Następnego kroku” z
+                poprzednich zajęć.
+              </small>
             </label>
-            <label className="field">
-              <span>Przebieg</span>
-              <textarea
-                rows={6}
-                value={agenda}
-                onChange={(event) => setAgenda(event.target.value)}
-                placeholder={
-                  "Rozgrzewka językowa\nPowtórka reguły\nĆwiczenie w rozmowie"
-                }
-              />
-              <small>Każda linia stanie się osobnym punktem planu.</small>
-            </label>
+            <div className="lesson-plan-duration" role="status">
+              <span>
+                <Clock3 size={16} /> Plan: <strong>{totalMinutes} min</strong> /
+                Lekcja: <strong>{lesson.durationMinutes} min</strong>
+              </span>
+              {overrun > 0 && <small>Plan jest dłuższy o {overrun} min.</small>}
+            </div>
+            <div className="lesson-plan-items" aria-label="Punkty planu">
+              {planItems.map((item, index) => (
+                <article
+                  className={`lesson-plan-item${item.completed ? " lesson-plan-item--complete" : ""}`}
+                  key={item.id}
+                >
+                  <div className="lesson-plan-item__order" aria-hidden="true">
+                    {index + 1}
+                  </div>
+                  <div className="lesson-plan-item__fields">
+                    <label className="field">
+                      <span>Tytuł punktu</span>
+                      <input
+                        value={item.title}
+                        maxLength={160}
+                        onChange={(event) =>
+                          updatePlanItem(item.id, { title: event.target.value })
+                        }
+                        placeholder="Np. Rozgrzewka"
+                      />
+                    </label>
+                    <div className="lesson-plan-item__details">
+                      <label className="field lesson-plan-item__content">
+                        <span>Instrukcja lub treść (opcjonalnie)</span>
+                        <textarea
+                          rows={2}
+                          value={item.instructions}
+                          onChange={(event) =>
+                            updatePlanItem(item.id, {
+                              instructions: event.target.value,
+                            })
+                          }
+                          placeholder="Pytania, ćwiczenie, notatki prowadzącego…"
+                        />
+                      </label>
+                      <label className="field lesson-plan-item__minutes">
+                        <span>Minuty</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={480}
+                          inputMode="numeric"
+                          value={item.minutes ?? ""}
+                          onChange={(event) =>
+                            updatePlanItem(item.id, {
+                              minutes: event.target.value
+                                ? Number(event.target.value)
+                                : undefined,
+                            })
+                          }
+                          placeholder="—"
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  <div className="lesson-plan-item__actions">
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={`Przenieś ${item.title || `punkt ${index + 1}`} wyżej`}
+                      disabled={index === 0}
+                      onClick={() => reorderPlanItem(item.id, -1)}
+                    >
+                      <ArrowUp size={16} />
+                    </button>
+                    <button
+                      className="icon-button"
+                      type="button"
+                      aria-label={`Przenieś ${item.title || `punkt ${index + 1}`} niżej`}
+                      disabled={index === planItems.length - 1}
+                      onClick={() => reorderPlanItem(item.id, 1)}
+                    >
+                      <ArrowDown size={16} />
+                    </button>
+                    <button
+                      className="icon-button lesson-plan-item__remove"
+                      type="button"
+                      aria-label={`Usuń ${item.title || `punkt ${index + 1}`}`}
+                      onClick={() =>
+                        setPlanItems((current) =>
+                          current
+                            .filter((candidate) => candidate.id !== item.id)
+                            .map((candidate, position) => ({
+                              ...candidate,
+                              position,
+                            })),
+                        )
+                      }
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                  {!data.teacher.readOnly && !locked && (
+                    <label className="lesson-plan-item__check">
+                      <input
+                        type="checkbox"
+                        checked={item.completed}
+                        disabled={mutation.isPending || !item.title.trim()}
+                        onChange={() => void togglePlanItem(item.id)}
+                      />
+                      Zrobione
+                    </label>
+                  )}
+                </article>
+              ))}
+            </div>
+            <button
+              className="button button--quiet lesson-plan-add"
+              type="button"
+              onClick={addPlanItem}
+            >
+              <Plus size={16} /> Dodaj punkt planu
+            </button>
           </WorkspaceSection>
 
           <WorkspaceSection
@@ -575,9 +822,9 @@ function LessonWorkspaceView({
           >
             <SectionHeading
               icon={<Paperclip size={19} />}
-              step="Wsparcie"
-              title="Materiały"
-              description="Dołącz istniejący materiał lub szybko dodaj link."
+              step="Przygotowanie"
+              title="Materiały używane w tej lekcji"
+              description="Tylko wybrane zasoby trafiają do tej lekcji. Przypisania ucznia i grupy pozostają bez zmian."
             />
             <div className="lesson-material-list">
               {data.materials.map((material) => (
@@ -598,6 +845,17 @@ function LessonWorkspaceView({
                     >
                       Otwórz <ExternalLink size={13} />
                     </a>
+                  )}
+                  {!material.url && material.type === "note" && (
+                    <button
+                      className="text-link"
+                      type="button"
+                      onClick={() =>
+                        setMaterialPreview(toLibraryMaterial(material))
+                      }
+                    >
+                      Otwórz
+                    </button>
                   )}
                   {!locked && !data.teacher.readOnly && (
                     <button
@@ -622,52 +880,48 @@ function LessonWorkspaceView({
               ))}
               {!data.materials.length && (
                 <p className="lesson-quiet-empty">
-                  Brak materiałów dołączonych do zajęć.
+                  Nie wybrano jeszcze materiałów do tej lekcji.
                 </p>
               )}
             </div>
             {!locked && !data.teacher.readOnly && (
               <div className="lesson-material-actions">
-                {data.materialLibrary.length > 0 && (
-                  <div className="lesson-attach-existing">
-                    <label className="field">
-                      <span>Biblioteka</span>
-                      <select
-                        value={selectedMaterial}
-                        onChange={(event) =>
-                          setSelectedMaterial(event.target.value)
-                        }
-                      >
-                        <option value="">Wybierz materiał</option>
-                        {data.materialLibrary.map((material) => (
-                          <option value={material.id} key={material.id}>
-                            {material.title}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                <div className="lesson-available-materials">
+                  <div className="lesson-available-materials__heading">
+                    <div>
+                      <span className="eyebrow">Dostępne materiały</span>
+                      <strong>Wybierz tylko to, czego użyjesz</strong>
+                    </div>
                     <button
                       className="button button--secondary"
                       type="button"
-                      disabled={!selectedMaterial || mutation.isPending}
-                      onClick={() =>
-                        void run(
-                          "material",
-                          {
-                            type: "attachMaterial",
-                            materialId: selectedMaterial,
-                          },
-                          "Materiał dołączony",
-                        ).then(() => setSelectedMaterial(""))
-                      }
+                      onClick={() => setMaterialPickerOpen(true)}
                     >
-                      Dołącz
+                      <Plus size={16} /> Dodaj materiał
                     </button>
                   </div>
-                )}
+                  <AvailableMaterialGroup
+                    title="Materiały ucznia"
+                    materials={data.availableMaterials.student}
+                    pending={mutation.isPending}
+                    onAttach={attachMaterial}
+                    onOpen={(material) =>
+                      setMaterialPreview(toLibraryMaterial(material))
+                    }
+                  />
+                  <AvailableMaterialGroup
+                    title="Materiały grupy"
+                    materials={data.availableMaterials.group}
+                    pending={mutation.isPending}
+                    onAttach={attachMaterial}
+                    onOpen={(material) =>
+                      setMaterialPreview(toLibraryMaterial(material))
+                    }
+                  />
+                </div>
                 <details className="lesson-quick-material">
                   <summary>
-                    <Plus size={16} /> Dodaj nowy link
+                    <Plus size={16} /> Szybko utwórz nowy link
                   </summary>
                   <div className="lesson-form-grid">
                     <label className="field">
@@ -886,7 +1140,249 @@ function LessonWorkspaceView({
           }}
         />
       )}
+      <TemplatePicker
+        open={templatesOpen}
+        loading={templatesLoading}
+        templates={templates}
+        hasExistingContent={Boolean(
+          objectives.trim() ||
+          planItems.length ||
+          privateNote.trim() ||
+          data.materials.length,
+        )}
+        pending={mutation.isPending}
+        onOpenChange={setTemplatesOpen}
+        onApply={applyTemplate}
+      />
+      <MaterialPicker
+        open={materialPickerOpen}
+        onOpenChange={setMaterialPickerOpen}
+        assignedIds={new Set(data.materials.map((material) => material.id))}
+        pendingId={
+          mutation.isPending && mutation.variables?.type === "attachMaterial"
+            ? mutation.variables.materialId
+            : undefined
+        }
+        onAssign={(materialId) => void attachMaterial(materialId)}
+        onOpen={setMaterialPreview}
+        actionLabel="Dołącz"
+        assignedLabel="W tej lekcji"
+      />
+      <MaterialPreview
+        material={materialPreview}
+        onOpenChange={(open) => !open && setMaterialPreview(null)}
+      />
     </main>
+  );
+}
+
+function AvailableMaterialGroup({
+  title,
+  materials,
+  pending,
+  onAttach,
+  onOpen,
+}: {
+  title: string;
+  materials: LessonWorkspaceData["availableMaterials"]["student"];
+  pending: boolean;
+  onAttach: (materialId: string) => Promise<void>;
+  onOpen: (
+    material: LessonWorkspaceData["availableMaterials"]["student"][number],
+  ) => void;
+}) {
+  if (!materials.length) return null;
+  return (
+    <section className="lesson-available-material-group" aria-label={title}>
+      <h3>{title}</h3>
+      <div>
+        {materials.map((material) => (
+          <article key={`${material.id}-${material.sourceLabel ?? title}`}>
+            <span>
+              <strong>{material.title}</strong>
+              <small>{material.sourceLabel}</small>
+            </span>
+            {material.url && (
+              <a
+                className="text-link"
+                href={material.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Otwórz <ExternalLink size={13} />
+              </a>
+            )}
+            {!material.url && material.type === "note" && (
+              <button
+                className="text-link"
+                type="button"
+                onClick={() => onOpen(material)}
+              >
+                Otwórz
+              </button>
+            )}
+            <button
+              className="button button--quiet"
+              type="button"
+              disabled={pending}
+              onClick={() => void onAttach(material.id)}
+            >
+              Dołącz
+            </button>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function toLibraryMaterial(
+  material: LessonWorkspaceData["materials"][number],
+): MaterialLibraryItem {
+  return {
+    id: material.id,
+    title: material.title,
+    type: material.type === "note" ? "text" : material.type,
+    description: material.description,
+    subject: material.subject ?? "",
+    level: material.level ?? "",
+    folder: null,
+    tags: [],
+    textContent: material.textContent,
+    externalUrl: material.type === "link" ? material.url : undefined,
+    archived: material.archived ?? false,
+    createdAt: material.createdAt ?? "",
+    updatedAt: material.updatedAt ?? "",
+  };
+}
+
+function TemplatePicker({
+  open,
+  loading,
+  templates,
+  hasExistingContent,
+  pending,
+  onOpenChange,
+  onApply,
+}: {
+  open: boolean;
+  loading: boolean;
+  templates: LessonTemplate[];
+  hasExistingContent: boolean;
+  pending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onApply: (template: LessonTemplate) => Promise<void>;
+}) {
+  const [selectedId, setSelectedId] = useState("");
+  const selected = templates.find((item) => item.id === selectedId);
+  return (
+    <Dialog.Root open={open} onOpenChange={pending ? undefined : onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="dialog-overlay" />
+        <Dialog.Content className="dialog-content dialog-content--medium lesson-template-picker">
+          <header className="dialog-header">
+            <div>
+              <Dialog.Title>Użyj szablonu</Dialog.Title>
+              <Dialog.Description>
+                Wybierz plan, który chcesz skopiować do tych zajęć.
+              </Dialog.Description>
+            </div>
+            <Dialog.Close className="icon-button" aria-label="Zamknij">
+              <X size={19} />
+            </Dialog.Close>
+          </header>
+          {loading ? (
+            <div className="lesson-template-picker__loading">
+              <LoaderCircle className="spin" size={24} />
+              Ładowanie szablonów…
+            </div>
+          ) : templates.length ? (
+            <div className="lesson-template-picker__body">
+              {hasExistingContent && (
+                <div className="lesson-template-picker__notice" role="status">
+                  <AlertTriangle size={17} />
+                  <span>
+                    <strong>Ta lekcja ma już treść.</strong> Cel, plan, notatki
+                    i materiały z szablonu zostaną dodane. Nic nie zostanie
+                    zastąpione.
+                  </span>
+                </div>
+              )}
+              <div className="lesson-template-picker__list">
+                {templates.map((template) => (
+                  <button
+                    type="button"
+                    key={template.id}
+                    className={selectedId === template.id ? "selected" : ""}
+                    onClick={() => setSelectedId(template.id)}
+                  >
+                    <span>
+                      <strong>{template.title}</strong>
+                      <small>
+                        {[
+                          template.subject,
+                          template.level,
+                          `${template.sections.length} sekcji`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </small>
+                    </span>
+                    {template.estimatedDurationMinutes && (
+                      <em>{template.estimatedDurationMinutes} min</em>
+                    )}
+                  </button>
+                ))}
+              </div>
+              {selected && (
+                <div className="lesson-template-picker__preview">
+                  <strong>
+                    {selected.objective ||
+                      selected.description ||
+                      "Gotowy plan lekcji"}
+                  </strong>
+                  <ol>
+                    {selected.sections.map((section) => (
+                      <li key={section.id}>{section.title}</li>
+                    ))}
+                  </ol>
+                  {selected.materials.some((item) => item.archived) && (
+                    <small>
+                      Szablon zawiera materiał archiwalny. Odwołanie pozostanie
+                      widoczne po dodaniu.
+                    </small>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="lesson-template-picker__empty">
+              <p>Nie masz jeszcze aktywnych szablonów.</p>
+              <Link
+                className="button button--secondary"
+                href="/app/materialy/szablony?action=new"
+              >
+                Utwórz szablon
+              </Link>
+            </div>
+          )}
+          <footer className="dialog-footer">
+            <Dialog.Close className="button button--quiet" disabled={pending}>
+              Anuluj
+            </Dialog.Close>
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={!selected || pending}
+              onClick={() => selected && void onApply(selected)}
+            >
+              {pending && <LoaderCircle className="spin" size={16} />}Dodaj
+              zawartość szablonu
+            </button>
+          </footer>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 

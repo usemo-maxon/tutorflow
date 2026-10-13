@@ -7,12 +7,20 @@ import {
 } from "./global-create";
 
 describe("global create actions", () => {
-  it("exposes exactly the six L0.6 actions", () => {
+  it("exposes the global create actions", () => {
     expect(
       GLOBAL_CREATE_GROUPS.flatMap((group) =>
         group.actions.map((action) => action.id),
       ),
-    ).toEqual(["lesson", "student", "group", "block", "payment", "package"]);
+    ).toEqual([
+      "lesson",
+      "student",
+      "group",
+      "material",
+      "block",
+      "payment",
+      "package",
+    ]);
   });
 
   it("keeps lesson and student as direct composer actions", () => {
@@ -22,6 +30,7 @@ describe("global create actions", () => {
 
   it.each([
     ["group", "/app/uczniowie/grupy?action=new"],
+    ["material", "/app/materialy?action=new"],
     ["block", "/app/kalendarz?action=block"],
     ["payment", "/app/platnosci?action=payment"],
     ["package", "/app/platnosci?action=package"],

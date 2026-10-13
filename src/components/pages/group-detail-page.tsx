@@ -29,6 +29,7 @@ import type {
 } from "@/lib/group-continuity";
 import { difficultyLabel } from "@/lib/lesson-completion";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import { ContextMaterials } from "../context-materials";
 import { useSessionTeacher } from "../app-shell";
 import { useAppUi } from "../app-ui-context";
 import { GroupComposer } from "../group-composer";
@@ -176,6 +177,13 @@ export function GroupDetailPage() {
         onSchedule={() => openLessonComposer({ groupId: group.id })}
         onAddMembers={() => setAdding(true)}
         onRemoveMember={readOnly ? undefined : setRemoveStudentId}
+      />
+
+      <ContextMaterials
+        kind="group"
+        contextId={group.id}
+        teacherId={teacher.id}
+        readOnly={readOnly}
       />
 
       <section

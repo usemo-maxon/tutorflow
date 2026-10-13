@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   LessonStudentOutcomeUpsertSchema,
   LessonWorkspaceActionSchema,
+  movePlanItem,
+  plannedMinutes,
 } from "./lesson-workspace";
 
 const lessonUpdatedAt = "2026-09-16T12:00:00.000Z";
@@ -18,7 +20,10 @@ describe("LessonWorkspaceActionSchema", () => {
           {
             id: "10000000-0000-4000-8000-000000000001",
             position: 0,
-            text: "Rozgrzewka",
+            title: "Rozgrzewka",
+            instructions: "Dwa pytania na start",
+            minutes: 5,
+            completed: false,
           },
         ],
       }).success,
@@ -43,6 +48,45 @@ describe("LessonWorkspaceActionSchema", () => {
         ],
       }).success,
     ).toBe(true);
+  });
+
+  it("accepts a structured lesson plan and rejects invalid duration", () => {
+    const base = {
+      type: "updatePlan" as const,
+      topic: "Present Perfect",
+      objectives: "Swobodna rozmowa o doświadczeniach",
+      expectedUpdatedAt: lessonUpdatedAt,
+    };
+    expect(
+      LessonWorkspaceActionSchema.safeParse({
+        ...base,
+        items: [
+          {
+            id: "10000000-0000-4000-8000-000000000001",
+            position: 0,
+            title: "Speaking",
+            instructions: "Pytania w parach",
+            minutes: 20,
+            completed: true,
+          },
+        ],
+      }).success,
+    ).toBe(true);
+    expect(
+      LessonWorkspaceActionSchema.safeParse({
+        ...base,
+        items: [
+          {
+            id: "10000000-0000-4000-8000-000000000001",
+            position: 0,
+            title: "Speaking",
+            instructions: "",
+            minutes: 0,
+            completed: false,
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 
   it("keeps private and student-visible notes explicit", () => {
@@ -152,5 +196,53 @@ describe("LessonWorkspaceActionSchema", () => {
         ],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("lesson plan helpers", () => {
+  const items = [
+    {
+      id: "a",
+      position: 0,
+      title: "Warm-up",
+      instructions: "",
+      minutes: 5,
+      completed: false,
+    },
+    {
+      id: "b",
+      position: 1,
+      title: "Homework review",
+      instructions: "",
+      minutes: 10,
+      completed: false,
+    },
+    {
+      id: "c",
+      position: 2,
+      title: "Speaking",
+      instructions: "",
+      minutes: 20,
+      completed: false,
+    },
+  ];
+
+  it("calculates planned duration without guessing missing minutes", () => {
+    expect(
+      plannedMinutes([
+        ...items.map(({ minutes }) => ({ minutes })),
+        { minutes: undefined },
+      ]),
+    ).toBe(35);
+  });
+
+  it("reorders items and normalizes positions", () => {
+    expect(
+      movePlanItem(items, "b", -1).map((item) => [item.id, item.position]),
+    ).toEqual([
+      ["b", 0],
+      ["a", 1],
+      ["c", 2],
+    ]);
   });
 });

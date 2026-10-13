@@ -2,6 +2,7 @@
 
 import {
   CalendarPlus,
+  BookOpenText,
   Clock3,
   PackagePlus,
   Plus,
@@ -21,6 +22,7 @@ const actionIcons: Record<GlobalCreateAction, LucideIcon> = {
   lesson: CalendarPlus,
   student: UserPlus,
   group: UsersRound,
+  material: BookOpenText,
   block: Clock3,
   payment: ReceiptText,
   package: PackagePlus,

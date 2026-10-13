@@ -4,6 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
+  BookOpenText,
   CalendarDays,
   CalendarPlus,
   CircleDollarSign,
@@ -74,6 +75,7 @@ const createIcons: Record<GlobalCreateAction, LucideIcon> = {
   lesson: CalendarPlus,
   student: UserPlus,
   group: UsersRound,
+  material: BookOpenText,
   block: Clock3,
   payment: ReceiptText,
   package: PackagePlus,

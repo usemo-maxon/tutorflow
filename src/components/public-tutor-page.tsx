@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import Link from "next/link";
 import { attributionFromSearch } from "@/lib/public-booking-analytics";
 import type { PublicBookingEventType } from "@/lib/booking-event-types";
 import { formatEventTypePrice } from "@/lib/booking-event-types";
@@ -661,6 +662,7 @@ export function PublicTutorPage({
                     {bookingError}
                   </p>
                 )}
+                <p className="public-booking-privacy">Administratorem danych podanych w związku z rezerwacją jest tutor wskazany na tej stronie. Easy4Tutor przetwarza te dane w jego imieniu w celu technicznej obsługi rezerwacji. Więcej informacji znajdziesz w <Link href="/polityka-prywatnosci" target="_blank">Polityce prywatności Easy4Tutor</Link>.</p>
                 <button
                   className="public-booking-submit"
                   type="submit"

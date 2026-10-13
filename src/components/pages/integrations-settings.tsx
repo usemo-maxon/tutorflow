@@ -24,6 +24,7 @@ const syncDateFormatter = new Intl.DateTimeFormat("pl-PL", {
 });
 
 export function IntegrationsSettings() {
+  const [googleDisclosure, setGoogleDisclosure] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<{
     kind: "success" | "error";
@@ -137,19 +138,30 @@ export function IntegrationsSettings() {
               >
                 Połącz ponownie
               </a>
+              <button className="button button--danger" type="button" onClick={async()=>{if(!window.confirm("Odłączyć Google Calendar i zatrzymać synchronizację?"))return;const response=await fetch("/api/integrations/google/disconnect",{method:"POST"});if(response.ok)void refetch();else setSyncFeedback({kind:"error",message:"Nie udało się odłączyć Google Calendar."})}}>Odłącz Google Calendar</button>
             </>
           ) : (
             data.integrations.google.status !== "not_configured" && (
-              <a
+              <button
+                type="button"
                 className="button button--secondary"
-                href="/api/integrations/google/connect"
+                onClick={()=>setGoogleDisclosure(true)}
               >
                 {data.integrations.google.status === "reconnect_required" ||
                 data.integrations.google.status === "error"
                   ? "Połącz ponownie"
                   : "Połącz z Google"}
-              </a>
+              </button>
             )
+          )}
+          {googleDisclosure && data.integrations.google.status !== "connected" && (
+            <div className="integration-disclosure">
+              <h4>Połącz Google Calendar</h4>
+              <p>Easy4Tutor potrzebuje dostępu do Twojego kalendarza, aby wyświetlać dostępność oraz synchronizować lekcje pomiędzy Easy4Tutor a Google Calendar.</p>
+              <p>Zakres dostępu zależy od włączonych funkcji i jest ograniczony do danych potrzebnych do synchronizacji. Easy4Tutor może odczytywać dane kalendarza oraz tworzyć, aktualizować lub usuwać zdarzenia w zakresie niezbędnym do działania synchronizacji.</p>
+              <p>Połączenie jest dobrowolne i możesz je później odłączyć w ustawieniach.</p>
+              <div><Link href="/polityka-prywatnosci" target="_blank">Polityka prywatności</Link><button type="button" className="button button--secondary" onClick={()=>setGoogleDisclosure(false)}>Anuluj</button><a className="button button--primary" href="/api/integrations/google/connect">Połącz z Google Calendar</a></div>
+            </div>
           )}
           {entitlements.googleCalendar && failedLesson && (
             <Link

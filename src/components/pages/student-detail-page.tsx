@@ -30,6 +30,7 @@ import {
 import type { Money, StudentContact } from "@/lib/domain";
 import { copy } from "@/lib/copy";
 import { formatDateTime, formatMoney } from "@/lib/format";
+import { ContextMaterials } from "../context-materials";
 import {
   AttendanceSection,
   ContinuitySection,
@@ -702,22 +703,14 @@ export function StudentDetailPage() {
         </section>
       )}
       {activeTab === "materials" && (
-        <section className="tab-panel">
-          <div className="section-heading">
-            <h2>Materiały</h2>
-          </div>
-          <EmptyState
-            title="Dodawanie plików nie jest jeszcze dostępne. Plan, pracę domową i notatki znajdziesz w każdej lekcji."
-            action={
-              <button
-                className="button button--secondary"
-                onClick={() => selectTab("lessons")}
-              >
-                Przejdź do lekcji
-              </button>
-            }
+        <div className="tab-panel context-materials-tab">
+          <ContextMaterials
+            kind="student"
+            contextId={student.id}
+            teacherId={session.id}
+            readOnly={data.teacher.subscription.readOnly}
           />
-        </section>
+        </div>
       )}
       <ContactComposer
         studentId={student.id}

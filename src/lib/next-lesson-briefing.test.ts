@@ -89,9 +89,15 @@ describe("next lesson briefing composition", () => {
       "anna",
       "zosia",
     ]);
-    expect(JSON.stringify(result.participants[0])).toContain("ANNA_ONLY_CONTEXT");
-    expect(JSON.stringify(result.participants[0])).not.toContain("ZOSIA_ONLY_CONTEXT");
-    expect(JSON.stringify(result.participants[1])).toContain("ZOSIA_ONLY_CONTEXT");
+    expect(JSON.stringify(result.participants[0])).toContain(
+      "ANNA_ONLY_CONTEXT",
+    );
+    expect(JSON.stringify(result.participants[0])).not.toContain(
+      "ZOSIA_ONLY_CONTEXT",
+    );
+    expect(JSON.stringify(result.participants[1])).toContain(
+      "ZOSIA_ONLY_CONTEXT",
+    );
   });
 });
 
@@ -133,6 +139,7 @@ function workspace(
     })),
     materials: [],
     materialLibrary: [],
+    availableMaterials: { student: [], group: [], library: [] },
   };
 }
 

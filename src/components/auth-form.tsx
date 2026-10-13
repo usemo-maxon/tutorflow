@@ -11,11 +11,13 @@ import { authRequest, ClientApiError } from "@/lib/api-client";
 import { authAppDestination } from "@/lib/auth-redirect";
 import { copy } from "@/lib/copy";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal/config";
 
 const schema = z.object({
   name: z.string().optional(),
   email: z.email("Podaj poprawny adres e-mail."),
   password: z.string().min(8, "Hasło musi mieć co najmniej 8 znaków."),
+  termsAccepted: z.boolean().optional(),
 });
 type Values = z.infer<typeof schema>;
 
@@ -62,6 +64,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const {
     register,
     handleSubmit,
+    getValues,
     setError,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
@@ -72,7 +75,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           })
         : schema.extend({ password: z.string().min(1, "Podaj hasło.") }),
     ),
-    defaultValues: { name: "", email: "", password: "" },
+    defaultValues: { name: "", email: "", password: "", termsAccepted: false },
   });
 
   async function openDemo() {
@@ -94,6 +97,10 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   }
 
   async function continueWithGoogle() {
+    if (mode === "register" && !getValues("termsAccepted")) {
+      setError("termsAccepted", { message: "Zaakceptuj Regulamin, aby utworzyć konto." });
+      return;
+    }
     setGoogleLoading(true);
     setServerError("");
 
@@ -103,7 +110,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}${mode === "register" ? `&legal=${LEGAL_DOCUMENT_VERSION}` : ""}`,
         },
       });
 
@@ -229,6 +236,16 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         <Link className="auth-helper" href="/odzyskaj-haslo">
           Nie pamiętasz hasła?
         </Link>
+      )}
+      {mode === "register" && (
+        <div className="auth-legal">
+          <label>
+            <input type="checkbox" {...register("termsAccepted", { required: true })} />
+            <span>Akceptuję <Link href="/regulamin" target="_blank">Regulamin Easy4Tutor</Link>.</span>
+          </label>
+          {errors.termsAccepted && <small className="field-error">{errors.termsAccepted.message}</small>}
+          <p>Informacje o przetwarzaniu danych osobowych znajdziesz w <Link href="/polityka-prywatnosci" target="_blank">Polityce prywatności</Link>.</p>
+        </div>
       )}
       {serverError && (
         <div className="form-alert" role="alert">

@@ -5,6 +5,7 @@ import "./globals.css";
 import "./motion-tokens.css";
 import "./redesign.css";
 import "./workspace-motion.css";
+import { CookieSettings } from "@/components/cookie-settings";
 
 const manrope = localFont({
   src: "./fonts/manrope-variable.ttf",
@@ -39,7 +40,7 @@ export default function RootLayout({
       data-scroll-behavior="smooth"
       className={`${manrope.variable} ${literata.variable}`}
     >
-      <body>{children}</body>
+      <body>{children}<CookieSettings /></body>
     </html>
   );
 }

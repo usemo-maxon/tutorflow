@@ -18,6 +18,10 @@ export async function GET(
     }
     const { kind } = await params;
     const data = await getAppData(teacher.id);
+    if (kind === "dane") {
+      const exported = { exportedAt: new Date().toISOString(), formatVersion: 1, account: { id: teacher.id, name: teacher.name, email: teacher.email, timezone: teacher.timezone }, workspace: data };
+      return new Response(JSON.stringify(exported, null, 2), { headers: { "content-type": "application/json; charset=utf-8", "content-disposition": "attachment; filename=\"easy4tutor-eksport.json\"", "cache-control": "private, no-store" } });
+    }
     let rows: string[][];
     if (kind === "uczniowie") {
       rows = [

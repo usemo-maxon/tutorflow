@@ -140,6 +140,10 @@ export interface PlanItem {
   id: EntityId;
   position: number;
   text: string;
+  title?: string;
+  instructions?: string;
+  minutes?: number;
+  completed?: boolean;
 }
 
 export interface PlanItemResult {

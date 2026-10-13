@@ -10,6 +10,7 @@ const settingsNav = [
   ["/app/ustawienia/dostepnosc", "Dostępność"],
   ["/app/ustawienia/integracje", "Integracje"],
   ["/app/ustawienia/subskrypcja", "Subskrypcja"],
+  ["/app/ustawienia/prywatnosc", "Prywatność i dane"],
 ] as const;
 
 export default function SettingsLayout({ children }: { children: ReactNode }) {
