@@ -7,6 +7,12 @@ import type {
 } from "./domain";
 import { CalendarColorSchema } from "./validation";
 import type { NextLessonBriefing } from "./next-lesson-briefing";
+import type { LessonPreparationContext } from "./preparation-context";
+import {
+  HomeworkRecipientUpdateSchema,
+  type HomeworkMaterial,
+  type HomeworkRecipient,
+} from "./homework";
 
 export interface LessonWorkspaceParticipant {
   id: string;
@@ -45,6 +51,15 @@ export interface LessonPlanItem {
   completed: boolean;
 }
 
+export interface PreviousLessonReuseCandidate {
+  id: string;
+  startsAt: string;
+  topic: string;
+  objective: string;
+  planItems: LessonPlanItem[];
+  materials: Array<LessonWorkspaceMaterial & { available: boolean }>;
+}
+
 export interface LessonWorkspaceHomework {
   id: string;
   title: string;
@@ -52,6 +67,8 @@ export interface LessonWorkspaceHomework {
   status: "assigned" | "completed" | "cancelled";
   dueAt?: string;
   updatedAt: string;
+  recipients?: HomeworkRecipient[];
+  materials?: HomeworkMaterial[];
 }
 
 export interface LessonWorkspaceAdjacentLesson {
@@ -119,7 +136,9 @@ export interface LessonWorkspaceData {
   };
   previousLesson?: LessonWorkspaceAdjacentLesson;
   nextLesson?: LessonWorkspaceAdjacentLesson;
+  previousLessons?: PreviousLessonReuseCandidate[];
   briefing?: NextLessonBriefing;
+  preparationContext?: LessonPreparationContext;
 }
 
 const entityId = z.string().uuid();
@@ -178,7 +197,10 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
     title: z.string().trim().min(1).max(200),
     description: z.string().trim().max(10_000),
     dueAt: isoDateTime.nullable().optional(),
+    recipientIds: z.array(entityId).min(1).max(100),
+    materialIds: z.array(entityId).max(100).default([]),
   }),
+  HomeworkRecipientUpdateSchema,
   z.object({ type: z.literal("deleteHomework") }),
   z.object({ type: z.literal("attachMaterial"), materialId: entityId }),
   z.object({
@@ -194,6 +216,14 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("detachMaterial"), materialId: entityId }),
   z.object({ type: z.literal("applyTemplate"), templateId: entityId }),
+  z.object({
+    type: z.literal("applyPreviousLesson"),
+    sourceLessonId: entityId,
+    sectionIds: z.array(entityId).max(100),
+    materialIds: z.array(entityId).max(500),
+    includeObjective: z.boolean().default(false),
+    importKey: entityId,
+  }),
   z.object({
     type: z.literal("markAttendance"),
     studentId: entityId,

@@ -14,6 +14,7 @@ import type {
 import type { StudentMemory } from "./student-memory";
 import type { NextLessonBriefing } from "./next-lesson-briefing";
 import type { GroupContinuity } from "./group-continuity";
+import type { StudentHomeworkUpdate } from "./homework";
 import type {
   BookingConversionInput,
   BookingConversionResult,
@@ -160,6 +161,21 @@ export async function fetchStudentMemory(
   return parseResponse<StudentMemory>(response);
 }
 
+export async function mutateStudentHomework(
+  studentId: string,
+  input: StudentHomeworkUpdate,
+): Promise<StudentMemory> {
+  const response = await fetch(
+    `/api/students/${encodeURIComponent(studentId)}/memory`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  return parseResponse<StudentMemory>(response);
+}
+
 export async function fetchNextLessonBriefing(
   lessonId: string,
   signal?: AbortSignal,
@@ -241,6 +257,7 @@ export async function authRequest(
   body?: unknown,
 ): Promise<{
   teacher?: { id: string };
+  onboardingCompleted?: boolean;
   requiresEmailConfirmation?: boolean;
   ok?: boolean;
 }> {

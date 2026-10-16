@@ -70,6 +70,45 @@ describe("next lesson briefing composition", () => {
     expect(participant.difficulty).toBeUndefined();
   });
 
+  it("does not present the current lesson homework as previous context", () => {
+    const current = memory({
+      latestLesson: undefined,
+      recentLessons: [],
+      currentDifficulty: undefined,
+      currentNextStep: undefined,
+      homework: {
+        title: "Zadanie z bieżącej lekcji",
+        sourceLessonId: "target",
+        sourceLessonStartsAt: "2026-10-01T10:00:00.000Z",
+      },
+      homeworks: [
+        {
+          id: "homework-target",
+          homeworkId: "homework-target",
+          studentId: "anna",
+          studentName: "Anna",
+          status: "assigned",
+          title: "Zadanie z bieżącej lekcji",
+          description: "",
+          sourceLessonId: "target",
+          sourceLessonStartsAt: "2026-10-01T10:00:00.000Z",
+          materials: [],
+          overdue: false,
+          updatedAt: generatedAt,
+        },
+      ],
+    });
+
+    const participant = composeNextLessonBriefing(
+      workspace("Cel"),
+      [current],
+      generatedAt,
+    ).participants[0];
+
+    expect(participant.lastLesson).toBeUndefined();
+    expect(participant.homework).toBeUndefined();
+  });
+
   it("preserves lesson participant order and isolates group memories", () => {
     const group = workspace("Cel grupy", ["anna", "zosia"]);
     const zosia = memory({

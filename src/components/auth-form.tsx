@@ -8,7 +8,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { authRequest, ClientApiError } from "@/lib/api-client";
-import { authAppDestination } from "@/lib/auth-redirect";
+import { authAppDestination, ONBOARDING_APP_PATH } from "@/lib/auth-redirect";
 import { copy } from "@/lib/copy";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
 import { LEGAL_DOCUMENT_VERSION } from "@/lib/legal/config";
@@ -98,7 +98,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
 
   async function continueWithGoogle() {
     if (mode === "register" && !getValues("termsAccepted")) {
-      setError("termsAccepted", { message: "Zaakceptuj Regulamin, aby utworzyć konto." });
+      setError("termsAccepted", {
+        message: "Zaakceptuj Regulamin, aby utworzyć konto.",
+      });
       return;
     }
     setGoogleLoading(true);
@@ -137,7 +139,11 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         setConfirmationSent(true);
         return;
       }
-      router.push(authAppDestination(mode, searchParams.get("returnTo")));
+      router.push(
+        mode === "login" && response.onboardingCompleted === false
+          ? ONBOARDING_APP_PATH
+          : authAppDestination(mode, searchParams.get("returnTo")),
+      );
       router.refresh();
     } catch (error) {
       if (error instanceof ClientApiError) {
@@ -240,11 +246,30 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       {mode === "register" && (
         <div className="auth-legal">
           <label>
-            <input type="checkbox" {...register("termsAccepted", { required: true })} />
-            <span>Akceptuję <Link href="/regulamin" target="_blank">Regulamin Easy4Tutor</Link>.</span>
+            <input
+              type="checkbox"
+              {...register("termsAccepted", { required: true })}
+            />
+            <span>
+              Akceptuję{" "}
+              <Link href="/regulamin" target="_blank">
+                Regulamin Easy4Tutor
+              </Link>
+              .
+            </span>
           </label>
-          {errors.termsAccepted && <small className="field-error">{errors.termsAccepted.message}</small>}
-          <p>Informacje o przetwarzaniu danych osobowych znajdziesz w <Link href="/polityka-prywatnosci" target="_blank">Polityce prywatności</Link>.</p>
+          {errors.termsAccepted && (
+            <small className="field-error">
+              {errors.termsAccepted.message}
+            </small>
+          )}
+          <p>
+            Informacje o przetwarzaniu danych osobowych znajdziesz w{" "}
+            <Link href="/polityka-prywatnosci" target="_blank">
+              Polityce prywatności
+            </Link>
+            .
+          </p>
         </div>
       )}
       {serverError && (

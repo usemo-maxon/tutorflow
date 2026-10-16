@@ -5,10 +5,11 @@ import type {
   LessonWorkspaceAction,
   LessonWorkspaceData,
   LessonWorkspaceMaterial,
+  PreviousLessonReuseCandidate,
 } from "@/lib/lesson-workspace";
 import type { Lesson } from "@/lib/domain";
 import { isSupabaseConfigured } from "./env";
-import { ApiFailure } from "./errors";
+import { ApiFailure, logServerError } from "./errors";
 import * as local from "./store";
 import { createSupabaseServerClient } from "./supabase";
 import { DEFAULT_CALENDAR_COLOR } from "@/lib/calendar-colors";
@@ -18,6 +19,7 @@ import {
 } from "./student-outcomes";
 import { getStudentMemory } from "./student-memory";
 import { composeNextLessonBriefing } from "@/lib/next-lesson-briefing";
+import { composeLessonPreparationContext } from "@/lib/preparation-context";
 
 const localAdapterEnabled = () =>
   process.env.NODE_ENV !== "production" &&
@@ -72,11 +74,15 @@ async function withBriefing(
   teacherId: string,
   workspace: LessonWorkspaceData,
 ): Promise<LessonWorkspaceData> {
+  const prepared = {
+    ...workspace,
+    preparationContext: composeLessonPreparationContext(workspace),
+  };
   if (
     workspace.lesson.status !== "scheduled" &&
     workspace.lesson.status !== "needs_completion"
   ) {
-    return workspace;
+    return prepared;
   }
   const generatedAt = new Date().toISOString();
   const memories = await Promise.all(
@@ -85,8 +91,8 @@ async function withBriefing(
     ),
   );
   return {
-    ...workspace,
-    briefing: composeNextLessonBriefing(workspace, memories, generatedAt),
+    ...prepared,
+    briefing: composeNextLessonBriefing(prepared, memories, generatedAt),
   };
 }
 
@@ -162,6 +168,7 @@ async function getRelationalWorkspace(
     groupResult,
     previousResult,
     nextResult,
+    reuseLessonsResult,
   ] = await Promise.all([
     supabase
       .from("lesson_participants")
@@ -234,6 +241,15 @@ async function getRelationalWorkspace(
       .order("starts_at")
       .limit(1)
       .maybeSingle(),
+    supabase
+      .from("lessons")
+      .select("id,starts_at,title")
+      .eq("workspace_id", workspaceId)
+      .eq(targetColumn, targetId)
+      .eq("status", "completed")
+      .lt("starts_at", lesson.starts_at)
+      .order("starts_at", { ascending: false })
+      .limit(5),
   ]);
   const failure = [
     participantsResult,
@@ -246,11 +262,15 @@ async function getRelationalWorkspace(
     groupResult,
     previousResult,
     nextResult,
+    reuseLessonsResult,
   ].find((result) => result.error);
   if (failure?.error) databaseFailure(failure.error);
 
   const participantRows = participantsResult.data ?? [];
   const studentIds = participantRows.map((row) => row.student_id as string);
+  const reuseLessonIds = (reuseLessonsResult.data ?? []).map((row) =>
+    String(row.id),
+  );
   const [
     studentsResult,
     attendanceResult,
@@ -258,6 +278,11 @@ async function getRelationalWorkspace(
     groupMaterialsResult,
     consumedPackageResult,
     chargeResult,
+    reusePlanResult,
+    reuseObjectiveResult,
+    reuseLinksResult,
+    homeworkAssignmentsResult,
+    homeworkMaterialsResult,
   ] = await Promise.all([
     studentIds.length
       ? supabase
@@ -306,6 +331,49 @@ async function getRelationalWorkspace(
           .eq("student_id", lesson.student_id)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    reuseLessonIds.length
+      ? supabase
+          .from("lesson_plan_items")
+          .select(
+            "id,lesson_id,position,content,title,instructions,estimated_minutes,completed",
+          )
+          .eq("workspace_id", workspaceId)
+          .in("lesson_id", reuseLessonIds)
+          .order("position")
+      : Promise.resolve({ data: [], error: null }),
+    reuseLessonIds.length
+      ? supabase
+          .from("lesson_notes")
+          .select("lesson_id,content")
+          .eq("workspace_id", workspaceId)
+          .eq("author_user_id", teacherId)
+          .eq("note_type", "objectives")
+          .in("lesson_id", reuseLessonIds)
+      : Promise.resolve({ data: [], error: null }),
+    reuseLessonIds.length
+      ? supabase
+          .from("lesson_materials")
+          .select("lesson_id,material_id")
+          .eq("workspace_id", workspaceId)
+          .in("lesson_id", reuseLessonIds)
+      : Promise.resolve({ data: [], error: null }),
+    homeworkResult.data
+      ? supabase
+          .from("homework_assignments")
+          .select(
+            "id,student_id,status,feedback,completed_at,reviewed_at,updated_at",
+          )
+          .eq("workspace_id", workspaceId)
+          .eq("homework_id", homeworkResult.data.id)
+          .order("created_at")
+      : Promise.resolve({ data: [], error: null }),
+    homeworkResult.data
+      ? supabase
+          .from("homework_materials")
+          .select("material_id")
+          .eq("workspace_id", workspaceId)
+          .eq("homework_id", homeworkResult.data.id)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   if (
     studentsResult.error ||
@@ -313,7 +381,12 @@ async function getRelationalWorkspace(
     studentMaterialsResult.error ||
     groupMaterialsResult.error ||
     consumedPackageResult.error ||
-    chargeResult.error
+    chargeResult.error ||
+    reusePlanResult.error ||
+    reuseObjectiveResult.error ||
+    reuseLinksResult.error ||
+    homeworkAssignmentsResult.error ||
+    homeworkMaterialsResult.error
   ) {
     databaseFailure(
       studentsResult.error ??
@@ -321,9 +394,29 @@ async function getRelationalWorkspace(
         studentMaterialsResult.error ??
         groupMaterialsResult.error ??
         consumedPackageResult.error ??
-        chargeResult.error,
+        chargeResult.error ??
+        reusePlanResult.error ??
+        reuseObjectiveResult.error ??
+        reuseLinksResult.error ??
+        homeworkAssignmentsResult.error ??
+        homeworkMaterialsResult.error,
     );
   }
+  const reuseMaterialIds = [
+    ...new Set(
+      (reuseLinksResult.data ?? []).map((row) => String(row.material_id)),
+    ),
+  ];
+  const reuseMaterialsResult = reuseMaterialIds.length
+    ? await supabase
+        .from("materials")
+        .select(
+          "id,title,description,type,text_content,file_url,external_url,subject,level,archived_at,created_at,updated_at",
+        )
+        .eq("workspace_id", workspaceId)
+        .in("id", reuseMaterialIds)
+    : { data: [], error: null };
+  if (reuseMaterialsResult.error) databaseFailure(reuseMaterialsResult.error);
   const packageResult =
     lesson.student_id && lesson.billing_type === "package"
       ? consumedPackageResult.data
@@ -377,10 +470,18 @@ async function getRelationalWorkspace(
     ...studentMaterialRows.map((row) => row.material_id as string),
     ...groupMaterialRows.map((row) => row.material_id as string),
   ]);
+  const homeworkMaterialIds = new Set(
+    (homeworkMaterialsResult.data ?? []).map(
+      (row) => row.material_id as string,
+    ),
+  );
   const library = (libraryResult.data ?? [])
     .filter(
       (row) =>
-        !row.archived_at || attachedIds.has(row.id) || assignedIds.has(row.id),
+        !row.archived_at ||
+        attachedIds.has(row.id) ||
+        assignedIds.has(row.id) ||
+        homeworkMaterialIds.has(row.id),
     )
     .map((row) => materialView(row, attachedIds.has(row.id)));
   const participants = participantRows.map((row) => {
@@ -405,6 +506,13 @@ async function getRelationalWorkspace(
   const privateNote = notes.get("general");
   const summary = notes.get("student_summary");
   const objectives = notes.get("objectives");
+  const previousLessons = relationalReuseCandidates(
+    reuseLessonsResult.data ?? [],
+    reusePlanResult.data ?? [],
+    reuseObjectiveResult.data ?? [],
+    reuseLinksResult.data ?? [],
+    reuseMaterialsResult.data ?? [],
+  );
 
   return {
     teacher: {
@@ -458,6 +566,29 @@ async function getRelationalWorkspace(
           status: homeworkResult.data.status,
           dueAt: homeworkResult.data.due_at ?? undefined,
           updatedAt: homeworkResult.data.updated_at,
+          recipients: (homeworkAssignmentsResult.data ?? []).map(
+            (assignment) => ({
+              id: assignment.id as string,
+              studentId: assignment.student_id as string,
+              studentName:
+                students.get(assignment.student_id)?.display_name ??
+                "Archiwalny uczeń",
+              status: assignment.status,
+              feedback: assignment.feedback ?? undefined,
+              completedAt: assignment.completed_at ?? undefined,
+              reviewedAt: assignment.reviewed_at ?? undefined,
+              updatedAt: assignment.updated_at,
+            }),
+          ),
+          materials: library
+            .filter((material) => homeworkMaterialIds.has(material.id))
+            .map((material) => ({
+              id: material.id,
+              title: material.title,
+              type: material.type,
+              url: material.url,
+              archived: material.archived,
+            })),
         }
       : undefined,
     materials: library.filter((item) => item.attached),
@@ -513,7 +644,79 @@ async function getRelationalWorkspace(
           topic: nextResult.data.title,
         }
       : undefined,
+    previousLessons,
   };
+}
+
+function relationalReuseCandidates(
+  lessons: Array<{ id: string; starts_at: string; title: string }>,
+  sections: Array<{
+    id: string;
+    lesson_id: string;
+    position: number;
+    content: string;
+    title?: string | null;
+    instructions?: string | null;
+    estimated_minutes?: number | null;
+    completed?: boolean | null;
+  }>,
+  objectives: Array<{ lesson_id: string; content: string }>,
+  links: Array<{ lesson_id: string; material_id: string }>,
+  materials: Array<{
+    id: string;
+    title: string;
+    description: string | null;
+    type: "link" | "file" | "note";
+    text_content: string | null;
+    file_url: string | null;
+    external_url: string | null;
+    subject: string | null;
+    level: string | null;
+    archived_at: string | null;
+    created_at: string;
+    updated_at: string;
+  }>,
+): PreviousLessonReuseCandidate[] {
+  const objectiveByLesson = new Map(
+    objectives.map((item) => [item.lesson_id, item.content]),
+  );
+  const materialById = new Map(materials.map((item) => [item.id, item]));
+  return lessons.map((source) => ({
+    id: source.id,
+    startsAt: source.starts_at,
+    topic: source.title,
+    objective: objectiveByLesson.get(source.id) ?? "",
+    planItems: sections
+      .filter((item) => item.lesson_id === source.id)
+      .sort((a, b) => a.position - b.position)
+      .map((item) => ({
+        id: item.id,
+        position: item.position,
+        title: item.title?.trim() || item.content,
+        instructions: item.instructions ?? "",
+        minutes: item.estimated_minutes ?? undefined,
+        completed: Boolean(item.completed),
+      })),
+    materials: links
+      .filter((item) => item.lesson_id === source.id)
+      .map((link) => {
+        const material = materialById.get(link.material_id);
+        if (!material) {
+          return {
+            id: link.material_id,
+            title: "Materiał niedostępny",
+            description: "Nie masz już dostępu do tego materiału.",
+            type: "note" as const,
+            attached: false,
+            available: false,
+          };
+        }
+        return {
+          ...materialView(material, false),
+          available: true,
+        };
+      }),
+  }));
 }
 
 function availableMaterials(
@@ -622,6 +825,23 @@ async function mutateRelationalWorkspace(
   const now = new Date().toISOString();
   const editable = !["cancelled", "no_show"].includes(lesson.status);
 
+  if (action.type === "applyPreviousLesson") {
+    if (!editable || lesson.status === "completed") lifecycleConflict();
+    const { error: reuseError } = await supabase.rpc(
+      "apply_previous_lesson_preparation",
+      {
+        target_lesson_id: lessonId,
+        source_lesson_id: action.sourceLessonId,
+        selected_section_ids: action.sectionIds,
+        selected_material_ids: action.materialIds,
+        include_objective: action.includeObjective,
+        import_key: action.importKey,
+      },
+    );
+    if (reuseError) databaseFailure(reuseError);
+    return;
+  }
+
   if (action.type === "applyTemplate") {
     if (!editable || lesson.status === "completed") lifecycleConflict();
     const { error: templateError } = await supabase.rpc(
@@ -693,22 +913,49 @@ async function mutateRelationalWorkspace(
   }
   if (action.type === "upsertHomework") {
     if (!editable && lesson.status !== "completed") lifecycleConflict();
-    const target = lesson.student_id
-      ? { student_id: lesson.student_id, group_id: null }
-      : { student_id: null, group_id: lesson.group_id };
-    const { error: homeworkError } = await supabase.from("homeworks").upsert(
+    const { error: homeworkError } = await supabase.rpc(
+      "upsert_lesson_homework",
       {
-        workspace_id: workspaceId,
-        lesson_id: lessonId,
-        ...target,
-        title: action.title,
-        description: action.description,
-        due_at: action.dueAt ?? null,
-        updated_at: now,
+        target_lesson_id: lessonId,
+        homework_title: action.title,
+        homework_description: action.description,
+        homework_due_at: action.dueAt ?? null,
+        recipient_ids: action.recipientIds,
+        material_ids: action.materialIds,
       },
-      { onConflict: "lesson_id" },
     );
     if (homeworkError) databaseFailure(homeworkError);
+    return;
+  }
+  if (action.type === "updateHomeworkRecipient") {
+    if (!editable && lesson.status !== "completed") lifecycleConflict();
+    const { data: homework, error: homeworkLookupError } = await supabase
+      .from("homeworks")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("lesson_id", lessonId)
+      .maybeSingle();
+    if (homeworkLookupError) databaseFailure(homeworkLookupError);
+    if (!homework) notFound();
+    const completedAt = ["completed", "reviewed"].includes(action.status)
+      ? now
+      : null;
+    const reviewedAt = action.status === "reviewed" ? now : null;
+    const { data: updated, error: assignmentError } = await supabase
+      .from("homework_assignments")
+      .update({
+        status: action.status,
+        feedback: action.feedback ?? null,
+        completed_at: completedAt,
+        reviewed_at: reviewedAt,
+      })
+      .eq("workspace_id", workspaceId)
+      .eq("homework_id", homework.id)
+      .eq("student_id", action.studentId)
+      .select("id")
+      .maybeSingle();
+    if (assignmentError) databaseFailure(assignmentError);
+    if (!updated) notFound();
     return;
   }
   if (action.type === "deleteHomework") {
@@ -857,7 +1104,7 @@ async function mutateRelationalWorkspace(
     } catch (hookError) {
       // The lesson/package transaction has already committed. Keep the primary
       // action successful; these idempotent hooks can be retried independently.
-      console.error("Lesson completion hooks failed", hookError);
+      logServerError("lesson_completion_hooks", hookError);
     }
     return;
   }
@@ -975,6 +1222,31 @@ function workspaceFromLocalStore(
             item.participantIds[0] === lesson.participantIds[0]),
     )
     .sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+  const previousLessons = adjacent
+    .filter(
+      (item) => item.status === "completed" && item.startsAt < lesson.startsAt,
+    )
+    .sort((a, b) => b.startsAt.localeCompare(a.startsAt))
+    .slice(0, 5)
+    .map((item) => ({
+      id: item.id,
+      startsAt: item.startsAt,
+      topic: item.topic,
+      objective: item.planObjectives ?? "",
+      planItems: item.planItems.map((section) => ({
+        id: section.id,
+        position: section.position,
+        title: section.title?.trim() || section.text,
+        instructions: section.instructions ?? "",
+        minutes: section.minutes,
+        completed: Boolean(section.completed),
+      })),
+      materials: (item.workspaceMaterials ?? []).map((material) => ({
+        ...material,
+        attached: false,
+        available: true,
+      })),
+    }));
   const toAdjacent = (item: Lesson | undefined) =>
     item
       ? { id: item.id, startsAt: item.startsAt, topic: item.topic }
@@ -1071,6 +1343,39 @@ function workspaceFromLocalStore(
           status: "assigned",
           dueAt: lesson.homeworkDueAt,
           updatedAt: lesson.updatedAt ?? lesson.createdAt,
+          recipients: (lesson.homeworkRecipients?.length
+            ? lesson.homeworkRecipients
+            : lesson.participantIds.map((studentId) => ({
+                studentId,
+                status: "assigned" as const,
+                feedback: undefined,
+                completedAt: undefined,
+                reviewedAt: undefined,
+                updatedAt: undefined,
+              }))
+          ).map((recipient) => ({
+            id: `${lesson.id}:homework:${recipient.studentId}`,
+            studentId: recipient.studentId,
+            studentName:
+              students.find((student) => student.id === recipient.studentId)
+                ?.name ?? "Archiwalny uczeń",
+            status: recipient.status,
+            feedback: recipient.feedback,
+            completedAt: recipient.completedAt,
+            reviewedAt: recipient.reviewedAt,
+            updatedAt:
+              recipient.updatedAt ?? lesson.updatedAt ?? lesson.createdAt,
+          })),
+          materials: (lesson.workspaceMaterials ?? [])
+            .filter((material) =>
+              (lesson.homeworkMaterialIds ?? []).includes(material.id),
+            )
+            .map((material) => ({
+              id: material.id,
+              title: material.title,
+              type: material.type,
+              url: material.url,
+            })),
         }
       : undefined,
     materials: (lesson.workspaceMaterials ?? []).map((item) => ({
@@ -1095,6 +1400,7 @@ function workspaceFromLocalStore(
     nextLesson: toAdjacent(
       adjacent.find((item) => item.startsAt > lesson.startsAt),
     ),
+    previousLessons,
   };
 }
 
@@ -1117,6 +1423,64 @@ function mutateLocalWorkspace(
     });
   }
   const now = new Date().toISOString();
+  if (action.type === "applyPreviousLesson") {
+    if (["cancelled", "no_show", "completed"].includes(lesson.status))
+      lifecycleConflict();
+    const importToken = `${lessonId}:${action.importKey}`;
+    store.lessonReuseImportKeys ??= [];
+    if (store.lessonReuseImportKeys.includes(importToken)) return;
+    const source = store.lessons.find(
+      (candidate) =>
+        candidate.teacherId === teacherId &&
+        candidate.id === action.sourceLessonId &&
+        candidate.status === "completed" &&
+        candidate.startsAt < lesson.startsAt &&
+        (lesson.groupId
+          ? candidate.groupId === lesson.groupId
+          : !candidate.groupId &&
+            candidate.participantIds.length === 1 &&
+            candidate.participantIds[0] === lesson.participantIds[0]),
+    );
+    if (!source) reuseSourceUnavailable();
+    const sectionIds = new Set(action.sectionIds);
+    const nextPosition =
+      lesson.planItems.reduce(
+        (maximum, item) => Math.max(maximum, item.position),
+        -1,
+      ) + 1;
+    const copied = source.planItems
+      .filter((item) => sectionIds.has(item.id))
+      .sort((a, b) => a.position - b.position)
+      .map((item, index) => ({
+        id: randomUUID(),
+        position: nextPosition + index,
+        text: item.title?.trim() || item.text,
+        title: item.title?.trim() || item.text,
+        instructions: item.instructions ?? "",
+        minutes: item.minutes,
+        completed: false,
+      }));
+    lesson.planItems.push(...copied);
+    if (action.includeObjective && source.planObjectives?.trim()) {
+      lesson.planObjectives = [lesson.planObjectives, source.planObjectives]
+        .filter((value) => value?.trim())
+        .join("\n\n");
+    }
+    const materialIds = new Set(action.materialIds);
+    const existingIds = new Set(
+      (lesson.workspaceMaterials ?? []).map((item) => item.id),
+    );
+    const copiedMaterials = (source.workspaceMaterials ?? []).filter(
+      (item) => materialIds.has(item.id) && !existingIds.has(item.id),
+    );
+    lesson.workspaceMaterials = [
+      ...(lesson.workspaceMaterials ?? []),
+      ...copiedMaterials.map((item) => ({ ...item })),
+    ];
+    store.lessonReuseImportKeys.push(importToken);
+    lesson.updatedAt = now;
+    return;
+  }
   if (action.type === "applyTemplate") {
     throw new ApiFailure(503, {
       code: "TEMPLATES_REQUIRE_DATABASE",
@@ -1170,10 +1534,46 @@ function mutateLocalWorkspace(
     lesson.homeworkTitle = action.title;
     lesson.homework = action.description;
     lesson.homeworkDueAt = action.dueAt ?? undefined;
+    const previous = new Map(
+      (lesson.homeworkRecipients ?? []).map((recipient) => [
+        recipient.studentId,
+        recipient,
+      ]),
+    );
+    lesson.homeworkRecipients = action.recipientIds.map(
+      (studentId) =>
+        previous.get(studentId) ?? { studentId, status: "assigned" },
+    );
+    lesson.homeworkMaterialIds = [...new Set(action.materialIds)];
+  } else if (action.type === "updateHomeworkRecipient") {
+    const recipients =
+      lesson.homeworkRecipients ??
+      lesson.participantIds.map((studentId) => ({
+        studentId,
+        status: "assigned" as const,
+        feedback: undefined,
+        completedAt: undefined,
+        reviewedAt: undefined,
+        updatedAt: undefined,
+      }));
+    const recipient = recipients.find(
+      (item) => item.studentId === action.studentId,
+    );
+    if (!lesson.homework || !recipient) notFound();
+    recipient.status = action.status;
+    recipient.feedback = action.feedback;
+    recipient.completedAt = ["completed", "reviewed"].includes(action.status)
+      ? now
+      : undefined;
+    recipient.reviewedAt = action.status === "reviewed" ? now : undefined;
+    recipient.updatedAt = now;
+    lesson.homeworkRecipients = recipients;
   } else if (action.type === "deleteHomework") {
     lesson.homework = "";
     lesson.homeworkTitle = undefined;
     lesson.homeworkDueAt = undefined;
+    lesson.homeworkRecipients = undefined;
+    lesson.homeworkMaterialIds = undefined;
   } else if (action.type === "createAndAttachMaterial") {
     lesson.workspaceMaterials ??= [];
     lesson.workspaceMaterials.push({
@@ -1188,10 +1588,20 @@ function mutateLocalWorkspace(
       (item) => item.id !== action.materialId,
     );
   } else if (action.type === "attachMaterial") {
-    throw new ApiFailure(422, {
-      code: "MATERIAL_NOT_FOUND",
-      message: "Ten materiał nie jest dostępny w lokalnej bibliotece.",
-    });
+    const material = store.lessons
+      .filter((item) => item.teacherId === teacherId)
+      .flatMap((item) => item.workspaceMaterials ?? [])
+      .find((item) => item.id === action.materialId);
+    if (!material) {
+      throw new ApiFailure(422, {
+        code: "MATERIAL_NOT_FOUND",
+        message: "Ten materiał nie jest dostępny w lokalnej bibliotece.",
+      });
+    }
+    lesson.workspaceMaterials ??= [];
+    if (!lesson.workspaceMaterials.some((item) => item.id === material.id)) {
+      lesson.workspaceMaterials.push({ ...material });
+    }
   } else if (action.type === "markAttendance") {
     const participant = lesson.participants.find(
       (item) => item.studentId === action.studentId,
@@ -1327,6 +1737,7 @@ function databaseFailure(error: unknown): never {
     message.includes("NO_SHOW")
   )
     lifecycleConflict();
+  if (message.includes("REUSE_SOURCE_UNAVAILABLE")) reuseSourceUnavailable();
   if (message.includes("STALE")) staleWrite();
   throw error;
 }
@@ -1364,6 +1775,13 @@ function lifecycleConflict(): never {
   throw new ApiFailure(409, {
     code: "LESSON_NOT_EDITABLE",
     message: "Ten stan zajęć nie pozwala na wykonanie tej operacji.",
+  });
+}
+
+function reuseSourceUnavailable(): never {
+  throw new ApiFailure(422, {
+    code: "REUSE_SOURCE_UNAVAILABLE",
+    message: "Poprzednia lekcja nie jest już dostępna do ponownego użycia.",
   });
 }
 

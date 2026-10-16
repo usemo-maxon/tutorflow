@@ -197,6 +197,31 @@ describe("LessonWorkspaceActionSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("validates a selective, idempotent previous-lesson reuse action", () => {
+    expect(
+      LessonWorkspaceActionSchema.parse({
+        type: "applyPreviousLesson",
+        sourceLessonId: "10000000-0000-4000-8000-000000000001",
+        sectionIds: ["10000000-0000-4000-8000-000000000002"],
+        materialIds: ["10000000-0000-4000-8000-000000000003"],
+        includeObjective: false,
+        importKey: "10000000-0000-4000-8000-000000000004",
+      }),
+    ).toMatchObject({
+      type: "applyPreviousLesson",
+      includeObjective: false,
+    });
+    expect(
+      LessonWorkspaceActionSchema.safeParse({
+        type: "applyPreviousLesson",
+        sourceLessonId: "not-a-lesson",
+        sectionIds: [],
+        materialIds: [],
+        importKey: "not-a-key",
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe("lesson plan helpers", () => {

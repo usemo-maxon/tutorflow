@@ -14,6 +14,7 @@ import {
   Clock3,
   LogOut,
   Menu,
+  MessageSquareWarning,
   Search,
   Settings,
   Users,
@@ -30,6 +31,7 @@ import {
   type ReactNode,
 } from "react";
 import { authRequest } from "@/lib/api-client";
+import { BETA_FEEDBACK_MAILTO } from "@/lib/beta-feedback";
 import type { Teacher } from "@/lib/domain";
 import { copy } from "@/lib/copy";
 import {
@@ -195,6 +197,10 @@ function ShellBody({
             );
           })}
         </nav>
+        <a className="sidebar-feedback" href={BETA_FEEDBACK_MAILTO}>
+          <MessageSquareWarning size={18} aria-hidden="true" />
+          <span>Zgłoś problem / Przekaż opinię</span>
+        </a>
         <div className="sidebar-account">
           <span className="avatar" aria-hidden="true">
             {teacher.name
@@ -253,6 +259,13 @@ function ShellBody({
                 </Link>
               ))}
             </nav>
+            <a
+              className="button button--secondary mobile-feedback"
+              href={BETA_FEEDBACK_MAILTO}
+            >
+              <MessageSquareWarning size={18} aria-hidden="true" />
+              Zgłoś problem / Przekaż opinię
+            </a>
             <button className="button button--quiet" onClick={logout}>
               <LogOut size={18} />
               Wyloguj się

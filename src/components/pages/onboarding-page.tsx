@@ -71,7 +71,10 @@ export function OnboardingPage() {
         <div>
           <p className="eyebrow">Pierwsze kroki</p>
           <h1>Skonfiguruj easy4tutor</h1>
-          <p>Zajmie to tylko kilka minut.</p>
+          <p>
+            Uporządkuj uczniów, terminy, przygotowanie i historię nauki w jednym
+            miejscu. Zajmie to tylko kilka minut.
+          </p>
         </div>
         <div
           className="onboarding-progress"
@@ -81,6 +84,23 @@ export function OnboardingPage() {
           <span>wymagane kroki</span>
         </div>
       </header>
+
+      <section
+        className="onboarding-guide"
+        aria-labelledby="onboarding-guide-title"
+      >
+        <div>
+          <p className="eyebrow">Twój rytm pracy</p>
+          <h2 id="onboarding-guide-title">Od terminu do kolejnej lekcji</h2>
+        </div>
+        <p>
+          Po konfiguracji ekran <strong>Dzisiaj</strong> pokaże najbliższe
+          lekcje. Otwórz lekcję, aby dodać plan i materiały. Po zajęciach
+          wybierz
+          <strong> Zakończ lekcję</strong>, zapisz wynik i pracę domową — przy
+          kolejnym spotkaniu zobaczysz wcześniejszy kontekst nauki.
+        </p>
+      </section>
 
       <ol className="onboarding-checklist">
         <OnboardingStep

@@ -337,6 +337,64 @@ describe("buildDashboardData", () => {
     );
   });
 
+  it("deduplicates homework attention and drops stale overdue assignments", () => {
+    const data = buildDashboardData(
+      source({
+        homeworkAttention: [
+          {
+            id: "completed-a",
+            lessonId: "lesson-a",
+            studentId: "student-a",
+            title: "Worksheet A",
+            updatedAt: "2026-09-16T09:00:00.000Z",
+            status: "completed",
+          },
+          {
+            id: "completed-b",
+            lessonId: "lesson-b",
+            studentId: "student-b",
+            title: "Worksheet B",
+            updatedAt: "2026-09-16T09:00:00.000Z",
+            status: "completed",
+          },
+          {
+            id: "overdue-a-1",
+            lessonId: "lesson-c",
+            studentId: "student-a",
+            title: "Late one",
+            dueAt: "2026-09-15T10:00:00.000Z",
+            updatedAt: "2026-08-01T10:00:00.000Z",
+            status: "assigned",
+          },
+          {
+            id: "overdue-a-2",
+            lessonId: "lesson-d",
+            studentId: "student-a",
+            title: "Late two",
+            dueAt: "2026-09-14T10:00:00.000Z",
+            updatedAt: "2026-09-14T10:00:00.000Z",
+            status: "assigned",
+          },
+          {
+            id: "stale",
+            lessonId: "lesson-old",
+            studentId: "student-b",
+            title: "Too old",
+            dueAt: "2026-07-01T10:00:00.000Z",
+            updatedAt: "2026-07-01T10:00:00.000Z",
+            status: "assigned",
+          },
+        ],
+      }),
+    );
+    expect(
+      data.actions.filter((action) => action.type === "homework_review"),
+    ).toEqual([expect.objectContaining({ id: "homework:review", count: 2 })]);
+    expect(
+      data.actions.filter((action) => action.type === "overdue_homework"),
+    ).toEqual([expect.objectContaining({ id: "homework:overdue:student-a" })]);
+  });
+
   it("surfaces package exhaustion before financial and continuity attention", () => {
     const upcoming = lesson(
       "package-lesson",

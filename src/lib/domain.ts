@@ -200,6 +200,15 @@ export interface Lesson {
   studentSummary?: string;
   homeworkTitle?: string;
   homeworkDueAt?: ISODateTime;
+  homeworkRecipients?: Array<{
+    studentId: EntityId;
+    status: "assigned" | "completed" | "reviewed" | "not_completed";
+    feedback?: string;
+    completedAt?: ISODateTime;
+    reviewedAt?: ISODateTime;
+    updatedAt?: ISODateTime;
+  }>;
+  homeworkMaterialIds?: EntityId[];
   workspaceMaterials?: Array<{
     id: EntityId;
     title: string;

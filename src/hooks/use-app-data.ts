@@ -21,7 +21,10 @@ import {
   mutateLessonWorkspace,
   mutateFinancialOverview,
   completeOnboarding,
+  mutateStudentHomework,
 } from "@/lib/api-client";
+import type { StudentHomeworkUpdate } from "@/lib/homework";
+import type { StudentMemory } from "@/lib/student-memory";
 
 export function useGroupContinuity(
   teacherId: string,
@@ -103,6 +106,32 @@ export function useStudentMemory(
         router.push("/logowanie");
       }
       return false;
+    },
+  });
+}
+
+export function useStudentHomeworkMutation(
+  teacherId: string,
+  studentId: string,
+) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: StudentHomeworkUpdate) =>
+      mutateStudentHomework(studentId, input),
+    onSuccess(data) {
+      queryClient.setQueryData<StudentMemory>(
+        ["student-memory", teacherId, studentId],
+        data,
+      );
+      void queryClient.invalidateQueries({
+        queryKey: ["dashboard", teacherId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["lesson-workspace", teacherId],
+      });
+      void queryClient.invalidateQueries({
+        queryKey: ["lesson-briefing", teacherId],
+      });
     },
   });
 }

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   signUp: vi.fn(),
   signInWithPassword: vi.fn(),
   acceptanceUpsert: vi.fn(),
+  profileSingle: vi.fn(),
 }));
 
 vi.mock("@/server/env", () => ({
@@ -17,6 +18,11 @@ vi.mock("@/server/supabase", () => ({
       signUp: mocks.signUp,
       signInWithPassword: mocks.signInWithPassword,
     },
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({ single: mocks.profileSingle })),
+      })),
+    })),
   })),
   createSupabaseAdminClient: vi.fn(() => ({
     from: vi.fn(() => ({ upsert: mocks.acceptanceUpsert })),
@@ -38,6 +44,10 @@ describe("registration authentication destinations", () => {
       error: null,
     });
     mocks.acceptanceUpsert.mockResolvedValue({ error: null });
+    mocks.profileSingle.mockResolvedValue({
+      data: { onboarding_completed_at: "2026-10-13T12:00:00.000Z" },
+      error: null,
+    });
   });
 
   it("sends email registration confirmation to /app/start", async () => {
@@ -79,6 +89,32 @@ describe("registration authentication destinations", () => {
       { params: Promise.resolve({ action: "login" }) },
     );
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ teacher: { id: "teacher-1" } });
+    expect(await response.json()).toEqual({
+      teacher: { id: "teacher-1" },
+      onboardingCompleted: true,
+    });
+  });
+
+  it("marks an incomplete login so the client resumes onboarding", async () => {
+    mocks.profileSingle.mockResolvedValueOnce({
+      data: { onboarding_completed_at: null },
+      error: null,
+    });
+    const response = await POST(
+      new Request("https://easy4tutor.pl/api/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "anna@example.test",
+          password: "bezpieczne-haslo",
+        }),
+      }),
+      { params: Promise.resolve({ action: "login" }) },
+    );
+
+    expect(await response.json()).toEqual({
+      teacher: { id: "teacher-1" },
+      onboardingCompleted: false,
+    });
   });
 });

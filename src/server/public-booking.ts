@@ -18,7 +18,7 @@ import {
   sendBookingConfirmationEmail,
   type BookingEmailSender,
 } from "./booking-email";
-import { ApiFailure } from "./errors";
+import { ApiFailure, logServerError } from "./errors";
 import { encryptSecret } from "./crypto";
 import {
   attributionForRequest,
@@ -300,10 +300,7 @@ export async function createPublicBooking(
     });
     await markConfirmationEmailSent(created.booking.bookingId);
   } catch (error) {
-    console.error("Booking confirmation email failed", {
-      bookingId: created.booking.bookingId,
-      reason: error instanceof Error ? error.name : "UnknownError",
-    });
+    logServerError("booking_confirmation_email", error);
   }
   return publicConfirmation(created.booking, managementUrl);
 }

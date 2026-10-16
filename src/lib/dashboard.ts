@@ -88,6 +88,15 @@ export type TodayAction =
       missingCount: number;
       participantCount: number;
     })
+  | (TodayActionBase & {
+      type: "homework_review";
+      count: number;
+    })
+  | (TodayActionBase & {
+      type: "overdue_homework";
+      studentId: string;
+      lessonId: string;
+    })
   | (TodayActionBase & { type: "onboarding" });
 
 export interface DashboardMonthlySummary {

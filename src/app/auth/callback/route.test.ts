@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { exchangeCodeForSession } = vi.hoisted(() => ({
+const { exchangeCodeForSession, maybeSingle } = vi.hoisted(() => ({
   exchangeCodeForSession: vi.fn(),
+  maybeSingle: vi.fn(),
 }));
 
 vi.mock("@/server/supabase", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     auth: { exchangeCodeForSession },
+    from: vi.fn(() => ({
+      select: vi.fn(() => ({
+        eq: vi.fn(() => ({ maybeSingle })),
+      })),
+    })),
   })),
 }));
 
@@ -18,9 +24,20 @@ describe("Google OAuth callback", () => {
     vi.unstubAllEnvs();
   });
 
+  function completedSession() {
+    exchangeCodeForSession.mockResolvedValue({
+      data: { user: { id: "teacher-a" } },
+      error: null,
+    });
+    maybeSingle.mockResolvedValue({
+      data: { onboarding_completed_at: "2026-09-01T10:00:00.000Z" },
+      error: null,
+    });
+  }
+
   it("exchanges the code and redirects on the localhost origin", async () => {
     vi.stubEnv("NODE_ENV", "development");
-    exchangeCodeForSession.mockResolvedValue({ error: null });
+    completedSession();
 
     const response = await GET(
       new Request(
@@ -37,7 +54,7 @@ describe("Google OAuth callback", () => {
 
   it("uses Vercel forwarded host and protocol in production", async () => {
     vi.stubEnv("NODE_ENV", "production");
-    exchangeCodeForSession.mockResolvedValue({ error: null });
+    completedSession();
 
     const response = await GET(
       new Request(
@@ -58,7 +75,7 @@ describe("Google OAuth callback", () => {
 
   it("rejects an external next destination", async () => {
     vi.stubEnv("NODE_ENV", "development");
-    exchangeCodeForSession.mockResolvedValue({ error: null });
+    completedSession();
 
     const response = await GET(
       new Request(
@@ -68,6 +85,28 @@ describe("Google OAuth callback", () => {
 
     expect(response.headers.get("location")).toBe(
       "http://localhost:3000/app/dzisiaj",
+    );
+  });
+
+  it("sends an incomplete Google login back to onboarding", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    exchangeCodeForSession.mockResolvedValue({
+      data: { user: { id: "teacher-a" } },
+      error: null,
+    });
+    maybeSingle.mockResolvedValue({
+      data: { onboarding_completed_at: null },
+      error: null,
+    });
+
+    const response = await GET(
+      new Request(
+        "http://localhost:3000/auth/callback?code=authorization-code&next=%2Fapp%2Fdzisiaj",
+      ),
+    );
+
+    expect(response.headers.get("location")).toBe(
+      "http://localhost:3000/app/start",
     );
   });
 

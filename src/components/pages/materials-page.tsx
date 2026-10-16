@@ -10,6 +10,7 @@ import {
   FolderOpen,
   FolderPlus,
   Link2,
+  LibraryBig,
   LoaderCircle,
   Pencil,
   Plus,
@@ -181,6 +182,13 @@ export function MaterialsPage() {
           </p>
         </div>
         <div className="materials-header__actions">
+          <Link
+            className="button button--secondary"
+            href="/app/materialy/biblioteka"
+          >
+            <LibraryBig size={18} />
+            Biblioteka szablonów
+          </Link>
           <Link
             className="button button--secondary"
             href="/app/materialy/szablony"

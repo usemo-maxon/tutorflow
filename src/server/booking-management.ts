@@ -11,7 +11,7 @@ import {
   assertPublicAvailabilityRange,
   type PublicAvailability,
 } from "./booking-availability";
-import { ApiFailure } from "./errors";
+import { ApiFailure, logServerError } from "./errors";
 import { isSupabaseConfigured, siteUrl } from "./env";
 import {
   sendBookingConfirmationEmail,
@@ -457,10 +457,7 @@ export async function rescheduleGuestBooking(
       calendarUrl: `${managementUrl}/kalendarz.ics`,
     });
   } catch (error) {
-    console.error("Booking reschedule email failed", {
-      bookingId: result.booking.bookingId,
-      reason: error instanceof Error ? error.name : "UnknownError",
-    });
+    logServerError("booking_reschedule_email", error);
   }
   return toGuestBooking({
     tutorPublicName: result.tutorPublicName,

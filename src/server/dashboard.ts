@@ -33,6 +33,7 @@ export interface DashboardRanges {
   upcomingEnd: string;
   unfinishedStart: string;
   continuityStart: string;
+  homeworkStart: string;
 }
 
 export interface DashboardLessonSource {
@@ -89,6 +90,15 @@ export interface DashboardSource {
   outcomes: DashboardOutcomeSource[];
   monthlyLessons: DashboardLessonSource[];
   packageProblems: Array<{ lessonId: string; studentId: string }>;
+  homeworkAttention?: Array<{
+    id: string;
+    lessonId: string;
+    studentId: string;
+    title: string;
+    dueAt?: string;
+    updatedAt: string;
+    status: "assigned" | "completed";
+  }>;
   overdueCharges?: Array<{
     studentId: string;
     outstanding: number;
@@ -124,6 +134,7 @@ export function dashboardRanges(now: Date, timezone: string): DashboardRanges {
       addToDateKey(dateKey, -TODAY_CONTINUITY_DAYS),
       timezone,
     ),
+    homeworkStart: localMidnight(addToDateKey(dateKey, -30), timezone),
   };
 }
 
@@ -365,6 +376,57 @@ function buildActions(
       outcome,
     ]),
   );
+  const reviewItems = (source.homeworkAttention ?? []).filter(
+    (item) =>
+      item.status === "completed" &&
+      item.updatedAt >= source.ranges.homeworkStart,
+  );
+  if (reviewItems.length) {
+    actions.push({
+      id: "homework:review",
+      type: "homework_review",
+      priority: 2,
+      severity: "attention",
+      title: `${reviewItems.length} ${reviewItems.length === 1 ? "praca domowa do sprawdzenia" : "prace domowe do sprawdzenia"}`,
+      detail:
+        "Uczniowie oznaczyli wykonanie; ocena pozostaje po stronie tutora.",
+      href: `/app/lekcje/${reviewItems[0].lessonId}`,
+      actionLabel: "Sprawdź prace",
+      count: reviewItems.length,
+    });
+  }
+
+  const overdueHomework = new Map<
+    string,
+    NonNullable<DashboardSource["homeworkAttention"]>[number]
+  >();
+  for (const item of source.homeworkAttention ?? []) {
+    if (
+      item.status !== "assigned" ||
+      !item.dueAt ||
+      item.dueAt >= source.now ||
+      item.dueAt < source.ranges.homeworkStart
+    )
+      continue;
+    if (!overdueHomework.has(item.studentId))
+      overdueHomework.set(item.studentId, item);
+  }
+  for (const item of overdueHomework.values()) {
+    const student = students.get(item.studentId);
+    if (!student) continue;
+    actions.push({
+      id: `homework:overdue:${item.studentId}`,
+      type: "overdue_homework",
+      priority: 3,
+      severity: "attention",
+      title: `${student.name} — zaległa praca domowa`,
+      detail: item.title,
+      href: `/app/lekcje/${item.lessonId}`,
+      actionLabel: "Otwórz zadanie",
+      studentId: item.studentId,
+      lessonId: item.lessonId,
+    });
+  }
   for (const lesson of [...source.recentCompletedLessons].sort(byStartsAt)) {
     const missingCount = lesson.participantIds.filter(
       (studentId) =>
@@ -515,6 +577,23 @@ export function dashboardSourceFromAppData(
       between(lesson, ranges.monthStart, ranges.monthEnd),
     ),
     packageProblems: [],
+    homeworkAttention: data.lessons.flatMap((lesson) =>
+      (lesson.homeworkRecipients ?? [])
+        .filter(
+          (recipient) =>
+            recipient.status === "assigned" || recipient.status === "completed",
+        )
+        .map((recipient) => ({
+          id: `${lesson.id}:homework:${recipient.studentId}`,
+          lessonId: lesson.id,
+          studentId: recipient.studentId,
+          title: lesson.homeworkTitle ?? "Praca domowa",
+          dueAt: lesson.homeworkDueAt,
+          updatedAt:
+            recipient.updatedAt ?? lesson.updatedAt ?? lesson.createdAt,
+          status: recipient.status as "assigned" | "completed",
+        })),
+    ),
     overdueCharges: [],
   };
 }

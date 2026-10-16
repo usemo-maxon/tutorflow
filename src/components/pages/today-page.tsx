@@ -6,6 +6,7 @@ import {
   CalendarDays,
   CircleDollarSign,
   Clock3,
+  ClipboardCheck,
   Link2,
   NotebookPen,
   PackageX,
@@ -549,6 +550,8 @@ function actionIcon(type: TodayAction["type"]) {
   if (type === "overdue_finance") return CircleDollarSign;
   if (type === "google_reconnect") return Link2;
   if (type === "missing_continuity") return NotebookPen;
+  if (type === "homework_review" || type === "overdue_homework")
+    return ClipboardCheck;
   return Clock3;
 }
 

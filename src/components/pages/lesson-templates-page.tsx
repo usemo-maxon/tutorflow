@@ -12,10 +12,14 @@ import {
   FileText,
   GripVertical,
   Layers3,
+  LibraryBig,
   LoaderCircle,
   Pencil,
   Plus,
   Search,
+  Send,
+  Share2,
+  ShieldCheck,
   Tag,
   Trash2,
   X,
@@ -30,6 +34,11 @@ import {
   type FormEvent,
 } from "react";
 import { ClientApiError } from "@/lib/api-client";
+import {
+  communityStatusLabel,
+  type CommunityTemplateSubmission,
+  type CommunityTemplateSubmissionInput,
+} from "@/lib/community-templates";
 import type {
   LessonTemplate,
   LessonTemplateInput,
@@ -62,6 +71,14 @@ export function LessonTemplatesPage() {
     null,
   );
   const [pending, setPending] = useState(false);
+  const [submissions, setSubmissions] = useState<CommunityTemplateSubmission[]>(
+    [],
+  );
+  const [publishTarget, setPublishTarget] = useState<LessonTemplate | null>(
+    null,
+  );
+  const [withdrawTarget, setWithdrawTarget] =
+    useState<CommunityTemplateSubmission | null>(null);
 
   const query = useMemo(() => {
     const next = new URLSearchParams();
@@ -74,11 +91,18 @@ export function LessonTemplatesPage() {
   }, [archived, level, search, subject, tag]);
   const refresh = useCallback(
     async (signal?: AbortSignal) => {
-      const result = await api<LessonTemplatesData>(
-        `/api/lesson-templates${query ? `?${query}` : ""}`,
-        { cache: "no-store", signal },
-      );
+      const [result, publicationData] = await Promise.all([
+        api<LessonTemplatesData>(
+          `/api/lesson-templates${query ? `?${query}` : ""}`,
+          { cache: "no-store", signal },
+        ),
+        api<{ submissions: CommunityTemplateSubmission[] }>(
+          "/api/community-template-submissions",
+          { cache: "no-store", signal },
+        ),
+      ]);
       setData(result);
+      setSubmissions(publicationData.submissions);
       return result;
     },
     [query],
@@ -144,6 +168,23 @@ export function LessonTemplatesPage() {
       setPending(false);
     }
   }
+  async function withdrawPublication() {
+    if (!withdrawTarget) return;
+    setPending(true);
+    try {
+      await api(
+        `/api/community-template-submissions/${withdrawTarget.id}/withdraw`,
+        { method: "POST" },
+      );
+      setWithdrawTarget(null);
+      await refresh();
+      showToast({ message: "Publikacja została wycofana z biblioteki." });
+    } catch (error) {
+      showError(error);
+    } finally {
+      setPending(false);
+    }
+  }
 
   if (loading && !data) return <PageLoading />;
   if (!data) return null;
@@ -163,14 +204,23 @@ export function LessonTemplatesPage() {
             jednym ruchem.
           </p>
         </div>
-        <button
-          className="button button--primary"
-          disabled={data.readOnly}
-          onClick={() => setEditor("new")}
-        >
-          <Plus size={18} />
-          Nowy szablon
-        </button>
+        <div className="materials-header__actions">
+          <Link
+            className="button button--secondary"
+            href="/app/materialy/biblioteka"
+          >
+            <LibraryBig size={18} />
+            Biblioteka szablonów
+          </Link>
+          <button
+            className="button button--primary"
+            disabled={data.readOnly}
+            onClick={() => setEditor("new")}
+          >
+            <Plus size={18} />
+            Nowy szablon
+          </button>
+        </div>
       </header>
       <section className="template-library" aria-label="Szablony lekcji">
         <div className="template-toolbar">
@@ -257,6 +307,9 @@ export function LessonTemplatesPage() {
       </section>
       <TemplatePreview
         template={selected}
+        submissions={submissions.filter(
+          (submission) => submission.sourceTemplateId === selected?.id,
+        )}
         readOnly={data.readOnly}
         pending={pending}
         onClose={() => setSelected(null)}
@@ -266,6 +319,20 @@ export function LessonTemplatesPage() {
         }}
         onDuplicate={duplicate}
         onArchive={setArchiveTarget}
+        onPublish={(template) => {
+          setSelected(null);
+          setPublishTarget(template);
+        }}
+        onWithdraw={setWithdrawTarget}
+      />
+      <CommunityPublishDialog
+        template={publishTarget}
+        onClose={() => setPublishTarget(null)}
+        onSubmitted={async () => {
+          setPublishTarget(null);
+          await refresh();
+          showToast({ message: "Szablon wysłano do weryfikacji." });
+        }}
       />
       <TemplateEditor
         key={editor === "new" ? "new" : (editor?.id ?? "closed")}
@@ -291,6 +358,15 @@ export function LessonTemplatesPage() {
         confirmLabel="Archiwizuj"
         pending={pending}
         onConfirm={archiveTemplate}
+      />
+      <ConfirmDialog
+        open={Boolean(withdrawTarget)}
+        onOpenChange={(open) => !open && setWithdrawTarget(null)}
+        title="Wycofać publikację?"
+        description="Szablon zniknie ze wspólnej biblioteki i nie będzie można zapisywać nowych kopii. Kopie zapisane wcześniej przez innych tutorów pozostaną bez zmian."
+        confirmLabel="Wycofaj publikację"
+        pending={pending}
+        onConfirm={withdrawPublication}
       />
     </div>
   );
@@ -345,20 +421,26 @@ function TemplateCard({
 
 function TemplatePreview({
   template,
+  submissions,
   readOnly,
   pending,
   onClose,
   onEdit,
   onDuplicate,
   onArchive,
+  onPublish,
+  onWithdraw,
 }: {
   template: LessonTemplate | null;
+  submissions: CommunityTemplateSubmission[];
   readOnly: boolean;
   pending: boolean;
   onClose: () => void;
   onEdit: (value: LessonTemplate) => void;
   onDuplicate: (value: LessonTemplate) => Promise<void>;
   onArchive: (value: LessonTemplate) => void;
+  onPublish: (value: LessonTemplate) => void;
+  onWithdraw: (value: CommunityTemplateSubmission) => void;
 }) {
   if (!template) return null;
   return (
@@ -384,10 +466,52 @@ function TemplatePreview({
             </Dialog.Close>
           </header>
           <div className="template-preview__content">
+            {submissions.length > 0 && (
+              <section className="community-publication-history">
+                <h3>Publikacje społecznościowe</h3>
+                {submissions.map((submission) => (
+                  <article key={submission.id}>
+                    <div>
+                      <span
+                        className={`community-status community-status--${submission.status}`}
+                      >
+                        {communityStatusLabel(submission.status)}
+                      </span>
+                      <small>
+                        {new Intl.DateTimeFormat("pl-PL", {
+                          dateStyle: "medium",
+                        }).format(new Date(submission.createdAt))}
+                      </small>
+                    </div>
+                    {submission.status === "rejected" && (
+                      <p>
+                        <strong>Szablon wymaga poprawek.</strong>{" "}
+                        {submission.moderationFeedback ||
+                          "Popraw prywatny szablon i wyślij nowy snapshot."}
+                      </p>
+                    )}
+                    {submission.status === "approved" && (
+                      <button
+                        className="button button--quiet"
+                        onClick={() => onWithdraw(submission)}
+                      >
+                        Wycofaj publikację
+                      </button>
+                    )}
+                  </article>
+                ))}
+              </section>
+            )}
             {template.objective && (
               <section>
                 <h3>Cel lekcji</h3>
                 <p>{template.objective}</p>
+              </section>
+            )}
+            {template.sourceAttribution && (
+              <section>
+                <h3>Źródło</h3>
+                <p>{template.sourceAttribution}</p>
               </section>
             )}
             <section>
@@ -441,6 +565,13 @@ function TemplatePreview({
               <button
                 className="button button--secondary"
                 disabled={pending}
+                onClick={() => onPublish(template)}
+              >
+                <Share2 size={16} /> Udostępnij społeczności
+              </button>
+              <button
+                className="button button--secondary"
+                disabled={pending}
                 onClick={() => void onDuplicate(template)}
               >
                 <Copy size={16} />
@@ -455,6 +586,348 @@ function TemplatePreview({
               </button>
             </footer>
           )}
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function CommunityPublishDialog({
+  template,
+  onClose,
+  onSubmitted,
+}: {
+  template: LessonTemplate | null;
+  onClose: () => void;
+  onSubmitted: () => Promise<void>;
+}) {
+  if (!template) return null;
+  return (
+    <CommunityPublishForm
+      key={template.id}
+      template={template}
+      onClose={onClose}
+      onSubmitted={onSubmitted}
+    />
+  );
+}
+
+function CommunityPublishForm({
+  template,
+  onClose,
+  onSubmitted,
+}: {
+  template: LessonTemplate;
+  onClose: () => void;
+  onSubmitted: () => Promise<void>;
+}) {
+  const { showError } = useAppUi();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  type PublishDraft = Omit<
+    CommunityTemplateSubmissionInput,
+    "rightsConfirmed"
+  > & { rightsConfirmed: boolean };
+  const [value, setValue] = useState<PublishDraft>({
+    title: template.title,
+    description: template.description,
+    subject: template.subject,
+    level: template.level,
+    estimatedDurationMinutes:
+      template.estimatedDurationMinutes ||
+      template.sections.reduce(
+        (sum, section) => sum + (section.estimatedMinutes ?? 0),
+        0,
+      ) ||
+      60,
+    objective: template.objective,
+    authorName: "",
+    rightsConfirmed: false,
+    sections: template.sections.length
+      ? template.sections.map((section) => ({
+          title: section.title,
+          content: section.content,
+          estimatedMinutes: section.estimatedMinutes,
+        }))
+      : [{ title: "", content: "" }],
+  });
+
+  function patch(
+    key: Exclude<keyof PublishDraft, "sections">,
+    next: string | number | boolean,
+  ) {
+    setValue((current) => ({ ...current, [key]: next }));
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setError("");
+    try {
+      await api(`/api/lesson-templates/${template.id}/publications`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(value),
+      });
+      await onSubmitted();
+    } catch (caught) {
+      const message =
+        caught instanceof ClientApiError
+          ? caught.data.message
+          : "Nie udało się wysłać szablonu do weryfikacji.";
+      setError(message);
+      showError(caught);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => !open && !pending && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="dialog-overlay" />
+        <Dialog.Content className="dialog-content community-publish-dialog">
+          <header className="dialog-header">
+            <div>
+              <span className="eyebrow">Dobrowolna publikacja</span>
+              <Dialog.Title>Udostępnij społeczności</Dialog.Title>
+              <Dialog.Description>
+                Po akceptacji poniższy snapshot będzie dostępny dla innych
+                użytkowników Easy4Tutor. Prywatny oryginał pozostanie oddzielny.
+              </Dialog.Description>
+            </div>
+            <Dialog.Close
+              className="icon-button"
+              aria-label="Zamknij"
+              disabled={pending}
+            >
+              <X size={19} />
+            </Dialog.Close>
+          </header>
+          <form onSubmit={submit}>
+            <div className="community-publish-dialog__scroll">
+              <div className="template-form-grid">
+                <label className="field template-form-grid__wide">
+                  <span>Tytuł</span>
+                  <input
+                    value={value.title}
+                    required
+                    maxLength={160}
+                    onChange={(event) => patch("title", event.target.value)}
+                  />
+                </label>
+                <label className="field template-form-grid__wide">
+                  <span>Opis</span>
+                  <textarea
+                    value={value.description}
+                    maxLength={2000}
+                    rows={3}
+                    onChange={(event) =>
+                      patch("description", event.target.value)
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Przedmiot</span>
+                  <input
+                    value={value.subject}
+                    required
+                    maxLength={80}
+                    onChange={(event) => patch("subject", event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Poziom</span>
+                  <input
+                    value={value.level}
+                    required
+                    maxLength={40}
+                    onChange={(event) => patch("level", event.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Czas (min)</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={480}
+                    value={value.estimatedDurationMinutes}
+                    required
+                    onChange={(event) =>
+                      patch(
+                        "estimatedDurationMinutes",
+                        Number(event.target.value),
+                      )
+                    }
+                  />
+                </label>
+                <label className="field">
+                  <span>Publiczna nazwa autora lub pseudonim</span>
+                  <input
+                    value={value.authorName}
+                    required
+                    maxLength={120}
+                    autoComplete="off"
+                    onChange={(event) =>
+                      patch("authorName", event.target.value)
+                    }
+                  />
+                </label>
+                <label className="field template-form-grid__wide">
+                  <span>Cele lekcji</span>
+                  <textarea
+                    value={value.objective}
+                    required
+                    maxLength={5000}
+                    rows={3}
+                    onChange={(event) => patch("objective", event.target.value)}
+                  />
+                </label>
+              </div>
+
+              <section className="community-publish-sections">
+                <div>
+                  <span className="eyebrow">Treść wielokrotnego użycia</span>
+                  <h3>Sekcje lekcji</h3>
+                </div>
+                {value.sections.map((section, index) => (
+                  <div key={index} className="community-publish-section">
+                    <span>{index + 1}</span>
+                    <label className="field">
+                      <span>Nazwa sekcji</span>
+                      <input
+                        value={section.title}
+                        required
+                        maxLength={120}
+                        onChange={(event) =>
+                          setValue((current) => ({
+                            ...current,
+                            sections: current.sections.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, title: event.target.value }
+                                : item,
+                            ),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>Instrukcje</span>
+                      <textarea
+                        value={section.content}
+                        maxLength={5000}
+                        rows={2}
+                        onChange={(event) =>
+                          setValue((current) => ({
+                            ...current,
+                            sections: current.sections.map((item, itemIndex) =>
+                              itemIndex === index
+                                ? { ...item, content: event.target.value }
+                                : item,
+                            ),
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                ))}
+              </section>
+
+              <section
+                className="community-snapshot-preview"
+                aria-live="polite"
+              >
+                <div>
+                  <ShieldCheck size={20} />
+                  <div>
+                    <span className="eyebrow">Dokładny podgląd publikacji</span>
+                    <h3>{value.title || "Tytuł szablonu"}</h3>
+                    <p>{value.description || "Brak opisu"}</p>
+                  </div>
+                </div>
+                <dl>
+                  <div>
+                    <dt>Autor</dt>
+                    <dd>{value.authorName || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Przedmiot</dt>
+                    <dd>{value.subject || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Poziom</dt>
+                    <dd>{value.level || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Czas</dt>
+                    <dd>{value.estimatedDurationMinutes || "—"} min</dd>
+                  </div>
+                </dl>
+                <p>
+                  <strong>Cel:</strong> {value.objective || "—"}
+                </p>
+                <ol>
+                  {value.sections.map((section, index) => (
+                    <li key={index}>
+                      <strong>{section.title || `Sekcja ${index + 1}`}</strong>
+                      {section.content && <span>{section.content}</span>}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+
+              <aside className="shared-template-safety shared-template-safety--notice">
+                <ShieldCheck size={20} />
+                <div>
+                  <strong>Prywatna zawartość nie zostanie opublikowana</strong>
+                  <p>
+                    Materiały i pliki Storage, dane uczniów i grup, wyniki,
+                    prace domowe, feedback, notatki nauczyciela oraz
+                    identyfikatory workspace są wykluczone. Późniejsze zmiany
+                    oryginału nie zmienią tego snapshotu.
+                  </p>
+                </div>
+              </aside>
+
+              <label className="community-rights-confirmation">
+                <input
+                  type="checkbox"
+                  checked={value.rightsConfirmed}
+                  required
+                  onChange={(event) =>
+                    patch("rightsConfirmed", event.target.checked)
+                  }
+                />
+                <span>
+                  Potwierdzam, że mam prawa niezbędne do udostępnienia tej
+                  treści i zgadzam się na publikację zgodnie z{" "}
+                  <Link href="/regulamin" target="_blank">
+                    Regulaminem Easy4Tutor
+                  </Link>
+                  . Szczegółowa klauzula publikowania społecznościowego wymaga
+                  przeglądu prawnego przed uruchomieniem produkcyjnym.
+                </span>
+              </label>
+              {error && (
+                <p className="form-error" role="alert">
+                  {error}
+                </p>
+              )}
+            </div>
+            <footer className="dialog-footer">
+              <Dialog.Close className="button button--quiet" disabled={pending}>
+                Anuluj
+              </Dialog.Close>
+              <button className="button button--primary" disabled={pending}>
+                {pending ? (
+                  <LoaderCircle className="spin" size={17} />
+                ) : (
+                  <Send size={17} />
+                )}
+                {pending ? "Wysyłanie…" : "Wyślij do weryfikacji"}
+              </button>
+            </footer>
+          </form>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

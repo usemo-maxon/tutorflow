@@ -145,7 +145,14 @@ export async function POST(
       if (data.user) {
         const { error: acceptanceError } = await createSupabaseAdminClient()
           .from("legal_acceptances")
-          .upsert({ user_id: data.user.id, document_type: "terms", document_version: LEGAL_DOCUMENT_VERSION }, { onConflict: "user_id,document_type,document_version" });
+          .upsert(
+            {
+              user_id: data.user.id,
+              document_type: "terms",
+              document_version: LEGAL_DOCUMENT_VERSION,
+            },
+            { onConflict: "user_id,document_type,document_version" },
+          );
         if (acceptanceError) throw new Error("LEGAL_ACCEPTANCE_STORE_FAILED");
       }
       return Response.json({
@@ -165,7 +172,16 @@ export async function POST(
           code: "INVALID_CREDENTIALS",
           message: "Adres e-mail lub hasło są nieprawidłowe.",
         });
-      return Response.json({ teacher: { id: data.user.id } });
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("onboarding_completed_at")
+        .eq("id", data.user.id)
+        .single();
+      if (profileError) throw providerFailure();
+      return Response.json({
+        teacher: { id: data.user.id },
+        onboardingCompleted: Boolean(profile.onboarding_completed_at),
+      });
     }
     return Response.json({ code: "NOT_FOUND" }, { status: 404 });
   } catch (error) {
@@ -208,7 +224,10 @@ async function localAuth(request: Request, action: string) {
     path: "/",
     maxAge: 2_592_000,
   });
-  return Response.json({ teacher: { id: teacher.id } });
+  return Response.json({
+    teacher: { id: teacher.id },
+    onboardingCompleted: Boolean(teacher.onboardingCompletedAt),
+  });
 }
 
 function formFailure(fields: Record<string, string[] | undefined>): ApiFailure {

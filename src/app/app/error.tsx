@@ -11,7 +11,11 @@ export default function AppError({
   retry: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    console.error({
+      scope: "app_error_boundary",
+      errorName: error.name,
+      digest: error.digest,
+    });
   }, [error]);
 
   return (

@@ -169,6 +169,8 @@ describe("canonical launch regression baseline", () => {
       title: "Dialog na lotnisku",
       description: "Nagraj dwuminutowy dialog przy stanowisku odprawy.",
       dueAt: "2041-04-07T18:00:00.000Z",
+      recipientIds: [studentId],
+      materialIds: [],
     });
     firstWorkspace = await mutateLessonWorkspace(teacherId, firstLessonId, {
       type: "markAttendance",

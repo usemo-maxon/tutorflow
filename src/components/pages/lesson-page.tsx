@@ -23,13 +23,20 @@ import {
   NotebookPen,
   Paperclip,
   Plus,
+  RotateCcw,
   Trash2,
   Users,
   X,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import {
+  useState,
+  type CSSProperties,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from "react";
 import {
   useLessonWorkspace,
   useLessonWorkspaceMutation,
@@ -41,6 +48,7 @@ import type {
   LessonWorkspaceAction,
   LessonWorkspaceData,
   LessonPlanItem,
+  PreviousLessonReuseCandidate,
 } from "@/lib/lesson-workspace";
 import { movePlanItem, plannedMinutes } from "@/lib/lesson-workspace";
 import type {
@@ -63,6 +71,7 @@ import { LessonCompletionDialog } from "../lesson-completion-dialog";
 import { NextLessonBriefingPanel } from "../next-lesson-briefing";
 import { MaterialPicker, MaterialPreview } from "../context-materials";
 import type { MaterialLibraryItem } from "@/lib/materials";
+import { homeworkStatusLabels, type HomeworkStatus } from "@/lib/homework";
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
@@ -124,6 +133,23 @@ function LessonWorkspaceView({
   const [homeworkDue, setHomeworkDue] = useState(
     data.homework?.dueAt?.slice(0, 10) ?? "",
   );
+  const [homeworkRecipientIds, setHomeworkRecipientIds] = useState<string[]>(
+    data.homework?.recipients?.map((recipient) => recipient.studentId) ??
+      data.participants.map((participant) => participant.studentId),
+  );
+  const [homeworkMaterialIds, setHomeworkMaterialIds] = useState<string[]>(
+    data.homework?.materials?.map((material) => material.id) ?? [],
+  );
+  const [homeworkFeedback, setHomeworkFeedback] = useState<
+    Record<string, string>
+  >(
+    Object.fromEntries(
+      data.homework?.recipients?.map((recipient) => [
+        recipient.studentId,
+        recipient.feedback ?? "",
+      ]) ?? [],
+    ),
+  );
   const [materialTitle, setMaterialTitle] = useState("");
   const [materialUrl, setMaterialUrl] = useState("");
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
@@ -140,6 +166,7 @@ function LessonWorkspaceView({
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templates, setTemplates] = useState<LessonTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [previousLessonsOpen, setPreviousLessonsOpen] = useState(false);
   const dirty =
     topic !== data.lesson.topic ||
     objectives !== data.lesson.objectives ||
@@ -149,6 +176,21 @@ function LessonWorkspaceView({
     homeworkTitle !== (data.homework?.title ?? "") ||
     homeworkDescription !== (data.homework?.description ?? "") ||
     homeworkDue !== (data.homework?.dueAt?.slice(0, 10) ?? "") ||
+    JSON.stringify([...homeworkRecipientIds].sort()) !==
+      JSON.stringify(
+        (
+          data.homework?.recipients?.map((recipient) => recipient.studentId) ??
+          data.participants.map((participant) => participant.studentId)
+        )
+          .slice()
+          .sort(),
+      ) ||
+    JSON.stringify([...homeworkMaterialIds].sort()) !==
+      JSON.stringify(
+        (data.homework?.materials?.map((material) => material.id) ?? [])
+          .slice()
+          .sort(),
+      ) ||
     color !== data.lesson.color;
   useUnsavedChanges(dirty);
 
@@ -235,6 +277,10 @@ function LessonWorkspaceView({
       setError("Podaj tytuł pracy domowej.");
       return;
     }
+    if (!homeworkRecipientIds.length) {
+      setError("Wybierz co najmniej jednego ucznia.");
+      return;
+    }
     const result = await run(
       "homework",
       {
@@ -244,6 +290,8 @@ function LessonWorkspaceView({
         dueAt: homeworkDue
           ? localInputToUtc(homeworkDue, "23:59", data!.teacher.timezone)
           : null,
+        recipientIds: homeworkRecipientIds,
+        materialIds: homeworkMaterialIds,
       },
       "Praca domowa zapisana",
     );
@@ -251,7 +299,30 @@ function LessonWorkspaceView({
       setHomeworkTitle(result.homework.title);
       setHomeworkDescription(result.homework.description);
       setHomeworkDue(result.homework.dueAt?.slice(0, 10) ?? "");
+      setHomeworkRecipientIds(
+        result.homework.recipients?.map((recipient) => recipient.studentId) ??
+          data.participants.map((participant) => participant.studentId),
+      );
+      setHomeworkMaterialIds(
+        result.homework.materials?.map((material) => material.id) ?? [],
+      );
     }
+  }
+
+  async function updateHomeworkRecipient(
+    studentId: string,
+    status: HomeworkStatus,
+  ) {
+    await run(
+      `homework:${studentId}`,
+      {
+        type: "updateHomeworkRecipient",
+        studentId,
+        status,
+        feedback: homeworkFeedback[studentId],
+      },
+      "Status pracy domowej zapisany",
+    );
   }
 
   async function createMaterial() {
@@ -337,6 +408,29 @@ function LessonWorkspaceView({
       setPrivateNote(result.lesson.privateNote);
       setTemplatesOpen(false);
     }
+  }
+
+  async function applyPreviousLesson(selection: {
+    sourceLessonId: string;
+    sectionIds: string[];
+    materialIds: string[];
+    includeObjective: boolean;
+    importKey: string;
+  }) {
+    const result = await run(
+      "previousLesson",
+      {
+        type: "applyPreviousLesson",
+        ...selection,
+      },
+      "Zawartość poprzedniej lekcji dodana do planu",
+    );
+    if (result) {
+      setObjectives(result.lesson.objectives);
+      setPlanItems(result.lesson.planItems);
+      setPreviousLessonsOpen(false);
+    }
+    return Boolean(result);
   }
 
   function addPlanItem() {
@@ -428,13 +522,23 @@ function LessonWorkspaceView({
           {!locked &&
             lesson.status !== "completed" &&
             !data.teacher.readOnly && (
-              <button
-                className="button button--secondary"
-                type="button"
-                onClick={() => void openTemplates()}
-              >
-                <Layers3 size={16} aria-hidden="true" /> Użyj szablonu
-              </button>
+              <>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => void openTemplates()}
+                >
+                  <Layers3 size={16} aria-hidden="true" /> Użyj szablonu
+                </button>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => setPreviousLessonsOpen(true)}
+                >
+                  <RotateCcw size={16} aria-hidden="true" /> Bazuj na
+                  poprzedniej lekcji
+                </button>
+              </>
             )}
           {lesson.meetingUrl && (
             <a
@@ -460,6 +564,17 @@ function LessonWorkspaceView({
           lessonId={lessonId}
           timezone={data.teacher.timezone}
           briefing={data.briefing}
+          resources={data.preparationContext}
+          readOnly={locked || data.teacher.readOnly}
+          pendingMaterialId={
+            mutation.isPending && mutation.variables?.type === "attachMaterial"
+              ? mutation.variables.materialId
+              : undefined
+          }
+          onAttach={(materialId) => void attachMaterial(materialId)}
+          onOpen={(material) => setMaterialPreview(toLibraryMaterial(material))}
+          onUseTemplate={() => void openTemplates()}
+          onReusePreviousLesson={() => setPreviousLessonsOpen(true)}
         />
       )}
       {lesson.status === "completed" && (
@@ -558,6 +673,13 @@ function LessonWorkspaceView({
                     onClick={() => void openTemplates()}
                   >
                     <Layers3 size={16} /> Użyj szablonu
+                  </button>
+                  <button
+                    className="button button--secondary"
+                    type="button"
+                    onClick={() => setPreviousLessonsOpen(true)}
+                  >
+                    <RotateCcw size={16} /> Bazuj na poprzedniej lekcji
                   </button>
                   <button
                     className="button button--quiet"
@@ -781,6 +903,12 @@ function LessonWorkspaceView({
                         setHomeworkTitle("");
                         setHomeworkDescription("");
                         setHomeworkDue("");
+                        setHomeworkRecipientIds(
+                          data.participants.map(
+                            (participant) => participant.studentId,
+                          ),
+                        );
+                        setHomeworkMaterialIds([]);
                       });
                     },
                   }
@@ -814,6 +942,17 @@ function LessonWorkspaceView({
                 placeholder="Instrukcja dla ucznia lub grupy"
               />
             </label>
+            <HomeworkAssignmentControls
+              data={data}
+              mutationPending={mutation.isPending}
+              recipientIds={homeworkRecipientIds}
+              materialIds={homeworkMaterialIds}
+              feedback={homeworkFeedback}
+              onRecipientIdsChange={setHomeworkRecipientIds}
+              onMaterialIdsChange={setHomeworkMaterialIds}
+              onFeedbackChange={setHomeworkFeedback}
+              onUpdateRecipient={updateHomeworkRecipient}
+            />
           </WorkspaceSection>
 
           <section
@@ -1137,6 +1276,15 @@ function LessonWorkspaceView({
             setHomeworkTitle(result.homework?.title ?? "");
             setHomeworkDescription(result.homework?.description ?? "");
             setHomeworkDue(result.homework?.dueAt?.slice(0, 10) ?? "");
+            setHomeworkRecipientIds(
+              result.homework?.recipients?.map(
+                (recipient) => recipient.studentId,
+              ) ??
+                data.participants.map((participant) => participant.studentId),
+            );
+            setHomeworkMaterialIds(
+              result.homework?.materials?.map((material) => material.id) ?? [],
+            );
           }}
         />
       )}
@@ -1153,6 +1301,20 @@ function LessonWorkspaceView({
         pending={mutation.isPending}
         onOpenChange={setTemplatesOpen}
         onApply={applyTemplate}
+      />
+      <PreviousLessonPicker
+        open={previousLessonsOpen}
+        lessons={data.previousLessons ?? []}
+        timezone={data.teacher.timezone}
+        hasExistingContent={Boolean(
+          objectives.trim() || planItems.length || data.materials.length,
+        )}
+        pending={
+          mutation.isPending &&
+          mutation.variables?.type === "applyPreviousLesson"
+        }
+        onOpenChange={setPreviousLessonsOpen}
+        onApply={applyPreviousLesson}
       />
       <MaterialPicker
         open={materialPickerOpen}
@@ -1254,6 +1416,254 @@ function toLibraryMaterial(
     createdAt: material.createdAt ?? "",
     updatedAt: material.updatedAt ?? "",
   };
+}
+
+function PreviousLessonPicker({
+  open,
+  lessons,
+  timezone,
+  hasExistingContent,
+  pending,
+  onOpenChange,
+  onApply,
+}: {
+  open: boolean;
+  lessons: PreviousLessonReuseCandidate[];
+  timezone: string;
+  hasExistingContent: boolean;
+  pending: boolean;
+  onOpenChange: (open: boolean) => void;
+  onApply: (selection: {
+    sourceLessonId: string;
+    sectionIds: string[];
+    materialIds: string[];
+    includeObjective: boolean;
+    importKey: string;
+  }) => Promise<boolean>;
+}) {
+  const [selectedId, setSelectedId] = useState("");
+  const [sectionIds, setSectionIds] = useState<Set<string>>(new Set());
+  const [materialIds, setMaterialIds] = useState<Set<string>>(new Set());
+  const [includeObjective, setIncludeObjective] = useState(false);
+  const [importKey, setImportKey] = useState("");
+  const selected = lessons.find((item) => item.id === selectedId);
+
+  function selectLesson(lesson: PreviousLessonReuseCandidate) {
+    setSelectedId(lesson.id);
+    setSectionIds(new Set(lesson.planItems.map((item) => item.id)));
+    setMaterialIds(
+      new Set(
+        lesson.materials
+          .filter((material) => material.available)
+          .map((material) => material.id),
+      ),
+    );
+    setIncludeObjective(false);
+    setImportKey(crypto.randomUUID());
+  }
+
+  function toggle(
+    setter: (value: Set<string>) => void,
+    values: Set<string>,
+    id: string,
+  ) {
+    const next = new Set(values);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setter(next);
+  }
+
+  const selectionCount =
+    sectionIds.size + materialIds.size + Number(includeObjective);
+
+  return (
+    <Dialog.Root open={open} onOpenChange={pending ? undefined : onOpenChange}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="dialog-overlay" />
+        <Dialog.Content className="dialog-content dialog-content--medium lesson-reuse-picker">
+          <header className="dialog-header">
+            <div>
+              <Dialog.Title>Bazuj na poprzedniej lekcji</Dialog.Title>
+              <Dialog.Description>
+                Wybierz zakończoną lekcję i treści, które chcesz dodać do
+                dzisiejszego planu.
+              </Dialog.Description>
+            </div>
+            <Dialog.Close className="icon-button" aria-label="Zamknij">
+              <X size={19} />
+            </Dialog.Close>
+          </header>
+          {lessons.length ? (
+            <div className="lesson-reuse-picker__body">
+              {hasExistingContent && (
+                <div className="lesson-template-picker__notice" role="status">
+                  <AlertTriangle size={17} />
+                  <span>
+                    <strong>Dodaj do istniejącego planu</strong>
+                    Obecny cel, sekcje i materiały zostaną zachowane. Wybrane
+                    treści pojawią się na końcu planu.
+                  </span>
+                </div>
+              )}
+              <section className="lesson-reuse-picker__sources">
+                <h3>Poprzednie lekcje</h3>
+                {lessons.map((lesson) => (
+                  <button
+                    type="button"
+                    key={lesson.id}
+                    className={selectedId === lesson.id ? "selected" : ""}
+                    onClick={() => selectLesson(lesson)}
+                  >
+                    <span>
+                      <strong>
+                        {formatInTimeZone(lesson.startsAt, timezone, "dd.MM")}
+                      </strong>
+                      <small>{lesson.topic || "Bez tematu"}</small>
+                    </span>
+                    <ChevronRight size={17} aria-hidden="true" />
+                  </button>
+                ))}
+              </section>
+              <section className="lesson-reuse-picker__preview">
+                {selected ? (
+                  <>
+                    <h3>
+                      Bazuj na lekcji z{" "}
+                      {formatInTimeZone(selected.startsAt, timezone, "dd.MM")}
+                    </h3>
+                    {selected.objective && (
+                      <label className="lesson-reuse-picker__objective">
+                        <input
+                          type="checkbox"
+                          checked={includeObjective}
+                          onChange={(event) =>
+                            setIncludeObjective(event.target.checked)
+                          }
+                        />
+                        <span>
+                          <strong>Dodaj poprzedni cel jako szkic</strong>
+                          <small>{selected.objective}</small>
+                        </span>
+                      </label>
+                    )}
+                    <ReuseChecklist
+                      title="Plan"
+                      emptyLabel="Ta lekcja nie ma sekcji planu."
+                      items={selected.planItems.map((item) => ({
+                        id: item.id,
+                        label: item.title,
+                        detail: item.minutes
+                          ? `${item.minutes} min`
+                          : undefined,
+                        checked: sectionIds.has(item.id),
+                        disabled: false,
+                      }))}
+                      onToggle={(id) => toggle(setSectionIds, sectionIds, id)}
+                    />
+                    <ReuseChecklist
+                      title="Materiały"
+                      emptyLabel="Ta lekcja nie ma materiałów."
+                      items={selected.materials.map((material) => ({
+                        id: material.id,
+                        label: material.title,
+                        detail: !material.available
+                          ? "Niedostępny — zostanie pominięty"
+                          : material.archived
+                            ? "Archiwalny"
+                            : undefined,
+                        checked: materialIds.has(material.id),
+                        disabled: !material.available,
+                      }))}
+                      onToggle={(id) => toggle(setMaterialIds, materialIds, id)}
+                    />
+                  </>
+                ) : (
+                  <div className="lesson-reuse-picker__placeholder">
+                    <RotateCcw size={24} />
+                    <p>Wybierz lekcję, aby zobaczyć plan i materiały.</p>
+                  </div>
+                )}
+              </section>
+            </div>
+          ) : (
+            <div className="lesson-template-picker__empty">
+              <p>
+                Brak wcześniejszych zakończonych lekcji dla tego ucznia lub
+                grupy.
+              </p>
+            </div>
+          )}
+          <footer className="dialog-footer">
+            <Dialog.Close className="button button--quiet" disabled={pending}>
+              Anuluj
+            </Dialog.Close>
+            <button
+              type="button"
+              className="button button--primary"
+              disabled={!selected || !selectionCount || pending}
+              onClick={() => {
+                if (!selected || !importKey) return;
+                void onApply({
+                  sourceLessonId: selected.id,
+                  sectionIds: [...sectionIds],
+                  materialIds: [...materialIds],
+                  includeObjective,
+                  importKey,
+                }).then((applied) => {
+                  if (applied) setImportKey(crypto.randomUUID());
+                });
+              }}
+            >
+              {pending && <LoaderCircle className="spin" size={16} />}
+              Dodaj do planu
+            </button>
+          </footer>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function ReuseChecklist({
+  title,
+  emptyLabel,
+  items,
+  onToggle,
+}: {
+  title: string;
+  emptyLabel: string;
+  items: Array<{
+    id: string;
+    label: string;
+    detail?: string;
+    checked: boolean;
+    disabled: boolean;
+  }>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <fieldset className="lesson-reuse-picker__checklist">
+      <legend>{title}</legend>
+      {items.length ? (
+        items.map((item) => (
+          <label key={item.id} className={item.disabled ? "disabled" : ""}>
+            <input
+              type="checkbox"
+              checked={item.checked}
+              disabled={item.disabled}
+              onChange={() => onToggle(item.id)}
+            />
+            <span>
+              <strong>{item.label}</strong>
+              {item.detail && <small>{item.detail}</small>}
+            </span>
+          </label>
+        ))
+      ) : (
+        <p>{emptyLabel}</p>
+      )}
+    </fieldset>
+  );
 }
 
 function TemplatePicker({
@@ -1498,6 +1908,150 @@ function LessonStateBanner({ data }: { data: LessonWorkspaceData }) {
     );
   }
   return null;
+}
+
+function HomeworkAssignmentControls({
+  data,
+  mutationPending,
+  recipientIds,
+  materialIds,
+  feedback,
+  onRecipientIdsChange,
+  onMaterialIdsChange,
+  onFeedbackChange,
+  onUpdateRecipient,
+}: {
+  data: LessonWorkspaceData;
+  mutationPending: boolean;
+  recipientIds: string[];
+  materialIds: string[];
+  feedback: Record<string, string>;
+  onRecipientIdsChange: Dispatch<SetStateAction<string[]>>;
+  onMaterialIdsChange: Dispatch<SetStateAction<string[]>>;
+  onFeedbackChange: Dispatch<SetStateAction<Record<string, string>>>;
+  onUpdateRecipient: (
+    studentId: string,
+    status: HomeworkStatus,
+  ) => Promise<void>;
+}) {
+  const materials = [
+    ...new Map(
+      [...data.materials, ...data.materialLibrary].map((material) => [
+        material.id,
+        material,
+      ]),
+    ).values(),
+  ];
+  return (
+    <>
+      <fieldset className="homework-recipient-picker">
+        <legend>Przypisz uczniom</legend>
+        <p>Status każdego ucznia będzie śledzony osobno.</p>
+        <div>
+          {data.participants.map((participant) => (
+            <label key={participant.studentId}>
+              <input
+                type="checkbox"
+                checked={recipientIds.includes(participant.studentId)}
+                onChange={(event) =>
+                  onRecipientIdsChange((current) =>
+                    event.target.checked
+                      ? [...new Set([...current, participant.studentId])]
+                      : current.filter(
+                          (studentId) => studentId !== participant.studentId,
+                        ),
+                  )
+                }
+              />
+              <span>{participant.name}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="homework-material-picker">
+        <legend>Materiały (opcjonalnie)</legend>
+        <p>Odwołania pozostają ważne także po archiwizacji materiału.</p>
+        <div>
+          {materials.map((material) => (
+            <label key={material.id}>
+              <input
+                type="checkbox"
+                checked={materialIds.includes(material.id)}
+                onChange={(event) =>
+                  onMaterialIdsChange((current) =>
+                    event.target.checked
+                      ? [...new Set([...current, material.id])]
+                      : current.filter((id) => id !== material.id),
+                  )
+                }
+              />
+              <span>
+                {material.title}
+                {material.archived ? " · archiwalny" : ""}
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {data.homework?.recipients?.length ? (
+        <div className="homework-status-list" aria-label="Statusy uczniów">
+          {data.homework.recipients.map((recipient) => (
+            <article className="homework-status-card" key={recipient.id}>
+              <div>
+                <strong>{recipient.studentName}</strong>
+                <select
+                  aria-label={`Status pracy domowej: ${recipient.studentName}`}
+                  value={recipient.status}
+                  disabled={mutationPending || data.teacher.readOnly}
+                  onChange={(event) =>
+                    void onUpdateRecipient(
+                      recipient.studentId,
+                      event.target.value as HomeworkStatus,
+                    )
+                  }
+                >
+                  {Object.entries(homeworkStatusLabels).map(
+                    ([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+              <label className="field">
+                <span>Informacja zwrotna</span>
+                <textarea
+                  rows={2}
+                  maxLength={2_000}
+                  value={
+                    feedback[recipient.studentId] ?? recipient.feedback ?? ""
+                  }
+                  onChange={(event) =>
+                    onFeedbackChange((current) => ({
+                      ...current,
+                      [recipient.studentId]: event.target.value,
+                    }))
+                  }
+                  placeholder="Krótka informacja po sprawdzeniu"
+                />
+              </label>
+              <button
+                className="button button--quiet"
+                type="button"
+                disabled={mutationPending || data.teacher.readOnly}
+                onClick={() =>
+                  void onUpdateRecipient(recipient.studentId, recipient.status)
+                }
+              >
+                Zapisz informację
+              </button>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 function WorkspaceSection({

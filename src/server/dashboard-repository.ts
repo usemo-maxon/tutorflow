@@ -119,6 +119,7 @@ export async function queryTodayDashboardSource(
     packagesResult,
     balancesResult,
     overdueResult,
+    homeworkAssignmentsResult,
   ] = await Promise.all([
     supabase
       .from("students")
@@ -204,6 +205,13 @@ export async function queryTodayDashboardSource(
       .eq("is_overdue", true)
       .gt("outstanding_grosz", 0)
       .limit(100),
+    supabase
+      .from("homework_assignments")
+      .select("id,homework_id,student_id,status,updated_at")
+      .eq("workspace_id", workspaceId)
+      .in("status", ["assigned", "completed"])
+      .order("updated_at", { ascending: false })
+      .limit(500),
   ]);
 
   const coreFailure = [
@@ -295,7 +303,23 @@ export async function queryTodayDashboardSource(
     Boolean(googleResult.error) ||
     Boolean(packagesResult.error) ||
     Boolean(balancesResult.error) ||
-    Boolean(overdueResult.error);
+    Boolean(overdueResult.error) ||
+    Boolean(homeworkAssignmentsResult.error);
+  const homeworkIds = homeworkAssignmentsResult.error
+    ? []
+    : (homeworkAssignmentsResult.data ?? []).map((row) =>
+        String(row.homework_id),
+      );
+  const homeworkRowsResult = homeworkIds.length
+    ? await supabase
+        .from("homeworks")
+        .select("id,lesson_id,title,due_at")
+        .eq("workspace_id", workspaceId)
+        .in("id", homeworkIds)
+    : { data: [], error: null };
+  const homeworkById = new Map(
+    (homeworkRowsResult.data ?? []).map((row) => [row.id as string, row]),
+  );
 
   const balanceByPackage = new Map(
     balancesResult.error
@@ -403,6 +427,24 @@ export async function queryTodayDashboardSource(
       ? []
       : ((monthResult.data ?? []) as DashboardLessonRow[]).map(mapLesson),
     packageProblems,
+    homeworkAttention:
+      homeworkAssignmentsResult.error || homeworkRowsResult.error
+        ? []
+        : (homeworkAssignmentsResult.data ?? []).flatMap((assignment) => {
+            const homework = homeworkById.get(assignment.homework_id as string);
+            if (!homework) return [];
+            return [
+              {
+                id: assignment.id as string,
+                lessonId: homework.lesson_id as string,
+                studentId: assignment.student_id as string,
+                title: homework.title as string,
+                dueAt: (homework.due_at as string | null) ?? undefined,
+                updatedAt: assignment.updated_at as string,
+                status: assignment.status as "assigned" | "completed",
+              },
+            ];
+          }),
     overdueCharges: overdueResult.error
       ? []
       : (overdueResult.data ?? []).map((row) => ({
@@ -411,7 +453,9 @@ export async function queryTodayDashboardSource(
           currency: row.currency as string,
         })),
     partialErrors: [
-      ...(optionalAttentionFailed ? (["actions"] as const) : []),
+      ...(optionalAttentionFailed || homeworkRowsResult.error
+        ? (["actions"] as const)
+        : []),
       ...(monthResult.error ? (["monthly_summary"] as const) : []),
     ],
   };

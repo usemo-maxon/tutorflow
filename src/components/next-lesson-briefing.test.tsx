@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { NextLessonBriefing } from "@/lib/next-lesson-briefing";
+import type { LessonPreparationContext } from "@/lib/preparation-context";
 import { NextLessonBriefingView } from "./next-lesson-briefing";
 
 describe("NextLessonBriefingView", () => {
@@ -8,7 +9,7 @@ describe("NextLessonBriefingView", () => {
     const html = renderToStaticMarkup(
       <NextLessonBriefingView briefing={briefing()} timezone="Europe/Warsaw" />,
     );
-    expect(html).toContain("Przed lekcją");
+    expect(html).toContain("Kontekst do przygotowania lekcji");
     expect(html).toContain("Ostatnio");
     expect(html).toContain("Różnie");
     expect(html).toContain("Następny krok");
@@ -37,10 +38,12 @@ describe("NextLessonBriefingView", () => {
 
   it("shows one first-lesson message instead of empty fields", () => {
     const value = briefing();
-    value.participants = [{
-      student: { id: "anna", name: "Anna", goal: "Rozmowa w pracy" },
-      todayGoal: "Przedstawianie się",
-    }];
+    value.participants = [
+      {
+        student: { id: "anna", name: "Anna", goal: "Rozmowa w pracy" },
+        todayGoal: "Przedstawianie się",
+      },
+    ];
     const html = renderToStaticMarkup(
       <NextLessonBriefingView briefing={value} timezone="Europe/Warsaw" />,
     );
@@ -48,24 +51,86 @@ describe("NextLessonBriefingView", () => {
     expect(html).toContain("Cel ucznia:");
     expect(html).not.toContain("Praca domowa");
   });
+
+  it("shows historical and available material provenance without claiming completion", () => {
+    const html = renderToStaticMarkup(
+      <NextLessonBriefingView
+        briefing={briefing()}
+        timezone="Europe/Warsaw"
+        resources={resources()}
+      />,
+    );
+    expect(html).toContain("Materiały z poprzednich lekcji");
+    expect(html).toContain("Materiały dostępne");
+    expect(html).toContain("Present Perfect Exercises.pdf");
+    expect(html).toContain("Archiwalny");
+    expect(html).toContain('href="/app/lekcje/history-1"');
+    expect(html).not.toMatch(/opanowan|ukończon|zrealizowan/i);
+  });
+
+  it("disables attaching materials in read-only mode", () => {
+    const html = renderToStaticMarkup(
+      <NextLessonBriefingView
+        briefing={briefing()}
+        timezone="Europe/Warsaw"
+        resources={resources()}
+        readOnly
+        onAttach={() => undefined}
+      />,
+    );
+    expect(html).toContain("Dodaj do planu lekcji");
+    expect(html).toContain("disabled");
+  });
 });
 
 function briefing(): NextLessonBriefing {
   return {
     lesson: { id: "target", startsAt: "2026-10-01T10:00:00.000Z" },
-    participants: [{
-      student: { id: "anna", name: "Anna", level: "B1" },
-      lastLesson: {
-        lessonId: "history-1",
-        startsAt: "2026-09-24T10:00:00.000Z",
-        topic: "Present Perfect",
-        progressSummary: "ANNA_ONLY_CONTEXT",
+    participants: [
+      {
+        student: { id: "anna", name: "Anna", level: "B1" },
+        lastLesson: {
+          lessonId: "history-1",
+          startsAt: "2026-09-24T10:00:00.000Z",
+          topic: "Present Perfect",
+          progressSummary: "ANNA_ONLY_CONTEXT",
+        },
+        difficulty: {
+          level: "mixed",
+          note: "Since / for",
+          sourceLessonId: "history-1",
+        },
+        homework: { title: "Ćwiczenia 4–6", sourceLessonId: "history-1" },
+        nextStep: { text: "Krótki dialog", sourceLessonId: "history-1" },
+        todayGoal: "Hotel check-in",
       },
-      difficulty: { level: "mixed", note: "Since / for", sourceLessonId: "history-1" },
-      homework: { title: "Ćwiczenia 4–6", sourceLessonId: "history-1" },
-      nextStep: { text: "Krótki dialog", sourceLessonId: "history-1" },
-      todayGoal: "Hotel check-in",
-    }],
+    ],
     generatedAt: "2026-09-29T10:00:00.000Z",
+  };
+}
+
+function resources(): LessonPreparationContext {
+  const material = {
+    id: "material-1",
+    title: "Present Perfect Exercises.pdf",
+    description: "",
+    type: "file" as const,
+    url: "/api/materials/material-1/open",
+    attached: false,
+    archived: true,
+    available: true,
+    sources: [
+      {
+        kind: "previous_lesson" as const,
+        label: "Present Perfect",
+        lessonId: "history-1",
+        lessonStartsAt: "2026-09-24T10:00:00.000Z",
+      },
+    ],
+  };
+  return {
+    historicalMaterials: [material],
+    availableMaterials: [material],
+    recentLessonCount: 1,
   };
 }

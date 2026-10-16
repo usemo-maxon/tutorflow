@@ -150,6 +150,11 @@ export function LessonCompletionDialog({
       dueAt: homeworkDue
         ? localInputToUtc(homeworkDue, "23:59", data.teacher.timezone)
         : null,
+      recipientIds:
+        data.homework?.recipients?.map((recipient) => recipient.studentId) ??
+        data.participants.map((participant) => participant.studentId),
+      materialIds:
+        data.homework?.materials?.map((material) => material.id) ?? [],
     });
   }
 

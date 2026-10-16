@@ -26,11 +26,15 @@ import {
   useAppMutation,
   useFinancialOverview,
   useStudentMemory,
+  useStudentHomeworkMutation,
 } from "@/hooks/use-app-data";
 import type { Money, StudentContact } from "@/lib/domain";
 import { copy } from "@/lib/copy";
 import { formatDateTime, formatMoney } from "@/lib/format";
-import { ContextMaterials } from "../context-materials";
+import {
+  ContextMaterials,
+  StudentResourceOverview,
+} from "../context-materials";
 import {
   AttendanceSection,
   ContinuitySection,
@@ -48,6 +52,7 @@ import { ConfirmDialog } from "../ui/confirm-dialog";
 import { EmptyState } from "../ui/empty-state";
 import { PageLoading } from "../ui/loading";
 import { LessonStatusBadge } from "../ui/status-badge";
+import { StudentHomeworkSection } from "../student-homework-section";
 
 const tabs = [
   ["overview", "Przegląd"],
@@ -69,6 +74,7 @@ export function StudentDetailPage() {
     (candidate) => candidate.id === studentId,
   );
   const memoryQuery = useStudentMemory(session.id, studentId, Boolean(student));
+  const homeworkMutation = useStudentHomeworkMutation(session.id, studentId);
   const financeQuery = useFinancialOverview(
     session.id,
     studentId,
@@ -264,6 +270,19 @@ export function StudentDetailPage() {
                   !data.teacher.subscription.readOnly
                 }
                 onSchedule={scheduleLesson}
+              />
+              <StudentResourceOverview
+                studentId={student.id}
+                teacherId={session.id}
+                timezone={data.teacher.timezone}
+                homeworks={memoryQuery.data.homeworks ?? []}
+              />
+              <StudentHomeworkSection
+                items={memoryQuery.data.homeworks ?? []}
+                timezone={data.teacher.timezone}
+                readOnly={data.teacher.subscription.readOnly}
+                pending={homeworkMutation.isPending}
+                onUpdate={(input) => homeworkMutation.mutateAsync(input)}
               />
               <div className="student-360-columns">
                 <RecentLessonsSection

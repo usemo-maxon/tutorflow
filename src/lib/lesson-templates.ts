@@ -24,6 +24,7 @@ export interface LessonTemplate {
   level: string;
   objective: string;
   teacherNotes: string;
+  sourceAttribution?: string;
   estimatedDurationMinutes?: number;
   sections: LessonTemplateSection[];
   materials: LessonTemplateMaterial[];

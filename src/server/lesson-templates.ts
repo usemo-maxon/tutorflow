@@ -8,7 +8,7 @@ import {
   type LessonTemplateInput,
   type LessonTemplatesData,
 } from "@/lib/lesson-templates";
-import { ApiFailure } from "./errors";
+import { ApiFailure, logServerError } from "./errors";
 import { createSupabaseServerClient } from "./supabase";
 
 async function templateContext(teacherId: string, mutation = false) {
@@ -60,7 +60,7 @@ export async function getLessonTemplates(
     supabase
       .from("lesson_templates")
       .select(
-        "id,title,description,subject,level,objective,teacher_notes,estimated_duration_minutes,archived_at,created_at,updated_at",
+        "id,title,description,subject,level,objective,teacher_notes,estimated_duration_minutes,source_attribution,archived_at,created_at,updated_at",
       )
       .eq("workspace_id", workspaceId)
       .order("updated_at", { ascending: false })
@@ -123,6 +123,7 @@ export async function getLessonTemplates(
       level: row.level ?? "",
       objective: row.objective ?? "",
       teacherNotes: row.teacher_notes ?? "",
+      sourceAttribution: row.source_attribution ?? undefined,
       estimatedDurationMinutes: row.estimated_duration_minutes ?? undefined,
       sections: (sectionsResult.data ?? [])
         .filter((item) => item.template_id === row.id)
@@ -311,7 +312,7 @@ function notFound(): never {
   });
 }
 function databaseFailure(error: unknown): never {
-  console.error("Lesson templates database failure", error);
+  logServerError("lesson_templates_database", error);
   throw new ApiFailure(500, {
     code: "DATABASE_ERROR",
     message: "Nie udało się zapisać szablonu. Spróbuj ponownie.",

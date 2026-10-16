@@ -323,9 +323,12 @@ describe("D2.7 guest booking management", () => {
         ),
       ),
     ).toBe(true);
-    expect(log).toHaveBeenCalledWith(
-      "Booking confirmation email failed",
-      expect.objectContaining({ reason: "Error" }),
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0]?.[0]).toEqual(
+      expect.stringContaining('"scope":"booking_confirmation_email"'),
+    );
+    expect(log.mock.calls[0]?.[0]).toEqual(
+      expect.stringContaining('"errorName":"Error"'),
     );
     expect(JSON.stringify(log.mock.calls)).not.toContain("secret-detail");
     log.mockRestore();

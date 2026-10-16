@@ -52,17 +52,29 @@ export async function GET(request: Request) {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
-      if (url.searchParams.get("legal") === LEGAL_DOCUMENT_VERSION && data.user) {
-        await createSupabaseAdminClient().from("legal_acceptances").upsert({
-          user_id: data.user.id,
-          document_type: "terms",
-          document_version: LEGAL_DOCUMENT_VERSION,
-        }, { onConflict: "user_id,document_type,document_version" });
+      if (
+        url.searchParams.get("legal") === LEGAL_DOCUMENT_VERSION &&
+        data.user
+      ) {
+        await createSupabaseAdminClient().from("legal_acceptances").upsert(
+          {
+            user_id: data.user.id,
+            document_type: "terms",
+            document_version: LEGAL_DOCUMENT_VERSION,
+          },
+          { onConflict: "user_id,document_type,document_version" },
+        );
       }
-      return noStoreRedirect(
-        origin,
-        safeRelativePath(url.searchParams.get("next")),
-      );
+      let destination = safeRelativePath(url.searchParams.get("next"));
+      if (data.user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("onboarding_completed_at")
+          .eq("id", data.user.id)
+          .maybeSingle();
+        if (!profile?.onboarding_completed_at) destination = "/app/start";
+      }
+      return noStoreRedirect(origin, destination);
     }
   }
 

@@ -1,3 +1,4 @@
+import { logServerError } from "@/server/errors";
 import { createSupabaseAdminClient } from "@/server/supabase";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +16,7 @@ export async function GET() {
       { headers: { "cache-control": "no-store" } },
     );
   } catch (error) {
-    console.error(
-      "TutorFlow health check failed:",
-      error instanceof Error ? error.message : "Unknown error",
-    );
+    logServerError("database_health", error);
     return Response.json(
       { status: "degraded", database: "unreachable" },
       { status: 503, headers: { "cache-control": "no-store" } },

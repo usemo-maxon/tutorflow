@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { NextResponse } from "next/server";
 import { currentTeacher } from "@/server/auth";
 import { assertEntitlement } from "@/server/entitlements";
-import { errorResponse } from "@/server/errors";
+import { errorResponse, logServerError } from "@/server/errors";
 import { createSupabaseServerClient } from "@/server/supabase";
 
 export const runtime = "nodejs";
@@ -34,7 +34,6 @@ export async function GET(request: Request) {
       JSON.stringify({
         scope: "google_calendar",
         operation: "oauth_connect",
-        teacherId: teacher.id,
         result: "error",
         error: "missing_environment_variables",
         missing: missingConfiguration,
@@ -52,15 +51,7 @@ export async function GET(request: Request) {
     expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
   });
   if (error) {
-    console.error(
-      JSON.stringify({
-        scope: "google_calendar",
-        operation: "oauth_state_create",
-        teacherId: teacher.id,
-        result: "error",
-        error: "state_store_error",
-      }),
-    );
+    logServerError("google_oauth_state_create", error);
     return noStoreRedirect(request, "/app/ustawienia/integracje?google=error");
   }
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");

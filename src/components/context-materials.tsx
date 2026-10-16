@@ -22,6 +22,7 @@ import type {
   GroupMaterialsData,
   StudentMaterialsData,
 } from "@/lib/context-materials";
+import { composeStudentResourceContext } from "@/lib/context-materials";
 import type {
   MaterialLibraryItem,
   MaterialsLibraryData,
@@ -29,6 +30,10 @@ import type {
 } from "@/lib/materials";
 import { useAppUi } from "./app-ui-context";
 import { EmptyState } from "./ui/empty-state";
+import type { StudentHomeworkItem } from "@/lib/homework";
+import { homeworkStatusLabels } from "@/lib/homework";
+import { formatDay } from "@/lib/format";
+import Link from "next/link";
 
 type Props = {
   kind: "student" | "group";
@@ -196,6 +201,136 @@ export function ContextMaterials({
         }
         onOpen={setPreview}
       />
+      <MaterialPreview
+        material={preview}
+        onOpenChange={(open) => !open && setPreview(null)}
+      />
+    </>
+  );
+}
+
+export function StudentResourceOverview({
+  studentId,
+  teacherId,
+  timezone,
+  homeworks,
+}: {
+  studentId: string;
+  teacherId: string;
+  timezone: string;
+  homeworks: StudentHomeworkItem[];
+}) {
+  const [preview, setPreview] = useState<MaterialLibraryItem | null>(null);
+  const query = useQuery({
+    queryKey: ["context-materials", teacherId, "student", studentId],
+    queryFn: ({ signal }) =>
+      request<StudentMaterialsData>(
+        `/api/students/${encodeURIComponent(studentId)}/materials`,
+        { signal, cache: "no-store" },
+      ),
+    staleTime: 30_000,
+  });
+  const resources = useMemo(() => {
+    if (!query.data) return [];
+    return composeStudentResourceContext(query.data).map((item) => ({
+      ...item,
+      provenance: item.sources.map((source) => {
+        if (source.kind === "student") return "Materiał ucznia";
+        if (source.kind === "group") {
+          return source.group
+            ? `Grupa: ${source.group.name}`
+            : "Materiał grupy";
+        }
+        return `Lekcja ${formatDay(source.lesson.startsAt, timezone)}${source.lesson.topic ? ` · ${source.lesson.topic}` : ""}`;
+      }),
+    }));
+  }, [query.data, timezone]);
+  const visibleHomework = homeworks
+    .filter((item) =>
+      ["assigned", "completed", "reviewed"].includes(item.status),
+    )
+    .slice(0, 4);
+
+  return (
+    <>
+      <section
+        className="student-resource-overview panel"
+        aria-labelledby="student-resource-overview-title"
+      >
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Kontekst zasobów</p>
+            <h2 id="student-resource-overview-title">
+              Ostatnie materiały i zadania
+            </h2>
+          </div>
+          <FileText size={21} aria-hidden="true" />
+        </div>
+        <div className="student-resource-overview__grid">
+          <div>
+            <h3>Materiały</h3>
+            {query.isPending ? (
+              <p className="memory-section-empty">Wczytywanie materiałów…</p>
+            ) : query.isError ? (
+              <p className="memory-section-empty">
+                Nie udało się wczytać kontekstu materiałów.
+              </p>
+            ) : resources.length ? (
+              <div className="student-resource-overview__list">
+                {resources.map(({ material, provenance }) => (
+                  <button
+                    type="button"
+                    key={material.id}
+                    onClick={() => setPreview(material)}
+                  >
+                    <span>
+                      <strong>{material.title}</strong>
+                      <small>
+                        {typeLabels[material.type]}
+                        {material.archived ? " · Archiwalny" : ""}
+                      </small>
+                    </span>
+                    <em>{provenance.join(" · ")}</em>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="memory-section-empty">
+                Brak ostatnich lub przypisanych materiałów.
+              </p>
+            )}
+          </div>
+          <div>
+            <h3>Praca domowa</h3>
+            {visibleHomework.length ? (
+              <div className="student-resource-overview__homework">
+                {visibleHomework.map((item) => (
+                  <Link
+                    href={`/app/lekcje/${item.sourceLessonId}`}
+                    key={item.id}
+                  >
+                    <span>
+                      <strong>{item.title}</strong>
+                      <small>
+                        {item.overdue
+                          ? "Po terminie"
+                          : item.status === "completed"
+                            ? "Do sprawdzenia"
+                            : homeworkStatusLabels[item.status]}
+                      </small>
+                    </span>
+                    <ExternalLink size={14} aria-hidden="true" />
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="memory-section-empty">
+                Brak oczekujących lub sprawdzonych zadań.
+              </p>
+            )}
+          </div>
+        </div>
+      </section>
       <MaterialPreview
         material={preview}
         onOpenChange={(open) => !open && setPreview(null)}

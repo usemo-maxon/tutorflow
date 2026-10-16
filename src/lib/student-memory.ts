@@ -3,6 +3,7 @@ import type {
   LessonStatus,
   StudentOutcomeDifficulty,
 } from "./domain";
+import type { StudentHomeworkItem } from "./homework";
 
 export const STUDENT_MEMORY_RECENT_LESSON_LIMIT = 5;
 export const STUDENT_MEMORY_ATTENDANCE_LESSON_LIMIT = 10;
@@ -58,6 +59,7 @@ export interface StudentMemory {
     sourceLessonId: string;
   };
   homework?: StudentMemoryHomework;
+  homeworks?: StudentHomeworkItem[];
   attendance: {
     recentPresent: number;
     recentAbsent: number;
@@ -116,6 +118,7 @@ export interface BuildStudentMemoryInput {
     topic?: string | null;
   };
   generatedAt: string;
+  homeworks?: StudentHomeworkItem[];
 }
 
 export function buildStudentMemory({
@@ -124,6 +127,7 @@ export function buildStudentMemory({
   attendanceLessons,
   upcomingLesson,
   generatedAt,
+  homeworks = [],
 }: BuildStudentMemoryInput): StudentMemory {
   const recentLessons = historicalLessons
     .filter((lesson) => lesson.status === "completed")
@@ -138,6 +142,9 @@ export function buildStudentMemory({
     (lesson) => lesson.outcome?.difficultyLevel,
   );
   const homeworkLesson = recentLessons.find((lesson) => lesson.homework);
+  const currentHomework = homeworks.find(
+    (item) => item.status === "assigned" || item.status === "completed",
+  );
 
   const attendance = attendanceLessons
     .filter(
@@ -199,11 +206,25 @@ export function buildStudentMemory({
             sourceLessonId: difficultyLesson.lessonId,
           }
         : undefined,
-    homework: homeworkLesson?.homework && {
-      ...homeworkLesson.homework,
-      sourceLessonId: homeworkLesson.lessonId,
-      sourceLessonStartsAt: homeworkLesson.startsAt,
-    },
+    homework: currentHomework
+      ? {
+          title: currentHomework.title,
+          dueAt: currentHomework.dueAt,
+          status:
+            currentHomework.status === "completed"
+              ? "completed"
+              : currentHomework.status === "assigned"
+                ? "assigned"
+                : "cancelled",
+          sourceLessonId: currentHomework.sourceLessonId,
+          sourceLessonStartsAt: currentHomework.sourceLessonStartsAt,
+        }
+      : homeworkLesson?.homework && {
+          ...homeworkLesson.homework,
+          sourceLessonId: homeworkLesson.lessonId,
+          sourceLessonStartsAt: homeworkLesson.startsAt,
+        },
+    homeworks,
     attendance,
     upcomingLesson: upcomingLesson
       ? {

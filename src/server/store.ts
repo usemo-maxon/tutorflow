@@ -113,6 +113,7 @@ export interface StoreShape {
   contacts: StudentContactRecord[];
   groups: StudentGroupRecord[];
   lessons: LessonRecord[];
+  lessonReuseImportKeys?: string[];
   lessonStudentOutcomes?: LessonStudentOutcomeRecord[];
   studentStatImports: StudentStatImportRecord[];
   availability: AvailabilityRecord[];
@@ -143,6 +144,7 @@ async function ensureStore(): Promise<void> {
       contacts: [],
       groups: [],
       lessons: [],
+      lessonReuseImportKeys: [],
       lessonStudentOutcomes: [],
       studentStatImports: [],
       availability: [],

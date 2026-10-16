@@ -1,6 +1,7 @@
 import type { StudentOutcomeDifficulty } from "./domain";
 import type { LessonWorkspaceData } from "./lesson-workspace";
 import type { StudentMemory } from "./student-memory";
+import type { HomeworkMaterial, HomeworkStatus } from "./homework";
 
 export interface NextLessonParticipantBriefing {
   student: {
@@ -24,6 +25,9 @@ export interface NextLessonParticipantBriefing {
     title: string;
     dueAt?: string;
     sourceLessonId: string;
+    status?: HomeworkStatus;
+    feedback?: string;
+    materials?: HomeworkMaterial[];
   };
   nextStep?: {
     text: string;
@@ -74,7 +78,51 @@ export function composeNextLessonBriefing(
           todayGoal,
         };
       }
-      const latest = memory.latestLesson;
+      const latest =
+        memory.latestLesson &&
+        isEarlierLesson(
+          memory.latestLesson.lessonId,
+          memory.latestLesson.startsAt,
+          workspace.lesson.id,
+          workspace.lesson.startsAt,
+        )
+          ? memory.latestLesson
+          : undefined;
+      const briefingHomework = memory.homeworks?.find(
+        (homework) =>
+          (homework.status === "completed" || homework.status === "assigned") &&
+          isEarlierLesson(
+            homework.sourceLessonId,
+            homework.sourceLessonStartsAt,
+            workspace.lesson.id,
+            workspace.lesson.startsAt,
+          ),
+      );
+      const fallbackHomework =
+        memory.homework &&
+        isEarlierLesson(
+          memory.homework.sourceLessonId,
+          memory.homework.sourceLessonStartsAt,
+          workspace.lesson.id,
+          workspace.lesson.startsAt,
+        )
+          ? memory.homework
+          : undefined;
+      const nextStep =
+        memory.currentNextStep &&
+        isEarlierLesson(
+          memory.currentNextStep.sourceLessonId,
+          memory.currentNextStep.sourceLessonStartsAt,
+          workspace.lesson.id,
+          workspace.lesson.startsAt,
+        )
+          ? memory.currentNextStep
+          : undefined;
+      const difficulty =
+        memory.currentDifficulty &&
+        memory.currentDifficulty.sourceLessonId !== workspace.lesson.id
+          ? memory.currentDifficulty
+          : undefined;
       return {
         student: {
           id: memory.student.id,
@@ -90,24 +138,38 @@ export function composeNextLessonBriefing(
               progressSummary: latest.outcome?.progressSummary,
             }
           : undefined,
-        difficulty: memory.currentDifficulty
+        difficulty: difficulty
           ? {
-              level: memory.currentDifficulty.level,
-              note: memory.currentDifficulty.note,
-              sourceLessonId: memory.currentDifficulty.sourceLessonId,
+              level: difficulty.level,
+              note: difficulty.note,
+              sourceLessonId: difficulty.sourceLessonId,
             }
           : undefined,
-        homework: memory.homework
+        homework: briefingHomework
           ? {
-              title: memory.homework.title,
-              dueAt: memory.homework.dueAt,
-              sourceLessonId: memory.homework.sourceLessonId,
+              title: briefingHomework.title,
+              dueAt: briefingHomework.dueAt,
+              sourceLessonId: briefingHomework.sourceLessonId,
+              status: briefingHomework.status,
+              feedback: briefingHomework.feedback,
+              materials: briefingHomework.materials,
             }
-          : undefined,
-        nextStep: memory.currentNextStep
+          : fallbackHomework
+            ? {
+                title: fallbackHomework.title,
+                dueAt: fallbackHomework.dueAt,
+                sourceLessonId: fallbackHomework.sourceLessonId,
+                status:
+                  fallbackHomework.status === "completed"
+                    ? "completed"
+                    : "assigned",
+                materials: [],
+              }
+            : undefined,
+        nextStep: nextStep
           ? {
-              text: memory.currentNextStep.text,
-              sourceLessonId: memory.currentNextStep.sourceLessonId,
+              text: nextStep.text,
+              sourceLessonId: nextStep.sourceLessonId,
             }
           : undefined,
         todayGoal,
@@ -115,6 +177,15 @@ export function composeNextLessonBriefing(
     }),
     generatedAt,
   };
+}
+
+function isEarlierLesson(
+  sourceLessonId: string,
+  sourceStartsAt: string,
+  targetLessonId: string,
+  targetStartsAt: string,
+) {
+  return sourceLessonId !== targetLessonId && sourceStartsAt < targetStartsAt;
 }
 
 function optionalText(value: string | null | undefined) {

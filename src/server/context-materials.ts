@@ -3,6 +3,7 @@ import "server-only";
 import type {
   AssignedMaterial,
   GroupMaterialsData,
+  RecentLessonMaterial,
   StudentMaterialsData,
 } from "@/lib/context-materials";
 import type { MaterialLibraryItem } from "@/lib/materials";
@@ -29,6 +30,15 @@ type MaterialRow = {
 };
 type AssignmentRow = {
   assigned_at: string;
+  material: MaterialRow | MaterialRow[] | null;
+};
+type RecentLessonRow = {
+  id: string;
+  starts_at: string;
+  title: string | null;
+};
+type LessonMaterialRow = {
+  lesson_id: string;
   material: MaterialRow | MaterialRow[] | null;
 };
 
@@ -64,53 +74,79 @@ async function context(teacherId: string, mutation = false) {
   };
 }
 
-const materialSelect =
-  "assigned_at,material:materials!inner(id,title,description,type,external_url,text_content,subject,level,original_filename,mime_type,file_size_bytes,archived_at,created_at,updated_at,folder_id)";
+const materialFields =
+  "id,title,description,type,external_url,text_content,subject,level,original_filename,mime_type,file_size_bytes,archived_at,created_at,updated_at,folder_id";
+const materialSelect = `assigned_at,material:materials!inner(${materialFields})`;
 
 export async function getStudentMaterials(
   teacherId: string,
   studentId: string,
 ): Promise<StudentMaterialsData> {
   const { supabase, workspaceId, readOnly } = await context(teacherId);
-  const [student, direct, memberships] = await Promise.all([
-    supabase
-      .from("students")
-      .select("id")
-      .eq("workspace_id", workspaceId)
-      .eq("id", studentId)
-      .maybeSingle(),
-    supabase
-      .from("student_material_assignments")
-      .select(materialSelect)
-      .eq("workspace_id", workspaceId)
-      .eq("student_id", studentId)
-      .order("assigned_at", { ascending: false }),
-    supabase
-      .from("group_members")
-      .select("group_id,group:groups(id,name)")
-      .eq("workspace_id", workspaceId)
-      .eq("student_id", studentId)
-      .eq("status", "active")
-      .is("left_at", null),
-  ]);
-  if (student.error || direct.error || memberships.error) databaseFailure();
+  const [student, direct, memberships, recentLessonsResult] = await Promise.all(
+    [
+      supabase
+        .from("students")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("id", studentId)
+        .maybeSingle(),
+      supabase
+        .from("student_material_assignments")
+        .select(materialSelect)
+        .eq("workspace_id", workspaceId)
+        .eq("student_id", studentId)
+        .order("assigned_at", { ascending: false }),
+      supabase
+        .from("group_members")
+        .select("group_id,group:groups(id,name)")
+        .eq("workspace_id", workspaceId)
+        .eq("student_id", studentId)
+        .eq("status", "active")
+        .is("left_at", null),
+      supabase
+        .from("lessons")
+        .select("id,starts_at,title,lesson_participants!inner(student_id)")
+        .eq("workspace_id", workspaceId)
+        .eq("lesson_participants.student_id", studentId)
+        .eq("status", "completed")
+        .order("starts_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(5),
+    ],
+  );
+  if (
+    student.error ||
+    direct.error ||
+    memberships.error ||
+    recentLessonsResult.error
+  )
+    databaseFailure();
   if (!student.data) notFound();
 
   const groupRows = memberships.data ?? [];
   const groupIds = groupRows.map((item) => item.group_id);
-  let inherited: { data: unknown[] | null; error: unknown } = {
-    data: [],
-    error: null,
-  };
-  if (groupIds.length) {
-    inherited = await supabase
-      .from("group_material_assignments")
-      .select(`group_id,${materialSelect}`)
-      .eq("workspace_id", workspaceId)
-      .in("group_id", groupIds)
-      .order("assigned_at", { ascending: false });
-  }
-  if (inherited.error) databaseFailure();
+  const recentLessons = (recentLessonsResult.data ??
+    []) as unknown as RecentLessonRow[];
+  const recentLessonIds = recentLessons.map((lesson) => lesson.id);
+  const [inherited, recentLinks] = await Promise.all([
+    groupIds.length
+      ? supabase
+          .from("group_material_assignments")
+          .select(`group_id,${materialSelect}`)
+          .eq("workspace_id", workspaceId)
+          .in("group_id", groupIds)
+          .order("assigned_at", { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+    recentLessonIds.length
+      ? supabase
+          .from("lesson_materials")
+          .select(`lesson_id,material:materials!inner(${materialFields})`)
+          .eq("workspace_id", workspaceId)
+          .in("lesson_id", recentLessonIds)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (inherited.error || recentLinks.error) databaseFailure();
   const groups = new Map(
     groupRows.map((item) => {
       const group = first(
@@ -134,6 +170,10 @@ export async function getStudentMaterials(
       const group = groups.get(row.group_id);
       return group ? { ...material, group } : material;
     }),
+    recentLessons: recentLessonMaterialViews(
+      recentLessons,
+      (recentLinks.data ?? []) as unknown as LessonMaterialRow[],
+    ),
     readOnly,
   };
 }
@@ -236,6 +276,47 @@ function assignmentView(
   const material = first(row.material);
   if (!material) databaseFailure();
   return { ...materialView(material), assignedAt: row.assigned_at, source };
+}
+
+function recentLessonMaterialViews(
+  lessons: RecentLessonRow[],
+  links: LessonMaterialRow[],
+): RecentLessonMaterial[] {
+  const lessonById = new Map(lessons.map((lesson) => [lesson.id, lesson]));
+  const materials = new Map<string, RecentLessonMaterial>();
+  for (const link of links) {
+    const material = first(link.material);
+    const lesson = lessonById.get(link.lesson_id);
+    if (!material || !lesson) continue;
+    const source = {
+      id: lesson.id,
+      startsAt: lesson.starts_at,
+      topic: lesson.title?.trim() || undefined,
+    };
+    const existing = materials.get(material.id);
+    if (existing) {
+      if (!existing.lessons.some((item) => item.id === lesson.id)) {
+        existing.lessons.push(source);
+      }
+      continue;
+    }
+    materials.set(material.id, {
+      ...materialView(material),
+      lessons: [source],
+    });
+  }
+  return [...materials.values()]
+    .map((material) => ({
+      ...material,
+      lessons: material.lessons.sort((left, right) =>
+        right.startsAt.localeCompare(left.startsAt),
+      ),
+    }))
+    .sort((left, right) =>
+      (right.lessons[0]?.startsAt ?? "").localeCompare(
+        left.lessons[0]?.startsAt ?? "",
+      ),
+    );
 }
 
 function first<T>(value: T | T[] | null): T | null {
