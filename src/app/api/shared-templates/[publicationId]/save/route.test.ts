@@ -17,6 +17,7 @@ const context = {
     publicationId: "11000000-0000-4000-8000-000000000001",
   }),
 };
+const copyId = "22000000-0000-4000-8000-000000000001";
 
 describe("save shared template route", () => {
   beforeEach(() => {
@@ -31,6 +32,8 @@ describe("save shared template route", () => {
     const response = await POST(
       new Request("https://easy4tutor.pl/api/shared-templates/id/save", {
         method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ copyId }),
       }),
       context,
     );
@@ -38,6 +41,7 @@ describe("save shared template route", () => {
     expect(mocks.saveSharedTemplate).toHaveBeenCalledWith(
       "11111111-1111-4111-8111-111111111111",
       "11000000-0000-4000-8000-000000000001",
+      copyId,
     );
   });
 
@@ -45,11 +49,41 @@ describe("save shared template route", () => {
     const response = await POST(
       new Request("https://easy4tutor.pl/api/shared-templates/id/save", {
         method: "POST",
-        headers: { "sec-fetch-site": "cross-site" },
+        headers: {
+          "content-type": "application/json",
+          "sec-fetch-site": "cross-site",
+        },
+        body: JSON.stringify({ copyId }),
       }),
       context,
     );
     expect(response.status).toBe(403);
+    expect(mocks.saveSharedTemplate).not.toHaveBeenCalled();
+  });
+
+  it("requires an idempotency key for retry-safe copies", async () => {
+    const response = await POST(
+      new Request("https://easy4tutor.pl/api/shared-templates/id/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+      context,
+    );
+    expect(response.status).toBe(422);
+    expect(mocks.saveSharedTemplate).not.toHaveBeenCalled();
+  });
+
+  it("treats malformed JSON as a validation error", async () => {
+    const response = await POST(
+      new Request("https://easy4tutor.pl/api/shared-templates/id/save", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{",
+      }),
+      context,
+    );
+    expect(response.status).toBe(422);
     expect(mocks.saveSharedTemplate).not.toHaveBeenCalled();
   });
 });

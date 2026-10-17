@@ -1738,6 +1738,18 @@ function databaseFailure(error: unknown): never {
   )
     lifecycleConflict();
   if (message.includes("REUSE_SOURCE_UNAVAILABLE")) reuseSourceUnavailable();
+  if (/template is unavailable/i.test(message)) {
+    throw new ApiFailure(404, {
+      code: "TEMPLATE_UNAVAILABLE",
+      message: "Ten szablon nie jest już dostępny. Wybierz inną kopię.",
+    });
+  }
+  if (/lesson is unavailable/i.test(message)) {
+    throw new ApiFailure(409, {
+      code: "LESSON_UNAVAILABLE",
+      message: "Tej lekcji nie można już przygotować z użyciem szablonu.",
+    });
+  }
   if (message.includes("STALE")) staleWrite();
   throw error;
 }

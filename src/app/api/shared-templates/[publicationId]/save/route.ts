@@ -5,6 +5,10 @@ import { saveSharedTemplate } from "@/server/shared-templates";
 
 export const runtime = "nodejs";
 
+const SaveSharedTemplateSchema = z.object({
+  copyId: z.uuid(),
+});
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ publicationId: string }> },
@@ -23,9 +27,20 @@ export async function POST(
         code: "VALIDATION_ERROR",
         message: "Nieprawidłowy identyfikator szablonu.",
       });
-    return Response.json(await saveSharedTemplate(teacherId, parsed.data), {
-      status: 201,
-    });
+    const input = SaveSharedTemplateSchema.safeParse(
+      await request.json().catch(() => null),
+    );
+    if (!input.success)
+      throw new ApiFailure(422, {
+        code: "VALIDATION_ERROR",
+        message: "Nie udało się przygotować bezpiecznej kopii szablonu.",
+      });
+    return Response.json(
+      await saveSharedTemplate(teacherId, parsed.data, input.data.copyId),
+      {
+        status: 201,
+      },
+    );
   } catch (error) {
     return errorResponse(error);
   }

@@ -2,10 +2,13 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import {
+  AlertTriangle,
   ArrowLeft,
   BadgeCheck,
   BookCopy,
   BookOpenCheck,
+  CalendarDays,
+  CheckCircle2,
   Clock3,
   Flag,
   FileX2,
@@ -21,13 +24,30 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClientApiError } from "@/lib/api-client";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import {
+  ClientApiError,
+  fetchAppData,
+  mutateLessonWorkspace,
+} from "@/lib/api-client";
+import type { AppData, Lesson } from "@/lib/domain";
 import type {
   SharedTemplate,
   SharedTemplatesData,
 } from "@/lib/shared-templates";
-import { discoverSharedTemplates } from "@/lib/shared-templates";
+import {
+  discoverSharedTemplates,
+  lessonHasExistingPreparation,
+  sharedTemplateLessonLabel,
+  upcomingTemplateLessons,
+} from "@/lib/shared-templates";
 import {
   reportReasonLabel,
   reportReasons,
@@ -60,6 +80,15 @@ export function SharedTemplatesPage() {
   const [selected, setSelected] = useState<SharedTemplate | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedTemplateId, setSavedTemplateId] = useState<string | null>(null);
+  const [lessonTemplateToUse, setLessonTemplateToUse] = useState<{
+    id: string;
+    title: string;
+  } | null>(null);
+  const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const saveAttemptRef = useRef<{
+    publicationId: string;
+    copyId: string;
+  } | null>(null);
 
   const query = useMemo(() => {
     const next = new URLSearchParams();
@@ -109,15 +138,25 @@ export function SharedTemplatesPage() {
   }, [query, refresh, router, showError]);
 
   async function save(template: SharedTemplate) {
+    if (saving) return;
+    const attempt =
+      saveAttemptRef.current?.publicationId === template.id
+        ? saveAttemptRef.current
+        : { publicationId: template.id, copyId: crypto.randomUUID() };
+    saveAttemptRef.current = attempt;
     setSaving(true);
     setSavedTemplateId(null);
     try {
       const result = await api<{ templateId: string }>(
         `/api/shared-templates/${template.id}/save`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ copyId: attempt.copyId }),
+        },
       );
       setSavedTemplateId(result.templateId);
-      showToast({ message: "Szablon zapisano w Twojej prywatnej bibliotece." });
+      showToast({ message: "Szablon zapisany w Twojej bibliotece!" });
     } catch (error) {
       showError(error);
     } finally {
@@ -133,8 +172,11 @@ export function SharedTemplatesPage() {
         body: JSON.stringify({ favorite: nextFavorite }),
       });
       const refreshed = await refresh();
-      setSelected(
-        refreshed.templates.find((item) => item.id === template.id) ?? null,
+      const updated = refreshed.templates.find(
+        (item) => item.id === template.id,
+      );
+      setSelected((current) =>
+        current?.id === template.id ? (updated ?? null) : current,
       );
       showToast({
         message: nextFavorite
@@ -285,7 +327,9 @@ export function SharedTemplatesPage() {
               <SharedTemplateCard
                 key={template.id}
                 template={template}
-                onOpen={() => {
+                onOpen={(trigger) => {
+                  previewTriggerRef.current = trigger;
+                  saveAttemptRef.current = null;
                   setSavedTemplateId(null);
                   setSelected(template);
                 }}
@@ -341,8 +385,16 @@ export function SharedTemplatesPage() {
         readOnly={Boolean(data?.readOnly)}
         saving={saving}
         savedTemplateId={savedTemplateId}
+        restoreFocusRef={previewTriggerRef}
         onClose={() => setSelected(null)}
         onSave={save}
+        onSaveAnother={(template) => {
+          saveAttemptRef.current = null;
+          void save(template);
+        }}
+        onUse={(templateId, title) => {
+          setLessonTemplateToUse({ id: templateId, title });
+        }}
         onFavorite={(template, nextFavorite) =>
           favorite(template, nextFavorite)
         }
@@ -352,6 +404,18 @@ export function SharedTemplatesPage() {
           })
         }
       />
+      {lessonTemplateToUse && (
+        <UseTemplateInLessonDialog
+          template={lessonTemplateToUse}
+          onClose={() => setLessonTemplateToUse(null)}
+          onApplied={(lessonId) => {
+            setSelected(null);
+            setLessonTemplateToUse(null);
+            showToast({ message: "Szablon dodano do planu lekcji." });
+            router.push(`/app/lekcje/${lessonId}`);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -362,14 +426,14 @@ function SharedTemplateCard({
   onFavorite,
 }: {
   template: SharedTemplate;
-  onOpen: () => void;
+  onOpen: (trigger: HTMLButtonElement) => void;
   onFavorite: () => void;
 }) {
   return (
     <article className="shared-template-card">
       <button
         className="shared-template-card__open"
-        onClick={onOpen}
+        onClick={(event) => onOpen(event.currentTarget)}
         aria-label={`Podejrzyj: ${template.title}`}
       />
       <button
@@ -428,8 +492,11 @@ function SharedTemplatePreview({
   readOnly,
   saving,
   savedTemplateId,
+  restoreFocusRef,
   onClose,
   onSave,
+  onSaveAnother,
+  onUse,
   onFavorite,
   onReported,
 }: {
@@ -437,8 +504,11 @@ function SharedTemplatePreview({
   readOnly: boolean;
   saving: boolean;
   savedTemplateId: string | null;
+  restoreFocusRef: RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onSave: (template: SharedTemplate) => Promise<void>;
+  onSaveAnother: (template: SharedTemplate) => void;
+  onUse: (templateId: string, title: string) => void;
   onFavorite: (template: SharedTemplate, favorite: boolean) => Promise<void>;
   onReported: () => void;
 }) {
@@ -473,7 +543,13 @@ function SharedTemplatePreview({
     <Dialog.Root open onOpenChange={(open) => !open && !saving && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="dialog-overlay" />
-        <Dialog.Content className="dialog-content shared-template-preview">
+        <Dialog.Content
+          className="dialog-content shared-template-preview"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            restoreFocusRef.current?.focus();
+          }}
+        >
           <header className="dialog-header shared-template-preview__header">
             <div>
               <span
@@ -521,9 +597,14 @@ function SharedTemplatePreview({
               </div>
               <div>
                 <dt>Autor / źródło</dt>
-                <dd>Autor: {template.authorName}</dd>
+                <dd>{template.authorName}</dd>
               </div>
             </dl>
+
+            <p className="shared-template-attribution">
+              <ShieldCheck size={16} /> Źródło kopii:{" "}
+              {template.sourceAttribution}
+            </p>
 
             {template.adoptionCount > 0 && (
               <p className="shared-template-adoption">
@@ -537,6 +618,15 @@ function SharedTemplatePreview({
                 <ShieldCheck size={18} /> Cel lekcji
               </span>
               <p>{template.objective}</p>
+            </section>
+
+            <section className="shared-template-reusable">
+              <span className="eyebrow">Treść wielokrotnego użytku</span>
+              <p>
+                Prywatna kopia zachowa cel lekcji, kolejność sekcji, pełne
+                instrukcje oraz szacowany czas każdej części. Potem możesz ją
+                niezależnie edytować w swojej bibliotece.
+              </p>
             </section>
 
             <section>
@@ -654,10 +744,17 @@ function SharedTemplatePreview({
           </div>
 
           <footer className="dialog-footer shared-template-preview__footer">
-            <p>
-              <BookCopy size={16} />
-              Kopia będzie prywatna i niezależna od źródła.
-            </p>
+            {savedTemplateId ? (
+              <div className="shared-template-save-success" role="status">
+                <CheckCircle2 size={18} />
+                <strong>Szablon zapisany w Twojej bibliotece!</strong>
+              </div>
+            ) : (
+              <p>
+                <BookCopy size={16} />
+                Kopia będzie prywatna i niezależna od źródła.
+              </p>
+            )}
             <div className="shared-template-preview__secondary-actions">
               <button
                 className={`button button--quiet${template.isFavorite ? " is-active" : ""}`}
@@ -675,35 +772,269 @@ function SharedTemplatePreview({
               >
                 <Flag size={16} /> Zgłoś szablon
               </button>
+              {savedTemplateId && !readOnly && (
+                <button
+                  className="button button--quiet"
+                  disabled={saving}
+                  onClick={() => onSaveAnother(template)}
+                >
+                  <BookCopy size={16} /> Zapisz kolejną kopię
+                </button>
+              )}
             </div>
             {savedTemplateId ? (
-              <Link
-                className="button button--primary"
-                href="/app/materialy/szablony"
-              >
-                <BookOpenCheck size={17} /> Otwórz moje szablony
-              </Link>
+              <div className="shared-template-preview__next-actions">
+                <Link
+                  className="button button--secondary"
+                  href={`/app/materialy/szablony?template=${encodeURIComponent(savedTemplateId)}`}
+                >
+                  <BookOpenCheck size={17} /> Otwórz szablon
+                </Link>
+                <button
+                  className="button button--primary"
+                  onClick={() => onUse(savedTemplateId, template.title)}
+                >
+                  <CalendarDays size={17} /> Użyj w lekcji
+                </button>
+              </div>
             ) : (
-              <button
-                className="button button--primary"
-                disabled={readOnly || saving}
-                title={
-                  readOnly ? "Konto jest w trybie tylko do odczytu" : undefined
-                }
-                onClick={() => void onSave(template)}
-              >
-                {saving ? (
-                  <LoaderCircle className="spin" size={17} />
-                ) : (
-                  <BookCopy size={17} />
+              <div className="shared-template-preview__save-action">
+                {readOnly && (
+                  <small role="status">
+                    Konto jest w trybie tylko do odczytu — zapisywanie jest
+                    wyłączone.
+                  </small>
                 )}
-                {saving ? "Zapisywanie…" : "Zapisz do moich szablonów"}
-              </button>
+                <button
+                  className="button button--primary"
+                  disabled={readOnly || saving}
+                  title={
+                    readOnly
+                      ? "Konto jest w trybie tylko do odczytu"
+                      : undefined
+                  }
+                  onClick={() => void onSave(template)}
+                >
+                  {saving ? (
+                    <LoaderCircle className="spin" size={17} />
+                  ) : (
+                    <BookCopy size={17} />
+                  )}
+                  {saving ? "Zapisywanie…" : "Zapisz do moich szablonów"}
+                </button>
+              </div>
             )}
           </footer>
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>
+  );
+}
+
+function UseTemplateInLessonDialog({
+  template,
+  onClose,
+  onApplied,
+}: {
+  template: { id: string; title: string };
+  onClose: () => void;
+  onApplied: (lessonId: string) => void;
+}) {
+  const [data, setData] = useState<AppData | null>(null);
+  const [selectedLessonId, setSelectedLessonId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const start = new Date();
+    const end = new Date(start.getTime() + 366 * 86_400_000);
+    void fetchAppData(
+      controller.signal,
+      { start: start.toISOString(), end: end.toISOString() },
+      "calendar",
+    )
+      .then(setData)
+      .catch((caught) => {
+        if (controller.signal.aborted) return;
+        setError(
+          caught instanceof ClientApiError
+            ? caught.data.message
+            : "Nie udało się wczytać nadchodzących lekcji.",
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [template]);
+
+  const lessons = data ? upcomingTemplateLessons(data.lessons) : [];
+  const selected = lessons.find((lesson) => lesson.id === selectedLessonId);
+
+  async function apply() {
+    if (!selected || applying) return;
+    setApplying(true);
+    setError("");
+    try {
+      await mutateLessonWorkspace(selected.id, {
+        type: "applyTemplate",
+        templateId: template.id,
+      });
+      onApplied(selected.id);
+    } catch (caught) {
+      setError(
+        caught instanceof ClientApiError
+          ? caught.data.message
+          : "Nie udało się dodać szablonu do lekcji. Spróbuj ponownie.",
+      );
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  return (
+    <Dialog.Root open onOpenChange={(open) => !open && !applying && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="dialog-overlay" />
+        <Dialog.Content className="dialog-content dialog-content--medium shared-template-lesson-picker">
+          <header className="dialog-header">
+            <div>
+              <span className="eyebrow">Użyj zapisanej kopii</span>
+              <Dialog.Title>Wybierz nadchodzącą lekcję</Dialog.Title>
+              <Dialog.Description>
+                Dodasz „{template.title}” do istniejącego planu. Obecna treść
+                lekcji pozostanie bez zmian.
+              </Dialog.Description>
+            </div>
+            <Dialog.Close
+              className="icon-button"
+              aria-label="Zamknij wybór lekcji"
+              disabled={applying}
+            >
+              <X size={19} />
+            </Dialog.Close>
+          </header>
+
+          <div className="shared-template-lesson-picker__scroll">
+            {loading ? (
+              <div
+                className="shared-template-lesson-picker__loading"
+                role="status"
+              >
+                <LoaderCircle className="spin" size={20} />
+                Wczytywanie nadchodzących lekcji…
+              </div>
+            ) : lessons.length ? (
+              <div
+                className="shared-template-lesson-picker__list"
+                aria-label="Nadchodzące lekcje"
+              >
+                {lessons.map((lesson) => (
+                  <LessonChoice
+                    key={lesson.id}
+                    lesson={lesson}
+                    data={data!}
+                    selected={lesson.id === selectedLessonId}
+                    onSelect={() => setSelectedLessonId(lesson.id)}
+                  />
+                ))}
+              </div>
+            ) : !error ? (
+              <div className="shared-template-lesson-picker__empty">
+                <CalendarDays size={28} />
+                <strong>Nie masz nadchodzącej lekcji</strong>
+                <p>
+                  Najpierw zaplanuj prawdziwe zajęcia, a potem wróć do zapisanej
+                  kopii szablonu.
+                </p>
+                <Link
+                  className="button button--secondary"
+                  href="/app/kalendarz?action=lesson"
+                >
+                  Zaplanuj lekcję
+                </Link>
+              </div>
+            ) : null}
+
+            {selected && lessonHasExistingPreparation(selected) && (
+              <div
+                className="shared-template-lesson-picker__notice"
+                role="status"
+              >
+                <AlertTriangle size={18} />
+                <span>
+                  <strong>Ta lekcja ma już przygotowaną treść.</strong> Cel,
+                  sekcje i bezpieczne odwołania zostaną dopisane. Nic nie
+                  zostanie zastąpione.
+                </span>
+              </div>
+            )}
+            {error && (
+              <p className="form-error" role="alert">
+                {error}
+              </p>
+            )}
+          </div>
+
+          <footer className="dialog-footer">
+            <Dialog.Close className="button button--quiet" disabled={applying}>
+              Anuluj
+            </Dialog.Close>
+            <button
+              className="button button--primary"
+              disabled={!selected || applying}
+              onClick={() => void apply()}
+            >
+              {applying ? (
+                <LoaderCircle className="spin" size={17} />
+              ) : (
+                <BookOpenCheck size={17} />
+              )}
+              {applying ? "Dodawanie…" : "Dodaj do lekcji i otwórz"}
+            </button>
+          </footer>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+function LessonChoice({
+  lesson,
+  data,
+  selected,
+  onSelect,
+}: {
+  lesson: Lesson;
+  data: AppData;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const formatter = new Intl.DateTimeFormat("pl-PL", {
+    timeZone: data.teacher.timezone,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return (
+    <button
+      type="button"
+      className={selected ? "is-selected" : undefined}
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
+      <span>
+        <strong>{sharedTemplateLessonLabel(lesson, data)}</strong>
+        <small>{lesson.subject || lesson.topic || "Temat do ustalenia"}</small>
+      </span>
+      <time dateTime={lesson.startsAt}>
+        {formatter.format(new Date(lesson.startsAt))}
+      </time>
+    </button>
   );
 }
 

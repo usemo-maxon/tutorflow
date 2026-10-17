@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { AppData, Lesson } from "./domain";
 
 export interface SharedTemplateSection {
   id: string;
@@ -116,4 +117,41 @@ export function filterSharedTemplates(
       .toLocaleLowerCase("pl")
       .includes(search);
   });
+}
+
+export function upcomingTemplateLessons(
+  lessons: Lesson[],
+  now = new Date(),
+): Lesson[] {
+  const timestamp = now.getTime();
+  return lessons
+    .filter(
+      (lesson) =>
+        lesson.status === "scheduled" &&
+        Date.parse(lesson.startsAt) >= timestamp,
+    )
+    .sort((left, right) => left.startsAt.localeCompare(right.startsAt));
+}
+
+export function lessonHasExistingPreparation(lesson: Lesson): boolean {
+  return Boolean(
+    lesson.planObjectives?.trim() ||
+    lesson.planItems.length ||
+    lesson.generalNotes.trim() ||
+    lesson.workspaceMaterials?.length,
+  );
+}
+
+export function sharedTemplateLessonLabel(
+  lesson: Lesson,
+  data: Pick<AppData, "students" | "groups">,
+): string {
+  const group = lesson.groupId
+    ? data.groups.find((item) => item.id === lesson.groupId)
+    : undefined;
+  if (group) return group.name;
+  const names = lesson.participantIds
+    .map((id) => data.students.find((student) => student.id === id)?.name)
+    .filter((name): name is string => Boolean(name));
+  return names.join(", ") || lesson.topic || "Lekcja";
 }

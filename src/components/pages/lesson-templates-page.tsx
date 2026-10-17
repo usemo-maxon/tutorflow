@@ -30,6 +30,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
 } from "react";
@@ -67,6 +68,8 @@ export function LessonTemplatesPage() {
   const [editor, setEditor] = useState<EditorValue>(
     params.get("action") === "new" ? "new" : null,
   );
+  const requestedTemplateId = useRef(params.get("template"));
+  const deepLinkHandled = useRef(false);
   const [archiveTarget, setArchiveTarget] = useState<LessonTemplate | null>(
     null,
   );
@@ -127,6 +130,25 @@ export function LessonTemplatesPage() {
       window.clearTimeout(timer);
     };
   }, [query, refresh, router, showError]);
+
+  useEffect(() => {
+    if (!data || deepLinkHandled.current || !requestedTemplateId.current)
+      return;
+    deepLinkHandled.current = true;
+    const requested = data.templates.find(
+      (template) => template.id === requestedTemplateId.current,
+    );
+    if (requested) {
+      setSelected(requested);
+      return;
+    }
+    showError(
+      new ClientApiError(404, {
+        code: "NOT_FOUND",
+        message: "Nie znaleziono zapisanego szablonu w Twojej bibliotece.",
+      }),
+    );
+  }, [data, showError]);
 
   async function archiveTemplate() {
     if (!archiveTarget) return;

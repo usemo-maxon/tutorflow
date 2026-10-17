@@ -1,5 +1,5 @@
 begin;
-select plan(23);
+select plan(26);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
 values
@@ -31,6 +31,17 @@ select is((select count(*)::integer from public.lesson_templates), 1, 'clone cre
 select is((select count(*)::integer from public.lesson_template_sections), 4, 'clone copies reusable lesson structure');
 select is((select source_attribution from public.lesson_templates limit 1), 'Oficjalny szablon Easy4Tutor', 'clone preserves optional source attribution');
 select is((select count(*)::integer from public.lesson_template_materials), 0, 'clone never copies private material attachments');
+select is(
+  public.save_shared_template_to_library('11000000-0000-4000-8000-000000000006', '1b000000-0000-4000-8000-000000000001'),
+  '1b000000-0000-4000-8000-000000000001'::uuid,
+  'caller-provided copy id creates a deliberate independent copy'
+);
+select is(
+  public.save_shared_template_to_library('11000000-0000-4000-8000-000000000006', '1b000000-0000-4000-8000-000000000001'),
+  '1b000000-0000-4000-8000-000000000001'::uuid,
+  'retry with the same copy id returns the existing copy'
+);
+select is((select count(*)::integer from public.lesson_templates), 2, 'retry does not create a duplicate private template');
 
 reset role;
 update public.shared_template_publications set title = 'Changed shared source' where id = '11000000-0000-4000-8000-000000000006';

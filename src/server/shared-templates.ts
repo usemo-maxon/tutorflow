@@ -132,6 +132,7 @@ export async function reportSharedTemplate(
 export async function saveSharedTemplate(
   teacherId: string,
   publicationId: string,
+  copyId: string,
 ) {
   const { supabase, readOnly } = await sharedTemplateContext(teacherId);
   if (readOnly)
@@ -141,7 +142,7 @@ export async function saveSharedTemplate(
     });
   const { data, error } = await supabase.rpc(
     "save_shared_template_to_library",
-    { target_publication_id: publicationId },
+    { target_publication_id: publicationId, target_copy_id: copyId },
   );
   if (error) databaseFailure(error);
   return { templateId: data as string };
