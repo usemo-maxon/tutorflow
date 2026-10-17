@@ -8,6 +8,7 @@ import {
 } from "node:crypto";
 import {
   GoogleApiError,
+  type GoogleCalendarListResource,
   type GoogleEventResource,
   googleApiRequest,
   googleEvent,
@@ -70,6 +71,19 @@ interface GoogleEventsPage {
   nextSyncToken?: string;
 }
 
+interface GoogleCalendarRow {
+  id: string;
+  connection_id: string;
+  calendar_id: string;
+  sync_token: string | null;
+  watch_channel_id: string | null;
+  watch_resource_id: string | null;
+  watch_token_hash: string | null;
+  watch_expires_at: string | null;
+  sync_enabled: boolean;
+  is_primary: boolean;
+}
+
 const reconnectMessage = "Google Calendar wymaga ponownego połączenia.";
 const syncFailureMessage =
   "Lekcja została zapisana, ale nie udało się zsynchronizować jej z Google Calendar.";
@@ -77,6 +91,12 @@ export const GOOGLE_OUTBOUND_BATCH_LIMIT = 20;
 export const GOOGLE_WEBHOOK_REPAIR_BATCH_LIMIT = 10;
 export const GOOGLE_WATCH_RENEWAL_WINDOW_MS = 48 * 60 * 60_000;
 const GOOGLE_MAINTENANCE_SCAN_LIMIT = 200;
+
+export function googleCalendarProviderId(
+  calendar: Pick<GoogleCalendarListResource, "id" | "primary">,
+): string {
+  return calendar.primary ? "primary" : calendar.id;
+}
 
 export function shouldRenewGoogleWatch(
   expiresAt: string | null,
@@ -269,6 +289,7 @@ async function responseJson<T>(response: Response): Promise<T> {
 
 async function listChanges(
   connection: ConnectionRow,
+  calendar: GoogleCalendarRow,
   token: string,
   forceFull: boolean,
 ): Promise<{
@@ -276,15 +297,15 @@ async function listChanges(
   syncToken: string;
   full: boolean;
 }> {
-  const full = forceFull || !connection.sync_token;
+  const full = forceFull || !calendar.sync_token;
   return collectGoogleEventPages(async (pageToken) => {
     const query = new URLSearchParams({
       singleEvents: "true",
       showDeleted: "true",
       maxResults: "2500",
     });
-    if (!full && connection.sync_token)
-      query.set("syncToken", connection.sync_token);
+    if (!full && calendar.sync_token)
+      query.set("syncToken", calendar.sync_token);
     if (full)
       query.set(
         "timeMin",
@@ -293,7 +314,7 @@ async function listChanges(
     if (pageToken) query.set("pageToken", pageToken);
     const response = await googleApiRequest(
       token,
-      `/calendars/${encodeURIComponent(connection.selected_calendar_id)}/events?${query}`,
+      `/calendars/${encodeURIComponent(calendar.calendar_id)}/events?${query}`,
     );
     if (response.status === 410)
       throw new GoogleApiError("GOOGLE_SYNC_TOKEN_EXPIRED", 410, false);
@@ -360,6 +381,7 @@ function eventOriginalStart(event: GoogleEventResource): string | null {
 
 function externalEventRow(
   connection: ConnectionRow,
+  calendarId: string,
   event: GoogleEventResource,
   syncRunId: string,
 ) {
@@ -371,9 +393,12 @@ function externalEventRow(
     connection_id: connection.id,
     workspace_id: connection.workspace_id,
     teacher_id: connection.teacher_id,
-    calendar_id: connection.selected_calendar_id,
+    calendar_id: calendarId,
     google_event_id: event.id,
     summary: (event.summary ?? "Zajęty").slice(0, 500),
+    description: event.description?.slice(0, 10_000) ?? null,
+    location: event.location?.slice(0, 2_000) ?? null,
+    html_link: event.htmlLink ?? null,
     starts_at: timing.startsAt,
     ends_at: timing.endsAt,
     start_date: timing.startDate,
@@ -574,6 +599,7 @@ async function reconcileGoogleEvent(
       .from("external_google_events")
       .delete()
       .eq("connection_id", connection.id)
+      .eq("calendar_id", connection.selected_calendar_id)
       .eq("google_event_id", event.id);
     return "linked";
   }
@@ -589,9 +615,17 @@ async function reconcileGoogleEvent(
   }
   const { error } = await supabase
     .from("external_google_events")
-    .upsert(externalEventRow(connection, event, syncRunId), {
-      onConflict: "connection_id,calendar_id,google_event_id",
-    });
+    .upsert(
+      externalEventRow(
+        connection,
+        connection.selected_calendar_id,
+        event,
+        syncRunId,
+      ),
+      {
+        onConflict: "connection_id,calendar_id,google_event_id",
+      },
+    );
   if (error) throw error;
   return "external";
 }
@@ -629,6 +663,103 @@ async function markConnectionFailure(
   }
 }
 
+async function refreshGoogleCalendarList(
+  connection: ConnectionRow,
+  token: string,
+): Promise<GoogleCalendarRow[]> {
+  const supabase = createSupabaseAdminClient();
+  let pageToken: string | undefined;
+  const calendars: GoogleCalendarListResource[] = [];
+  do {
+    const query = new URLSearchParams({
+      maxResults: "250",
+      showHidden: "true",
+      showDeleted: "false",
+      colorRgbFormat: "true",
+    });
+    if (pageToken) query.set("pageToken", pageToken);
+    let page: {
+      items?: GoogleCalendarListResource[];
+      nextPageToken?: string;
+    };
+    try {
+      page = await responseJson(
+        await googleApiRequest(token, `/users/me/calendarList?${query}`),
+      );
+    } catch (error) {
+      // Connections authorized before multi-calendar support do not yet have
+      // calendarList.readonly. Keep their existing primary-calendar sync alive
+      // until the user explicitly reconnects and grants the added scope.
+      if (!(error instanceof GoogleApiError) || error.status !== 403)
+        throw error;
+      const { data, error: fallbackError } = await supabase
+        .from("google_calendars")
+        .select(
+          "id,connection_id,calendar_id,sync_token,watch_channel_id,watch_resource_id,watch_token_hash,watch_expires_at,sync_enabled,is_primary",
+        )
+        .eq("connection_id", connection.id)
+        .eq("sync_enabled", true);
+      if (fallbackError) throw fallbackError;
+      return (data ?? []) as GoogleCalendarRow[];
+    }
+    calendars.push(
+      ...(page.items ?? []).filter((calendar) => !calendar.deleted),
+    );
+    pageToken = page.nextPageToken;
+  } while (pageToken);
+
+  for (const calendar of calendars) {
+    const canReadEvents = calendar.accessRole !== "freeBusyReader";
+    const providerCalendarId = googleCalendarProviderId(calendar);
+    const { error } = await supabase.from("google_calendars").upsert(
+      {
+        connection_id: connection.id,
+        workspace_id: connection.workspace_id,
+        teacher_id: connection.teacher_id,
+        calendar_id: providerCalendarId,
+        summary: calendar.summary || "Google Calendar",
+        description: calendar.description ?? null,
+        timezone: calendar.timeZone ?? null,
+        access_role: calendar.accessRole,
+        is_primary: Boolean(calendar.primary),
+        google_background_color: calendar.backgroundColor ?? null,
+        sync_enabled: canReadEvents,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "connection_id,calendar_id", ignoreDuplicates: false },
+    );
+    if (error) throw error;
+  }
+
+  const activeIds = calendars.map(googleCalendarProviderId);
+  const { data: knownCalendars, error: knownCalendarsError } = await supabase
+    .from("google_calendars")
+    .select("id,calendar_id")
+    .eq("connection_id", connection.id);
+  if (knownCalendarsError) throw knownCalendarsError;
+  for (const known of knownCalendars ?? []) {
+    if (activeIds.includes(known.calendar_id as string)) continue;
+    const { error } = await supabase
+      .from("google_calendars")
+      .update({
+        sync_enabled: false,
+        visible: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", known.id);
+    if (error) throw error;
+  }
+  const { data, error } = await supabase
+    .from("google_calendars")
+    .select(
+      "id,connection_id,calendar_id,sync_token,watch_channel_id,watch_resource_id,watch_token_hash,watch_expires_at,sync_enabled,is_primary",
+    )
+    .eq("connection_id", connection.id)
+    .eq("sync_enabled", true);
+  if (error) throw error;
+  return (data ?? []) as GoogleCalendarRow[];
+}
+
 export async function syncGoogleConnection(
   connectionId: string,
   forceFull = false,
@@ -650,30 +781,81 @@ export async function syncGoogleConnection(
       connection.teacher_id,
       connection.encrypted_credentials,
     );
-    const result = await recoverInvalidGoogleSyncToken(
-      () => listChanges(connection, token, forceFull),
-      async () => {
-        const { error } = await supabase
-          .from("integration_connections")
-          .update({ sync_token: null })
-          .eq("id", connection.id);
-        if (error) throw error;
-      },
-      () => listChanges({ ...connection, sync_token: null }, token, true),
-    );
-    const syncRunId = randomUUID();
+    const calendars = await refreshGoogleCalendarList(connection, token);
     const counters: Record<string, number> = {};
-    for (const event of result.events) {
-      const kind = await reconcileGoogleEvent(connection, event, syncRunId);
-      counters[kind] = (counters[kind] ?? 0) + 1;
-    }
-    if (result.full) {
-      const { error: cleanupError } = await supabase
-        .from("external_google_events")
-        .delete()
-        .eq("connection_id", connection.id)
-        .neq("last_seen_sync_id", syncRunId);
-      if (cleanupError) throw cleanupError;
+    let changed = 0;
+    let anyFull = false;
+    for (const calendar of calendars) {
+      const scopedConnection = {
+        ...connection,
+        selected_calendar_id: calendar.calendar_id,
+        sync_token: calendar.sync_token,
+      };
+      await supabase
+        .from("google_calendars")
+        .update({ sync_state: "syncing" })
+        .eq("id", calendar.id);
+      const result = await recoverInvalidGoogleSyncToken(
+        () => listChanges(scopedConnection, calendar, token, forceFull),
+        async () => {
+          const { error } = await supabase
+            .from("google_calendars")
+            .update({ sync_token: null })
+            .eq("id", calendar.id);
+          if (error) throw error;
+        },
+        () =>
+          listChanges(
+            scopedConnection,
+            { ...calendar, sync_token: null },
+            token,
+            true,
+          ),
+      );
+      const syncRunId = randomUUID();
+      for (const event of result.events) {
+        const kind = await reconcileGoogleEvent(
+          scopedConnection,
+          event,
+          syncRunId,
+        );
+        counters[kind] = (counters[kind] ?? 0) + 1;
+      }
+      if (result.full) {
+        const { error: cleanupError } = await supabase
+          .from("external_google_events")
+          .delete()
+          .eq("connection_id", connection.id)
+          .eq("calendar_id", calendar.calendar_id)
+          .neq("last_seen_sync_id", syncRunId);
+        if (cleanupError) throw cleanupError;
+      }
+      const calendarCompletedAt = new Date().toISOString();
+      const { error: calendarUpdateError } = await supabase
+        .from("google_calendars")
+        .update({
+          sync_token: result.syncToken,
+          sync_state: "idle",
+          last_error: null,
+          last_successful_sync_at: calendarCompletedAt,
+          updated_at: calendarCompletedAt,
+        })
+        .eq("id", calendar.id);
+      if (calendarUpdateError) throw calendarUpdateError;
+      changed += result.events.length;
+      anyFull ||= result.full;
+      if (shouldRenewGoogleWatch(calendar.watch_expires_at)) {
+        await registerSingleGoogleWatch(
+          connection.id,
+          calendar.calendar_id,
+        ).catch((watchError) =>
+          logSync("watch_register", connection.id, {
+            calendarId: calendar.calendar_id,
+            result: "error",
+            error: safeGoogleError(watchError),
+          }),
+        );
+      }
     }
     const completedAt = new Date().toISOString();
     const { error: updateError } = await supabase
@@ -681,7 +863,6 @@ export async function syncGoogleConnection(
       .update({
         status: "connected",
         sync_state: "idle",
-        sync_token: result.syncToken,
         last_successful_sync_at: completedAt,
         last_error: null,
         updated_at: completedAt,
@@ -689,13 +870,13 @@ export async function syncGoogleConnection(
       .eq("id", connection.id);
     if (updateError) throw updateError;
     logSync("reconcile", connection.id, {
-      calendarId: connection.selected_calendar_id,
-      changed: result.events.length,
-      full: result.full,
+      calendars: calendars.length,
+      changed,
+      full: anyFull,
       counters,
       result: "success",
     });
-    return { changed: result.events.length, full: result.full };
+    return { changed, full: anyFull };
   } catch (error) {
     await markConnectionFailure(connectionId, error);
     logSync("reconcile", connectionId, {
@@ -706,7 +887,10 @@ export async function syncGoogleConnection(
   }
 }
 
-export async function registerGoogleWatch(connectionId: string): Promise<void> {
+async function registerSingleGoogleWatch(
+  connectionId: string,
+  calendarId: string,
+): Promise<void> {
   const webhookUrl = process.env.GOOGLE_CALENDAR_WEBHOOK_URL;
   if (!webhookUrl) {
     console.error(
@@ -723,6 +907,19 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
   if (parsedWebhookUrl.protocol !== "https:")
     throw new Error("GOOGLE_CALENDAR_WEBHOOK_HTTPS_REQUIRED");
   const connection = await connectionById(connectionId);
+  const supabase = createSupabaseAdminClient();
+  const { data: calendarData, error: calendarError } = await supabase
+    .from("google_calendars")
+    .select(
+      "id,connection_id,calendar_id,sync_token,watch_channel_id,watch_resource_id,watch_token_hash,watch_expires_at,sync_enabled,is_primary",
+    )
+    .eq("connection_id", connection.id)
+    .eq("calendar_id", calendarId)
+    .eq("sync_enabled", true)
+    .single();
+  if (calendarError || !calendarData)
+    throw new Error("GOOGLE_CALENDAR_NOT_FOUND");
+  const calendar = calendarData as GoogleCalendarRow;
   const { token } = await validGoogleAccessToken(
     connection.teacher_id,
     connection.encrypted_credentials,
@@ -732,7 +929,7 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
   const requestedExpiration = Date.now() + 6 * 24 * 60 * 60_000;
   const response = await googleApiRequest(
     token,
-    `/calendars/${encodeURIComponent(connection.selected_calendar_id)}/events/watch`,
+    `/calendars/${encodeURIComponent(calendar.calendar_id)}/events/watch`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -750,13 +947,12 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
     resourceId: string;
     expiration?: string;
   }>(response);
-  const supabase = createSupabaseAdminClient();
-  const oldChannel = connection.watch_channel_id;
-  const oldResource = connection.watch_resource_id;
+  const oldChannel = calendar.watch_channel_id;
+  const oldResource = calendar.watch_resource_id;
   await replaceGoogleWatchSafely(
     async () => {
       const { error } = await supabase
-        .from("integration_connections")
+        .from("google_calendars")
         .update({
           watch_channel_id: channel.id,
           watch_resource_id: channel.resourceId,
@@ -767,8 +963,22 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
           ),
           updated_at: new Date().toISOString(),
         })
-        .eq("id", connection.id);
+        .eq("id", calendar.id);
       if (error) throw error;
+      if (calendar.is_primary) {
+        await supabase
+          .from("integration_connections")
+          .update({
+            watch_channel_id: channel.id,
+            watch_resource_id: channel.resourceId,
+            watch_token_hash: hashChannelToken(channelToken),
+            watch_expires_at: googleWatchExpiration(
+              channel.expiration,
+              requestedExpiration,
+            ),
+          })
+          .eq("id", connection.id);
+      }
     },
     async () => {
       if (!oldChannel || !oldResource) return;
@@ -781,13 +991,30 @@ export async function registerGoogleWatch(connectionId: string): Promise<void> {
     },
   );
   logSync("watch_register", connection.id, {
-    calendarId: connection.selected_calendar_id,
+    calendarId: calendar.calendar_id,
     result: "success",
   });
 }
 
+export async function registerGoogleWatch(connectionId: string): Promise<void> {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("google_calendars")
+    .select("calendar_id,watch_expires_at")
+    .eq("connection_id", connectionId)
+    .eq("sync_enabled", true);
+  if (error) throw error;
+  for (const calendar of data ?? []) {
+    if (!shouldRenewGoogleWatch(calendar.watch_expires_at as string | null))
+      continue;
+    await registerSingleGoogleWatch(
+      connectionId,
+      calendar.calendar_id as string,
+    );
+  }
+}
+
 export async function initializeGoogleConnection(connectionId: string) {
-  const watchPromise = registerGoogleWatch(connectionId);
   const sync = await Promise.resolve()
     .then(async () => {
       const result = await syncGoogleConnection(connectionId, true);
@@ -803,7 +1030,7 @@ export async function initializeGoogleConnection(connectionId: string) {
       (value) => ({ status: "fulfilled" as const, value }),
       (reason) => ({ status: "rejected" as const, reason }),
     );
-  const watch = await watchPromise.then(
+  const watch = await registerGoogleWatch(connectionId).then(
     (value) => ({ status: "fulfilled" as const, value }),
     (reason) => ({ status: "rejected" as const, reason }),
   );
@@ -934,12 +1161,10 @@ export async function acceptGoogleWebhook(
   const { channelId, resourceId, channelToken } = headers;
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
-    .from("integration_connections")
-    .select("id,teacher_id,watch_token_hash")
-    .eq("provider", "google")
+    .from("google_calendars")
+    .select("connection_id,teacher_id,watch_token_hash")
     .eq("watch_channel_id", channelId)
     .eq("watch_resource_id", resourceId)
-    .eq("status", "connected")
     .maybeSingle();
   if (error) throw error;
   if (!data?.watch_token_hash) return { kind: "invalid" };
@@ -964,12 +1189,12 @@ export async function acceptGoogleWebhook(
       sync_state: "pending",
       updated_at: requestedAt,
     })
-    .eq("id", data.id)
-    .eq("watch_channel_id", channelId);
+    .eq("id", data.connection_id)
+    .eq("status", "connected");
   if (updateError) throw updateError;
   return {
     kind: "accepted",
-    connectionId: data.id as string,
+    connectionId: data.connection_id as string,
     teacherId: data.teacher_id as string,
   };
 }

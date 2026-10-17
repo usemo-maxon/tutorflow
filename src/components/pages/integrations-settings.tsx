@@ -138,14 +138,44 @@ export function IntegrationsSettings() {
               >
                 Połącz ponownie
               </a>
-              <button className="button button--danger" type="button" onClick={async()=>{if(!window.confirm("Odłączyć Google Calendar i zatrzymać synchronizację?"))return;const response=await fetch("/api/integrations/google/disconnect",{method:"POST"});if(response.ok)void refetch();else setSyncFeedback({kind:"error",message:"Nie udało się odłączyć Google Calendar."})}}>Odłącz Google Calendar</button>
+              <button
+                className="button button--danger"
+                type="button"
+                onClick={async () => {
+                  if (
+                    !window.confirm(
+                      "Odłączyć Google Calendar i zatrzymać synchronizację?",
+                    )
+                  )
+                    return;
+                  const response = await fetch(
+                    "/api/integrations/google/disconnect",
+                    { method: "POST" },
+                  );
+                  if (response.ok) void refetch();
+                  else
+                    setSyncFeedback({
+                      kind: "error",
+                      message: "Nie udało się odłączyć Google Calendar.",
+                    });
+                }}
+              >
+                Odłącz Google Calendar
+              </button>
+              <GoogleCalendarPreferences
+                integration={data.integrations.google}
+                onSaved={() => void refetch()}
+                onError={(message) =>
+                  setSyncFeedback({ kind: "error", message })
+                }
+              />
             </>
           ) : (
             data.integrations.google.status !== "not_configured" && (
               <button
                 type="button"
                 className="button button--secondary"
-                onClick={()=>setGoogleDisclosure(true)}
+                onClick={() => setGoogleDisclosure(true)}
               >
                 {data.integrations.google.status === "reconnect_required" ||
                 data.integrations.google.status === "error"
@@ -154,15 +184,46 @@ export function IntegrationsSettings() {
               </button>
             )
           )}
-          {googleDisclosure && data.integrations.google.status !== "connected" && (
-            <div className="integration-disclosure">
-              <h4>Połącz Google Calendar</h4>
-              <p>Easy4Tutor potrzebuje dostępu do Twojego kalendarza, aby wyświetlać dostępność oraz synchronizować lekcje pomiędzy Easy4Tutor a Google Calendar.</p>
-              <p>Zakres dostępu zależy od włączonych funkcji i jest ograniczony do danych potrzebnych do synchronizacji. Easy4Tutor może odczytywać dane kalendarza oraz tworzyć, aktualizować lub usuwać zdarzenia w zakresie niezbędnym do działania synchronizacji.</p>
-              <p>Połączenie jest dobrowolne i możesz je później odłączyć w ustawieniach.</p>
-              <div><Link href="/polityka-prywatnosci" target="_blank">Polityka prywatności</Link><button type="button" className="button button--secondary" onClick={()=>setGoogleDisclosure(false)}>Anuluj</button><a className="button button--primary" href="/api/integrations/google/connect">Połącz z Google Calendar</a></div>
-            </div>
-          )}
+          {googleDisclosure &&
+            data.integrations.google.status !== "connected" && (
+              <div className="integration-disclosure">
+                <h4>Połącz Google Calendar</h4>
+                <p>
+                  Easy4Tutor potrzebuje dostępu do Twojego kalendarza, aby
+                  wyświetlać dostępność oraz synchronizować lekcje pomiędzy
+                  Easy4Tutor a Google Calendar.
+                </p>
+                <p>
+                  Zakres dostępu zależy od włączonych funkcji i jest ograniczony
+                  do danych potrzebnych do synchronizacji. Easy4Tutor może
+                  odczytywać dane kalendarza oraz tworzyć, aktualizować lub
+                  usuwać zdarzenia w zakresie niezbędnym do działania
+                  synchronizacji.
+                </p>
+                <p>
+                  Połączenie jest dobrowolne i możesz je później odłączyć w
+                  ustawieniach.
+                </p>
+                <div>
+                  <Link href="/polityka-prywatnosci" target="_blank">
+                    Polityka prywatności
+                  </Link>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    onClick={() => setGoogleDisclosure(false)}
+                  >
+                    Anuluj
+                  </button>
+                  <a
+                    className="button button--primary"
+                    href="/api/integrations/google/connect"
+                  >
+                    Połącz z Google Calendar
+                  </a>
+                </div>
+              </div>
+            )}
           {entitlements.googleCalendar && failedLesson && (
             <Link
               className="button button--secondary"
@@ -220,6 +281,131 @@ export function IntegrationsSettings() {
         />
       </div>
     </section>
+  );
+}
+
+function GoogleCalendarPreferences({
+  integration,
+  onSaved,
+  onError,
+}: {
+  integration: import("@/lib/domain").IntegrationState;
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const [saving, setSaving] = useState<string | null>(null);
+  async function save(key: string, body: Record<string, unknown>) {
+    setSaving(key);
+    try {
+      const response = await fetch("/api/integrations/google/calendars", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok)
+        throw new Error("Nie udało się zapisać ustawień kalendarza.");
+      onSaved();
+    } catch (error) {
+      onError(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się zapisać ustawień kalendarza.",
+      );
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <div className="google-calendar-manager">
+      <div className="google-calendar-manager__head">
+        <strong>Widoczność kalendarzy</strong>
+        <small>
+          Ukrycie nie usuwa wydarzeń ani nie zatrzymuje synchronizacji.
+        </small>
+      </div>
+      <div className="google-calendar-row google-calendar-row--easy4tutor">
+        <span
+          className="google-calendar-swatch"
+          style={{ background: "#6F8FEF" }}
+        />
+        <span>
+          <strong>Lekcje Easy4Tutor</strong>
+          <small>Kalendarz aplikacji</small>
+        </span>
+        <label className="google-calendar-check">
+          <input
+            type="checkbox"
+            checked={integration.easy4TutorVisible !== false}
+            disabled={saving !== null}
+            onChange={(event) =>
+              void save("easy4tutor", {
+                target: "easy4tutor",
+                visible: event.target.checked,
+              })
+            }
+          />
+          Pokaż
+        </label>
+      </div>
+      {(integration.calendars ?? []).map((calendar) => (
+        <div className="google-calendar-row" key={calendar.id}>
+          <input
+            className="google-calendar-color"
+            type="color"
+            value={calendar.color}
+            aria-label={`Kolor kalendarza ${calendar.name}`}
+            disabled={saving !== null}
+            onChange={(event) =>
+              void save(`${calendar.id}:color`, {
+                target: "google",
+                calendarId: calendar.calendarId,
+                color: event.target.value,
+              })
+            }
+          />
+          <span>
+            <strong>
+              {calendar.name}
+              {calendar.primary ? " · główny" : ""}
+            </strong>
+            <small>{calendar.timezone ?? "Google Calendar"}</small>
+          </span>
+          <div className="google-calendar-toggles">
+            <label>
+              <input
+                type="checkbox"
+                checked={calendar.visible}
+                disabled={saving !== null}
+                onChange={(event) =>
+                  void save(`${calendar.id}:visible`, {
+                    target: "google",
+                    calendarId: calendar.calendarId,
+                    visible: event.target.checked,
+                  })
+                }
+              />
+              Pokaż
+            </label>
+            <label title="Wydarzenia z tego kalendarza blokują kolidujące rezerwacje, nawet gdy kalendarz jest ukryty.">
+              <input
+                type="checkbox"
+                checked={calendar.countAsBusy}
+                disabled={saving !== null}
+                onChange={(event) =>
+                  void save(`${calendar.id}:busy`, {
+                    target: "google",
+                    calendarId: calendar.calendarId,
+                    countAsBusy: event.target.checked,
+                  })
+                }
+              />
+              Licz jako zajęty
+            </label>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 }
 function IntegrationCard({

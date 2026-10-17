@@ -118,6 +118,7 @@ export function calendarBounds(
     (block) => Number(formatInTimeZone(block.endsAt, timezone, "H")) + 1,
   );
   const externalStarts = (data?.externalGoogleEvents ?? [])
+    .filter((event) => event.visible !== false)
     .filter((event) => !event.allDay && event.startsAt)
     .map(
       (event) =>
@@ -125,6 +126,7 @@ export function calendarBounds(
         Number(formatInTimeZone(event.startsAt!, timezone, "m")) / 60,
     );
   const externalEnds = (data?.externalGoogleEvents ?? [])
+    .filter((event) => event.visible !== false)
     .filter((event) => !event.allDay && event.endsAt)
     .map(
       (event) =>

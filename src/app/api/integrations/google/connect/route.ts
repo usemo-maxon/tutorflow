@@ -59,7 +59,10 @@ export async function GET(request: Request) {
     client_id: process.env.GOOGLE_CALENDAR_CLIENT_ID!,
     redirect_uri: process.env.GOOGLE_CALENDAR_REDIRECT_URI!,
     response_type: "code",
-    scope: "https://www.googleapis.com/auth/calendar.events",
+    scope: [
+      "https://www.googleapis.com/auth/calendar.events",
+      "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    ].join(" "),
     access_type: "offline",
     prompt: "consent",
     include_granted_scopes: "true",

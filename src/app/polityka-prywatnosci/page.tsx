@@ -86,10 +86,11 @@ const sections: LegalSection[] = [
       <Paragraphs>
         <p>
           Google Sign-In nie przyznaje dostępu do kalendarza. Calendar łączy się
-          osobno, po wyraźnej akcji, z zakresem <code>calendar.events</code>.
-          Tokeny są zaszyfrowane po stronie serwera i niewidoczne dla
-          przeglądarki. Po odłączeniu zatrzymujemy nową synchronizację i usuwamy
-          dane uwierzytelniające w zakresie technicznie możliwym.
+          osobno, po wyraźnej akcji, z zakresami <code>calendar.events</code> i{" "}
+          <code>calendar.calendarlist.readonly</code>. Tokeny są zaszyfrowane po
+          stronie serwera i niewidoczne dla przeglądarki. Po odłączeniu
+          zatrzymujemy nową synchronizację i usuwamy dane uwierzytelniające w
+          zakresie technicznie możliwym.
         </p>
       </Paragraphs>
     ),

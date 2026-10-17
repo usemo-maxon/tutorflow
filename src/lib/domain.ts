@@ -249,6 +249,23 @@ export interface IntegrationState {
   syncState?: "idle" | "pending" | "syncing" | "error" | "reconnect_required";
   lastAttemptedSyncAt?: ISODateTime;
   lastSuccessfulSyncAt?: ISODateTime;
+  easy4TutorVisible?: boolean;
+  calendars?: GoogleCalendar[];
+}
+
+export interface GoogleCalendar {
+  id: EntityId;
+  calendarId: string;
+  name: string;
+  description?: string;
+  timezone?: string;
+  accessRole: "freeBusyReader" | "reader" | "writer" | "owner";
+  primary: boolean;
+  color: string;
+  customColor?: string;
+  visible: boolean;
+  countAsBusy: boolean;
+  syncEnabled: boolean;
 }
 
 export interface AvailabilityRule {
@@ -298,6 +315,12 @@ export interface CalendarBooking {
 export interface ExternalGoogleEvent {
   id: EntityId;
   title: string;
+  calendarId?: string;
+  calendarName?: string;
+  description?: string;
+  location?: string;
+  htmlLink?: string;
+  visible?: boolean;
   startsAt?: ISODateTime;
   endsAt?: ISODateTime;
   startDate?: string;

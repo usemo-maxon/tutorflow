@@ -7,6 +7,7 @@ vi.mock("./supabase", () => ({ createSupabaseAdminClient: vi.fn() }));
 import {
   collectGoogleEventPages,
   googleEventIdForLesson,
+  googleCalendarProviderId,
   googleReplacementEventId,
   googleWatchExpiration,
   googleWebhookHeaders,
@@ -77,6 +78,10 @@ describe("Google Calendar conflict and loop resolution", () => {
 });
 
 describe("Google Calendar production hardening helpers", () => {
+  it("normalizes the primary calendar identity without collapsing secondary calendars", () => {
+    expect(googleCalendarProviderId({ id: "owner@example.test", primary: true })).toBe("primary");
+    expect(googleCalendarProviderId({ id: "work@example.test" })).toBe("work@example.test");
+  });
   it("requires every identity header and compares only the token hash", () => {
     expect(
       googleWebhookHeaders(

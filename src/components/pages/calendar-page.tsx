@@ -101,7 +101,11 @@ function externalEventOccursOn(
         event.endDate > dayKey,
       )
     : Boolean(
-        event.startsAt && localDateKey(event.startsAt, timezone) === dayKey,
+        event.startsAt &&
+        event.endsAt &&
+        localDateKey(event.startsAt, timezone) <= dayKey &&
+        localDateKey(new Date(Date.parse(event.endsAt) - 1), timezone) >=
+          dayKey,
       );
 }
 const hourHeight = 68;
@@ -145,6 +149,8 @@ export function CalendarPage() {
   );
   const [dragged, setDragged] = useState<CalendarDragEntry | null>(null);
   const [inspectedLesson, setInspectedLesson] = useState<Lesson | null>(null);
+  const [inspectedExternalEvent, setInspectedExternalEvent] =
+    useState<ExternalGoogleEvent | null>(null);
   const [reschedule, setReschedule] = useState({ date: "", time: "" });
   const inspectTrigger = useRef<HTMLElement | null>(null);
   const [rangeChoice, setRangeChoice] = useState<
@@ -223,6 +229,7 @@ export function CalendarPage() {
   const rangeLessons = useMemo(() => {
     if (!data) return [];
     const keys = new Set(rangeDays.map((day) => localDateKey(day, timezone)));
+    if (data.integrations.google.easy4TutorVisible === false) return [];
     return data.lessons.filter((lesson) =>
       keys.has(localDateKey(lesson.startsAt, timezone)),
     );
@@ -241,6 +248,10 @@ export function CalendarPage() {
       </div>
     );
   const readOnly = data.teacher.subscription.readOnly;
+  const calendarData =
+    data.integrations.google.easy4TutorVisible === false
+      ? { ...data, lessons: [] }
+      : data;
   const planningStudent = data.students.find(
     (student) => student.id === planningStudentId,
   );
@@ -555,7 +566,7 @@ export function CalendarPage() {
         <CalendarGrid
           days={rangeDays}
           lessons={rangeLessons}
-          data={data}
+          data={calendarData}
           timezone={timezone}
           planning={Boolean(planningStudentId)}
           onSlot={handleSlot}
@@ -568,24 +579,27 @@ export function CalendarPage() {
           onDragEnd={() => setDragged(null)}
           onDeleteBlock={deleteBlock}
           onInspect={inspectLesson}
+          onInspectExternal={setInspectedExternalEvent}
         />
       )}
       {view === "month" && (
         <MonthView
           anchor={anchor}
-          data={data}
+          data={calendarData}
           timezone={timezone}
           onDay={(day) => {
             setAnchor(day);
             setView("day");
           }}
+          onInspectExternal={setInspectedExternalEvent}
         />
       )}
       {view === "agenda" && (
         <AgendaView
           onInspect={inspectLesson}
+          onInspectExternal={setInspectedExternalEvent}
           days={rangeDays}
-          data={data}
+          data={calendarData}
           timezone={timezone}
           openLessonComposer={(preset) =>
             openLessonComposer({
@@ -752,11 +766,70 @@ export function CalendarPage() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
+      <Dialog.Root
+        open={Boolean(inspectedExternalEvent)}
+        onOpenChange={(open) => {
+          if (!open) setInspectedExternalEvent(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="dialog-overlay" />
+          <Dialog.Content className="dialog-content dialog-content--alert">
+            <header className="dialog-header">
+              <Dialog.Title>{inspectedExternalEvent?.title}</Dialog.Title>
+              <Dialog.Close
+                className="icon-button"
+                aria-label="Zamknij szczegóły wydarzenia"
+              >
+                <X size={20} />
+              </Dialog.Close>
+            </header>
+            <Dialog.Description>
+              {inspectedExternalEvent?.calendarName ?? "Google Calendar"} ·
+              tylko do odczytu
+            </Dialog.Description>
+            {inspectedExternalEvent && (
+              <div className="calendar-inspect-meta">
+                <p>
+                  {inspectedExternalEvent.allDay
+                    ? `${inspectedExternalEvent.startDate} – ${inspectedExternalEvent.endDate}`
+                    : `${formatTime(inspectedExternalEvent.startsAt!, timezone)}–${formatTime(inspectedExternalEvent.endsAt!, timezone)}`}
+                  {inspectedExternalEvent.timezone
+                    ? ` · ${inspectedExternalEvent.timezone}`
+                    : ""}
+                </p>
+                {inspectedExternalEvent.location && (
+                  <p>{inspectedExternalEvent.location}</p>
+                )}
+                {inspectedExternalEvent.description && (
+                  <p>{inspectedExternalEvent.description}</p>
+                )}
+                <p className="muted">
+                  {inspectedExternalEvent.blocksTime
+                    ? "To wydarzenie blokuje kolidujące rezerwacje."
+                    : "To wydarzenie nie blokuje rezerwacji."}
+                </p>
+                {inspectedExternalEvent.htmlLink && (
+                  <a
+                    className="button button--secondary"
+                    href={inspectedExternalEvent.htmlLink}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Otwórz w Google Calendar
+                  </a>
+                )}
+              </div>
+            )}
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
       <div className="mobile-calendar-agenda">
         <AgendaView
           onInspect={inspectLesson}
+          onInspectExternal={setInspectedExternalEvent}
           days={rangeDays}
-          data={data}
+          data={calendarData}
           timezone={timezone}
           openLessonComposer={(preset) =>
             openLessonComposer({
@@ -1172,6 +1245,7 @@ function CalendarGrid({
   onDragEnd,
   onDeleteBlock,
   onInspect,
+  onInspectExternal,
 }: {
   days: Date[];
   lessons: Lesson[];
@@ -1182,6 +1256,7 @@ function CalendarGrid({
   onDragEnd: () => void;
   onDeleteBlock: (blockId: string) => void;
   onInspect: (lesson: Lesson) => void;
+  onInspectExternal: (event: ExternalGoogleEvent) => void;
   onSlot: (day: Date, time: string, lesson?: Lesson) => void;
   dragged: CalendarDragEntry | null;
   onDrag: (entry: CalendarDragEntry) => void;
@@ -1243,6 +1318,7 @@ function CalendarGrid({
           ).length;
           const allDayGoogle = data.externalGoogleEvents.filter(
             (event) =>
+              event.visible !== false &&
               event.allDay &&
               externalEventOccursOn(
                 event,
@@ -1267,12 +1343,19 @@ function CalendarGrid({
                 <span className="calendar-day-status">Niedostępny</span>
               )}
               {allDayGoogle.length > 0 && !allDayUnavailable && (
-                <span
-                  className="calendar-day-status calendar-day-status--google"
-                  title={allDayGoogle.map((event) => event.title).join(", ")}
-                >
-                  Google · cały dzień
-                </span>
+                <div className="calendar-all-day-google">
+                  {allDayGoogle.map((event) => (
+                    <button
+                      type="button"
+                      key={event.id}
+                      className="calendar-day-status calendar-day-status--google"
+                      title={event.title}
+                      onClick={() => onInspectExternal(event)}
+                    >
+                      {event.title}
+                    </button>
+                  ))}
+                </div>
               )}
               <button
                 className="calendar-add-day"
@@ -1305,7 +1388,9 @@ function CalendarGrid({
           );
           const dayExternalEvents = data.externalGoogleEvents.filter(
             (event) =>
-              !event.allDay && externalEventOccursOn(event, dayKey, timezone),
+              event.visible !== false &&
+              !event.allDay &&
+              externalEventOccursOn(event, dayKey, timezone),
           );
           const availability = availabilityForDay(data, day, timezone);
           const allDayUnavailable = availability.some(
@@ -1626,20 +1711,42 @@ function CalendarGrid({
                 );
               })}
               {dayExternalEvents.map((external) => {
-                const startMinutes =
-                  Number(formatInTimeZone(external.startsAt!, timezone, "H")) *
-                    60 +
-                  Number(formatInTimeZone(external.startsAt!, timezone, "m"));
-                const endMinutes =
-                  Number(formatInTimeZone(external.endsAt!, timezone, "H")) *
-                    60 +
-                  Number(formatInTimeZone(external.endsAt!, timezone, "m"));
+                const startsToday =
+                  localDateKey(external.startsAt!, timezone) === dayKey;
+                const endsToday =
+                  localDateKey(
+                    new Date(Date.parse(external.endsAt!) - 1),
+                    timezone,
+                  ) === dayKey;
+                const startMinutes = startsToday
+                  ? Number(
+                      formatInTimeZone(external.startsAt!, timezone, "H"),
+                    ) *
+                      60 +
+                    Number(formatInTimeZone(external.startsAt!, timezone, "m"))
+                  : startHour * 60;
+                const endMinutes = endsToday
+                  ? Number(formatInTimeZone(external.endsAt!, timezone, "H")) *
+                      60 +
+                    Number(formatInTimeZone(external.endsAt!, timezone, "m"))
+                  : endHour * 60;
                 return (
                   <div
                     data-event
-                    role="group"
                     aria-label={`Wydarzenie Google: ${external.title}`}
                     className={`calendar-external-event${external.transparency === "transparent" ? " calendar-external-event--free" : ""}`}
+                    tabIndex={0}
+                    role="button"
+                    onClick={(clickEvent) => {
+                      clickEvent.stopPropagation();
+                      onInspectExternal(external);
+                    }}
+                    onKeyDown={(keyEvent) => {
+                      if (keyEvent.key === "Enter" || keyEvent.key === " ") {
+                        keyEvent.preventDefault();
+                        onInspectExternal(external);
+                      }
+                    }}
                     key={external.id}
                     style={{
                       ...calendarColorStyle(external.color),
@@ -1838,6 +1945,7 @@ function AgendaView({
   openLessonComposer,
   onDeleteBlock,
   onInspect,
+  onInspectExternal,
 }: {
   days: Date[];
   data: import("@/lib/domain").AppData;
@@ -1845,6 +1953,7 @@ function AgendaView({
   openLessonComposer: (preset?: { date?: string; time?: string }) => void;
   onDeleteBlock: (blockId: string) => void;
   onInspect: (lesson: Lesson) => void;
+  onInspectExternal: (event: ExternalGoogleEvent) => void;
 }) {
   return (
     <div className="calendar-agenda">
@@ -1859,8 +1968,10 @@ function AgendaView({
         const bookings = data.calendarBookings.filter(
           (booking) => localDateKey(booking.startsAt, timezone) === key,
         );
-        const externalEvents = data.externalGoogleEvents.filter((event) =>
-          externalEventOccursOn(event, key, timezone),
+        const externalEvents = data.externalGoogleEvents.filter(
+          (event) =>
+            event.visible !== false &&
+            externalEventOccursOn(event, key, timezone),
         );
         const unavailable = availabilityForDay(data, day, timezone);
         const allDayUnavailable = unavailable.some(
@@ -1932,6 +2043,15 @@ function AgendaView({
                 className={`agenda-event-row agenda-event-row--external${event.transparency === "transparent" ? " agenda-event-row--free" : ""}`}
                 key={event.id}
                 style={calendarColorStyle(event.color)}
+                tabIndex={0}
+                role="button"
+                onClick={() => onInspectExternal(event)}
+                onKeyDown={(keyEvent) => {
+                  if (keyEvent.key === "Enter" || keyEvent.key === " ") {
+                    keyEvent.preventDefault();
+                    onInspectExternal(event);
+                  }
+                }}
               >
                 <time>
                   {event.allDay
@@ -2055,11 +2175,13 @@ function MonthView({
   data,
   timezone,
   onDay,
+  onInspectExternal,
 }: {
   anchor: Date;
   data: import("@/lib/domain").AppData;
   timezone: string;
   onDay: (day: Date) => void;
+  onInspectExternal: (event: ExternalGoogleEvent) => void;
 }) {
   const start = startOfMonth(anchor);
   const end = endOfMonth(anchor);
@@ -2084,8 +2206,10 @@ function MonthView({
               localDateKey(lesson.startsAt, timezone) === dayKey &&
               lesson.status !== "cancelled",
           );
-          const dayExternalEvents = data.externalGoogleEvents.filter((event) =>
-            externalEventOccursOn(event, dayKey, timezone),
+          const dayExternalEvents = data.externalGoogleEvents.filter(
+            (event) =>
+              event.visible !== false &&
+              externalEventOccursOn(event, dayKey, timezone),
           );
           const dayBookings = data.calendarBookings.filter(
             (booking) => localDateKey(booking.startsAt, timezone) === dayKey,
@@ -2136,6 +2260,19 @@ function MonthView({
                     className="month-google-event"
                     key={event.id}
                     style={calendarColorStyle(event.color)}
+                    role="button"
+                    tabIndex={0}
+                    onClick={(clickEvent) => {
+                      clickEvent.stopPropagation();
+                      onInspectExternal(event);
+                    }}
+                    onKeyDown={(keyEvent) => {
+                      if (keyEvent.key === "Enter" || keyEvent.key === " ") {
+                        keyEvent.preventDefault();
+                        keyEvent.stopPropagation();
+                        onInspectExternal(event);
+                      }
+                    }}
                   >
                     {event.allDay
                       ? "Cały dzień"

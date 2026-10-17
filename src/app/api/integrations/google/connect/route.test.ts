@@ -55,9 +55,10 @@ describe("Google Calendar OAuth connect", () => {
     expect(location.searchParams.get("access_type")).toBe("offline");
     expect(location.searchParams.get("prompt")).toBe("consent");
     expect(location.searchParams.get("include_granted_scopes")).toBe("true");
-    expect(location.searchParams.get("scope")).toBe(
+    expect(location.searchParams.get("scope")?.split(" ")).toEqual([
       "https://www.googleapis.com/auth/calendar.events",
-    );
+      "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    ]);
     expect(inserted).toMatchObject({
       teacher_id: "teacher-1",
       provider: "google",

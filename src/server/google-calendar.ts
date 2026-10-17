@@ -30,6 +30,7 @@ export interface GoogleEventResource {
   summary?: string;
   description?: string;
   location?: string;
+  htmlLink?: string;
   colorId?: string;
   transparency?: "opaque" | "transparent";
   etag?: string;
@@ -39,6 +40,17 @@ export interface GoogleEventResource {
   start?: GoogleEventTime;
   end?: GoogleEventTime;
   extendedProperties?: { private?: Record<string, string> };
+}
+
+export interface GoogleCalendarListResource {
+  id: string;
+  summary: string;
+  description?: string;
+  timeZone?: string;
+  accessRole: "freeBusyReader" | "reader" | "writer" | "owner";
+  primary?: boolean;
+  backgroundColor?: string;
+  deleted?: boolean;
 }
 
 export class GoogleApiError extends Error {

@@ -206,6 +206,7 @@ const scopeSections: Record<Exclude<AppDataScope, "full">, AppDataSection[]> = {
     "calendar-events",
     "booking-events",
     "groups",
+    "integrations",
   ],
   students: [
     "students",
@@ -258,34 +259,48 @@ async function loadTenantStore(
   if (authError || authData.user?.id !== teacherId)
     throw new Error("UNAUTHENTICATED");
 
-  const [profileResult, tutorResult, subscriptionResult, integrationsResult] =
-    await Promise.all([
-      supabase
-        .from("profiles")
-        .select("id,email,full_name,timezone,onboarding_completed_at")
-        .eq("id", teacherId)
-        .single(),
-      supabase
-        .from("tutor_profiles")
-        .select("workspace_id")
-        .eq("user_id", teacherId)
-        .single(),
-      supabase
-        .from("subscriptions")
-        .select(
-          "status,tier,billing_interval,read_only,trial_ends_at,renews_at",
-        )
-        .eq("teacher_id", teacherId)
-        .single(),
-      includesSection(scope, "integrations")
-        ? supabase
-            .from("integration_connections")
-            .select(
-              "provider,status,label,last_error,sync_state,last_attempted_sync_at,last_successful_sync_at",
-            )
-            .eq("teacher_id", teacherId)
-        : emptyQueryResult(),
-    ]);
+  const [
+    profileResult,
+    tutorResult,
+    subscriptionResult,
+    integrationsResult,
+    googleCalendarsResult,
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("id,email,full_name,timezone,onboarding_completed_at")
+      .eq("id", teacherId)
+      .single(),
+    supabase
+      .from("tutor_profiles")
+      .select("workspace_id")
+      .eq("user_id", teacherId)
+      .single(),
+    supabase
+      .from("subscriptions")
+      .select("status,tier,billing_interval,read_only,trial_ends_at,renews_at")
+      .eq("teacher_id", teacherId)
+      .single(),
+    includesSection(scope, "integrations")
+      ? supabase
+          .from("integration_connections")
+          .select(
+            "provider,status,label,last_error,sync_state,last_attempted_sync_at,last_successful_sync_at,easy4tutor_visible",
+          )
+          .eq("teacher_id", teacherId)
+      : emptyQueryResult(),
+    includesSection(scope, "integrations") ||
+    includesSection(scope, "calendar-events")
+      ? supabase
+          .from("google_calendars")
+          .select(
+            "id,calendar_id,summary,description,timezone,access_role,is_primary,google_background_color,custom_color,visible,count_as_busy,sync_enabled",
+          )
+          .eq("teacher_id", teacherId)
+          .order("is_primary", { ascending: false })
+          .order("summary")
+      : emptyQueryResult(),
+  ]);
   const failure = [profileResult, tutorResult, subscriptionResult].find(
     (result) => result.error,
   );
@@ -307,7 +322,7 @@ async function loadTenantStore(
   let externalEventsQuery = supabase
     .from("external_google_events")
     .select(
-      "id,summary,starts_at,ends_at,start_date,end_date,timezone,all_day,status,transparency,app_color,recurring_event_id,original_start_time",
+      "id,calendar_id,summary,description,location,html_link,starts_at,ends_at,start_date,end_date,timezone,all_day,status,transparency,app_color,recurring_event_id,original_start_time",
     )
     .eq("workspace_id", workspaceId)
     .eq("teacher_id", teacherId)
@@ -537,6 +552,23 @@ async function loadTenantStore(
     lesson_id: string;
     content: string;
   }>;
+  const googleCalendars = (googleCalendarsResult.data ?? []).map((row) => ({
+    id: row.id as string,
+    calendarId: row.calendar_id as string,
+    name: row.summary as string,
+    description: row.description ?? undefined,
+    timezone: row.timezone ?? undefined,
+    accessRole: row.access_role,
+    primary: row.is_primary,
+    color: row.custom_color ?? row.google_background_color ?? "#7F8A9A",
+    customColor: row.custom_color ?? undefined,
+    visible: row.visible,
+    countAsBusy: row.count_as_busy,
+    syncEnabled: row.sync_enabled,
+  }));
+  const calendarsByProviderId = new Map(
+    googleCalendars.map((calendar) => [calendar.calendarId, calendar]),
+  );
   const states = new Map(
     (integrationsResult.data ?? []).map((row) => [
       row.provider,
@@ -551,6 +583,8 @@ async function loadTenantStore(
         syncState: row.sync_state ?? undefined,
         lastAttemptedSyncAt: row.last_attempted_sync_at ?? undefined,
         lastSuccessfulSyncAt: row.last_successful_sync_at ?? undefined,
+        easy4TutorVisible: row.easy4tutor_visible ?? true,
+        calendars: row.provider === "google" ? googleCalendars : undefined,
       } as IntegrationState,
     ]),
   );
@@ -895,24 +929,42 @@ async function loadTenantStore(
         status: "confirmed" as const,
         createdAt: row.starts_at,
       })),
-      externalGoogleEvents: (externalEventsResult.data ?? []).map((row) => ({
-        id: row.id,
-        teacherId,
-        title: row.summary || "Zajęty",
-        startsAt: row.starts_at ?? undefined,
-        endsAt: row.ends_at ?? undefined,
-        startDate: row.start_date ?? undefined,
-        endDate: row.end_date ?? undefined,
-        timezone: row.timezone ?? undefined,
-        allDay: row.all_day,
-        status: row.status,
-        transparency: row.transparency,
-        color: row.app_color ?? "#7F8A9A",
-        recurringEventId: row.recurring_event_id ?? undefined,
-        originalStartTime: row.original_start_time ?? undefined,
-        readOnly: true as const,
-        blocksTime: row.transparency !== "transparent",
-      })),
+      externalGoogleEvents: (externalEventsResult.data ?? []).flatMap((row) => {
+        const calendar = calendarsByProviderId.get(row.calendar_id);
+        return [
+          {
+            id: row.id,
+            teacherId,
+            calendarId: row.calendar_id,
+            calendarName: calendar?.name ?? "Google Calendar",
+            title: row.summary || "Zajęty",
+            description: row.description ?? undefined,
+            location: row.location ?? undefined,
+            htmlLink: row.html_link ?? undefined,
+            visible: calendar?.visible ?? true,
+            startsAt: row.starts_at ?? undefined,
+            endsAt: row.ends_at ?? undefined,
+            startDate: row.start_date ?? undefined,
+            endDate: row.end_date ?? undefined,
+            timezone: row.timezone ?? undefined,
+            allDay: row.all_day,
+            status: row.status,
+            transparency: row.transparency,
+            color:
+              calendar?.customColor ??
+              row.app_color ??
+              calendar?.color ??
+              "#7F8A9A",
+            recurringEventId: row.recurring_event_id ?? undefined,
+            originalStartTime: row.original_start_time ?? undefined,
+            readOnly: true as const,
+            blocksTime:
+              (calendar
+                ? calendar.syncEnabled && calendar.countAsBusy
+                : true) && row.transparency !== "transparent",
+          },
+        ];
+      }),
       sessions: [],
     } satisfies StoreShape,
   };

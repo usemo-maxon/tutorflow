@@ -1,5 +1,5 @@
 begin;
-select plan(12);
+select plan(17);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
@@ -100,6 +100,17 @@ where teacher_id in (
   '91000000-0000-4000-8000-000000000002'
 );
 
+insert into public.google_calendars (
+  connection_id, workspace_id, teacher_id, calendar_id, summary,
+  is_primary, visible, count_as_busy
+)
+select id, workspace_id, teacher_id, 'primary', 'Primary', true, true, true
+from public.integration_connections
+where teacher_id in (
+  '91000000-0000-4000-8000-000000000001',
+  '91000000-0000-4000-8000-000000000002'
+);
+
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated"}';
 
@@ -109,6 +120,12 @@ select is((select count(*)::integer from public.external_google_events), 1,
   'a teacher reads only own external events');
 select is((select summary from public.external_google_events limit 1),
   'Private event', 'the local cache retains the Google title');
+select is((select count(*)::integer from public.google_calendars), 1,
+  'a teacher reads only own Google calendars');
+select throws_ok(
+  $$update public.google_calendars set visible = false$$,
+  '42501', null, 'browser roles cannot bypass the calendar preferences API'
+);
 select throws_ok(
   $$insert into public.external_google_events (
     connection_id, workspace_id, teacher_id, calendar_id, google_event_id,
@@ -137,6 +154,56 @@ select throws_ok(
 );
 
 reset role;
+update public.google_calendars
+set visible = false
+where teacher_id = '91000000-0000-4000-8000-000000000001';
+select is(
+  (select count(*)::integer from public.external_google_events
+   where teacher_id = '91000000-0000-4000-8000-000000000001'),
+  1, 'hiding a calendar does not delete its synchronized events'
+);
+insert into public.external_google_events (
+  connection_id, workspace_id, teacher_id, calendar_id, google_event_id,
+  summary, starts_at, ends_at, all_day, status, transparency
+)
+select id, workspace_id, teacher_id, 'primary', 'hidden-but-busy',
+  'Hidden focus time', '2036-01-13T09:00:00Z', '2036-01-13T10:00:00Z',
+  false, 'confirmed', 'opaque'
+from public.integration_connections
+where teacher_id = '91000000-0000-4000-8000-000000000001';
+select throws_ok(
+  $$insert into public.lessons (
+    workspace_id, tutor_id, student_id, title, starts_at, ends_at, timezone,
+    status, format, currency, billing_type, creation_mode, sync_status
+  ) values (
+    (select workspace_id from public.tutor_profiles where id = '91000000-0000-4000-8000-000000000001'),
+    '91000000-0000-4000-8000-000000000001',
+    '92000000-0000-4000-8000-000000000001',
+    'Hidden collision', '2036-01-13T09:15:00Z', '2036-01-13T09:45:00Z',
+    'Europe/Warsaw', 'scheduled', 'online', 'PLN', 'per_lesson', 'single', 'disabled'
+  )$$,
+  '23P01', 'EXTERNAL_GOOGLE_EVENT_CONFLICT',
+  'a hidden calendar still blocks bookings when count-as-busy is enabled'
+);
+update public.google_calendars
+set count_as_busy = false
+where teacher_id = '91000000-0000-4000-8000-000000000001';
+select lives_ok(
+  $$insert into public.lessons (
+    workspace_id, tutor_id, student_id, title, starts_at, ends_at, timezone,
+    status, format, currency, billing_type, creation_mode, sync_status
+  ) values (
+    (select workspace_id from public.tutor_profiles where id = '91000000-0000-4000-8000-000000000001'),
+    '91000000-0000-4000-8000-000000000001',
+    '92000000-0000-4000-8000-000000000001',
+    'Allowed hidden', '2036-01-13T09:15:00Z', '2036-01-13T09:45:00Z',
+    'Europe/Warsaw', 'scheduled', 'online', 'PLN', 'per_lesson', 'single', 'disabled'
+  )$$,
+  'count-as-busy can be disabled independently of visibility'
+);
+update public.google_calendars
+set count_as_busy = true
+where teacher_id = '91000000-0000-4000-8000-000000000001';
 select throws_ok(
   $$insert into public.external_google_events (
     connection_id, workspace_id, teacher_id, calendar_id, google_event_id,
