@@ -353,7 +353,7 @@ async function loadTenantStore(
     const startDate = range.start.slice(0, 10);
     const endDate = range.end.slice(0, 10);
     externalEventsQuery = externalEventsQuery.or(
-      `and(all_day.eq.false,starts_at.lt.${range.end},ends_at.gt.${range.start}),and(all_day.eq.true,start_date.lte.${endDate},end_date.gte.${startDate})`,
+      `and(all_day.eq.false,starts_at.lt.${range.end},ends_at.gt.${range.start}),and(all_day.eq.true,start_date.lt.${endDate},end_date.gt.${startDate})`,
     );
     calendarBookingsQuery = calendarBookingsQuery
       .lt("starts_at", range.end)
@@ -967,9 +967,11 @@ async function loadTenantStore(
             originalStartTime: row.original_start_time ?? undefined,
             readOnly: true as const,
             blocksTime:
+              !row.all_day &&
               (calendar
                 ? calendar.syncEnabled && calendar.countAsBusy
-                : true) && row.transparency !== "transparent",
+                : true) &&
+              row.transparency !== "transparent",
           },
         ];
       }),

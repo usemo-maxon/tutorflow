@@ -151,6 +151,24 @@ describe("calculatePublicAvailability", () => {
     expect(withoutGoogle).toHaveLength(5);
   });
 
+  it("never lets an all-day Google event consume public booking slots", () => {
+    const slots = calculate(
+      baseData({
+        externalGoogleEvents: [
+          {
+            startDate: "2026-01-05",
+            endDate: "2026-01-06",
+            allDay: true,
+            status: "confirmed",
+            // Defensive regression: old cached clients may still carry true.
+            blocksTime: true,
+          },
+        ],
+      }),
+    )[0].slots;
+    expect(slots).toHaveLength(5);
+  });
+
   it("enforces minimum notice and booking horizon", () => {
     const notice = calculate(baseData(), {
       data: baseData({

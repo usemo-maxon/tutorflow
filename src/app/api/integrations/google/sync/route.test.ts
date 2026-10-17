@@ -113,4 +113,27 @@ describe("manual Google Calendar synchronization", () => {
     expect(await response.json()).toMatchObject({ code: "PLAN_REQUIRED" });
     expect(mocks.requestSync).not.toHaveBeenCalled();
   });
+
+  it("preserves manual and outbound synchronization for Owner Lifetime Access", async () => {
+    mocks.currentTeacher.mockResolvedValue({
+      id: "owner-1",
+      subscription: {
+        status: "active",
+        tier: "free",
+        accessGrant: "owner_lifetime",
+      },
+    });
+    const response = await POST(
+      new Request("https://easy4tutor.pl/api/integrations/google/sync", {
+        method: "POST",
+      }),
+    );
+    expect(response.status).toBe(202);
+    await mocks.background?.();
+    expect(mocks.requestSync).toHaveBeenCalledWith("owner-1");
+    expect(mocks.processJobs).toHaveBeenCalledWith({
+      teacherId: "owner-1",
+      limit: 20,
+    });
+  });
 });

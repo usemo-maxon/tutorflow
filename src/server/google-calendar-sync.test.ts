@@ -13,12 +13,15 @@ import {
   googleWebhookHeaders,
   isValidGoogleChannelToken,
   prioritizeGoogleMaintenanceCandidates,
+  reconcileGoogleEventBatch,
   recoverInvalidGoogleSyncToken,
   replaceGoogleWatchSafely,
   resolveLinkedEventChange,
   shouldRecreateDeletedProviderEvent,
+  shouldCleanupGoogleEventCache,
   shouldRenewGoogleWatch,
 } from "./google-calendar-sync";
+import { GoogleEventTimingError } from "./google-calendar";
 
 describe("Google Calendar conflict and loop resolution", () => {
   it("uses the same deterministic event ID as database-enqueued jobs", () => {
@@ -79,8 +82,12 @@ describe("Google Calendar conflict and loop resolution", () => {
 
 describe("Google Calendar production hardening helpers", () => {
   it("normalizes the primary calendar identity without collapsing secondary calendars", () => {
-    expect(googleCalendarProviderId({ id: "owner@example.test", primary: true })).toBe("primary");
-    expect(googleCalendarProviderId({ id: "work@example.test" })).toBe("work@example.test");
+    expect(
+      googleCalendarProviderId({ id: "owner@example.test", primary: true }),
+    ).toBe("primary");
+    expect(googleCalendarProviderId({ id: "work@example.test" })).toBe(
+      "work@example.test",
+    );
   });
   it("requires every identity header and compares only the token hash", () => {
     expect(
@@ -218,5 +225,42 @@ describe("Google Calendar production hardening helpers", () => {
     expect(googleReplacementEventId("teacher", "lesson", "deletion")).toBe(
       googleReplacementEventId("teacher", "lesson", "deletion"),
     );
+  });
+
+  it("continues a mixed batch after one malformed event", async () => {
+    const events = [{ id: "valid-1" }, { id: "invalid" }, { id: "valid-2" }];
+    const reconciled: string[] = [];
+    const skipped: string[] = [];
+    const result = await reconcileGoogleEventBatch(
+      events,
+      async (event) => {
+        if (event.id === "invalid")
+          throw new GoogleEventTimingError("GOOGLE_EVENT_ZERO_DURATION");
+        reconciled.push(event.id);
+        return "external";
+      },
+      (event, error) => skipped.push(`${event.id}:${error.code}`),
+    );
+    expect(reconciled).toEqual(["valid-1", "valid-2"]);
+    expect(skipped).toEqual(["invalid:GOOGLE_EVENT_ZERO_DURATION"]);
+    expect(result).toEqual({ results: ["external", "external"], invalid: 1 });
+  });
+
+  it("does not swallow persistence failures while isolating malformed items", async () => {
+    await expect(
+      reconcileGoogleEventBatch(
+        [{ id: "database-failure" }],
+        async () => {
+          throw { code: "08006" };
+        },
+        () => undefined,
+      ),
+    ).rejects.toEqual({ code: "08006" });
+  });
+
+  it("suppresses full-sync cleanup when even one provider item was skipped", () => {
+    expect(shouldCleanupGoogleEventCache(true, 0)).toBe(true);
+    expect(shouldCleanupGoogleEventCache(true, 1)).toBe(false);
+    expect(shouldCleanupGoogleEventCache(false, 0)).toBe(false);
   });
 });

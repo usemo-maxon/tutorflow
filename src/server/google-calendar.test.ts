@@ -16,6 +16,7 @@ import {
   isRetryableGoogleStatus,
   lessonIdFromGoogleEvent,
   normalizeGoogleEventTiming,
+  safeGoogleError,
   validGoogleAccessToken,
 } from "./google-calendar";
 import { decryptSecret } from "./crypto";
@@ -207,6 +208,84 @@ describe("Google Calendar outbound event", () => {
       endDate: "2035-03-31",
       timezone: null,
     });
+  });
+
+  it("keeps a single all-day event's exclusive end date", () => {
+    expect(
+      normalizeGoogleEventTiming({
+        id: "single-day",
+        start: { date: "2026-10-17" },
+        end: { date: "2026-10-18" },
+      }),
+    ).toMatchObject({
+      allDay: true,
+      startDate: "2026-10-17",
+      endDate: "2026-10-18",
+      startsAt: null,
+      endsAt: null,
+    });
+  });
+
+  it("preserves recurring all-day dates across DST and year boundaries", () => {
+    expect(
+      normalizeGoogleEventTiming({
+        id: "recurring-year",
+        recurringEventId: "series-1",
+        start: { date: "2026-12-31", timeZone: "Europe/Warsaw" },
+        end: { date: "2027-01-02", timeZone: "Europe/Warsaw" },
+      }),
+    ).toMatchObject({
+      allDay: true,
+      startDate: "2026-12-31",
+      endDate: "2027-01-02",
+      timezone: "Europe/Warsaw",
+    });
+    expect(
+      normalizeGoogleEventTiming({
+        id: "dst-all-day",
+        start: { date: "2026-03-28" },
+        end: { date: "2026-03-30" },
+      }),
+    ).toMatchObject({
+      startDate: "2026-03-28",
+      endDate: "2026-03-30",
+    });
+  });
+
+  it("rejects zero-duration and incomplete timed events without inventing time", () => {
+    expect(() =>
+      normalizeGoogleEventTiming({
+        id: "zero",
+        start: { dateTime: "2026-10-17T10:00:00Z" },
+        end: { dateTime: "2026-10-17T10:00:00Z" },
+      }),
+    ).toThrow("GOOGLE_EVENT_ZERO_DURATION");
+    expect(() =>
+      normalizeGoogleEventTiming({
+        id: "incomplete",
+        start: { dateTime: "2026-10-17T10:00:00Z" },
+      }),
+    ).toThrow("GOOGLE_EVENT_TIME_MISSING");
+    expect(() =>
+      normalizeGoogleEventTiming({
+        id: "invalid-range",
+        start: { date: "2026-10-17" },
+        end: { date: "2026-10-17" },
+      }),
+    ).toThrow("GOOGLE_EVENT_DATE_RANGE_INVALID");
+  });
+
+  it("reduces structured database errors to a safe SQLSTATE diagnostic", () => {
+    expect(
+      safeGoogleError({
+        code: "23514",
+        message: "contains private event content",
+        details: "secret",
+      }),
+    ).toBe("GOOGLE_DATABASE_23514");
+    expect(safeGoogleError(new Error("private event title"))).toBe(
+      "GOOGLE_UNKNOWN_ERROR",
+    );
   });
 
   it("normalizes offset date-times safely across DST", () => {

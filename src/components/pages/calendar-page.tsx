@@ -69,6 +69,14 @@ import {
   getCalendarEventSurface,
   getReadableForeground,
 } from "@/lib/calendar-colors";
+import {
+  ALL_DAY_WEEK_VISIBLE_LANES,
+  MONTH_VISIBLE_ITEMS,
+  allDayEventOccursOn,
+  buildAllDayWeekSegments,
+  dateOnlyPrevious,
+  monthContinuation,
+} from "@/lib/google-all-day";
 import type {
   AppData,
   ExternalGoogleEvent,
@@ -94,12 +102,7 @@ function externalEventOccursOn(
   timezone: string,
 ) {
   return event.allDay
-    ? Boolean(
-        event.startDate &&
-        event.endDate &&
-        event.startDate <= dayKey &&
-        event.endDate > dayKey,
-      )
+    ? allDayEventOccursOn(event, dayKey)
     : Boolean(
         event.startsAt &&
         event.endsAt &&
@@ -107,6 +110,20 @@ function externalEventOccursOn(
         localDateKey(new Date(Date.parse(event.endsAt) - 1), timezone) >=
           dayKey,
       );
+}
+
+function formatAllDayRange(event: ExternalGoogleEvent): string {
+  if (!event.startDate || !event.endDate) return "Cały dzień";
+  const formatter = new Intl.DateTimeFormat("pl-PL", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  const first = formatter.format(new Date(`${event.startDate}T12:00:00Z`));
+  const inclusiveEnd = dateOnlyPrevious(event.endDate);
+  const last = formatter.format(new Date(`${inclusiveEnd}T12:00:00Z`));
+  return first === last ? first : `${first} – ${last}`;
 }
 const hourHeight = 68;
 
@@ -792,7 +809,7 @@ export function CalendarPage() {
               <div className="calendar-inspect-meta">
                 <p>
                   {inspectedExternalEvent.allDay
-                    ? `${inspectedExternalEvent.startDate} – ${inspectedExternalEvent.endDate}`
+                    ? `Cały dzień · ${formatAllDayRange(inspectedExternalEvent)}`
                     : `${formatTime(inspectedExternalEvent.startsAt!, timezone)}–${formatTime(inspectedExternalEvent.endsAt!, timezone)}`}
                   {inspectedExternalEvent.timezone
                     ? ` · ${inspectedExternalEvent.timezone}`
@@ -1229,7 +1246,7 @@ function RangeActionMenu({
   );
 }
 
-function CalendarGrid({
+export function CalendarGrid({
   days,
   lessons,
   data,
@@ -1290,9 +1307,17 @@ function CalendarGrid({
     { length: endHour - startHour },
     (_, i) => startHour + i,
   );
+  const dayKeys = days.map((day) => localDateKey(day, timezone));
+  const allDayLayout = buildAllDayWeekSegments(
+    data.externalGoogleEvents,
+    dayKeys,
+  );
+  const hasAllDayEvents =
+    allDayLayout.visible.length > 0 ||
+    allDayLayout.overflowByDay.some((count) => count > 0);
   return (
     <div
-      className={`calendar-grid-shell${days.length === 1 ? " calendar-grid-shell--day" : ""}`}
+      className={`calendar-grid-shell${days.length === 1 ? " calendar-grid-shell--day" : ""}${hasAllDayEvents ? " calendar-grid-shell--with-all-day" : ""}`}
       style={
         {
           "--calendar-height": `${hours.length * hourHeight}px`,
@@ -1316,16 +1341,6 @@ function CalendarGrid({
               localDateKey(booking.startsAt, timezone) ===
               localDateKey(day, timezone),
           ).length;
-          const allDayGoogle = data.externalGoogleEvents.filter(
-            (event) =>
-              event.visible !== false &&
-              event.allDay &&
-              externalEventOccursOn(
-                event,
-                localDateKey(day, timezone),
-                timezone,
-              ),
-          );
           return (
             <div
               key={day.toISOString()}
@@ -1342,21 +1357,6 @@ function CalendarGrid({
               {allDayUnavailable && (
                 <span className="calendar-day-status">Niedostępny</span>
               )}
-              {allDayGoogle.length > 0 && !allDayUnavailable && (
-                <div className="calendar-all-day-google">
-                  {allDayGoogle.map((event) => (
-                    <button
-                      type="button"
-                      key={event.id}
-                      className="calendar-day-status calendar-day-status--google"
-                      title={event.title}
-                      onClick={() => onInspectExternal(event)}
-                    >
-                      {event.title}
-                    </button>
-                  ))}
-                </div>
-              )}
               <button
                 className="calendar-add-day"
                 disabled={readOnly}
@@ -1369,6 +1369,72 @@ function CalendarGrid({
           );
         })}
       </div>
+      {hasAllDayEvents && (
+        <>
+          <div className="calendar-all-day-label">Cały dzień</div>
+          <div
+            className="calendar-all-day-lane"
+            style={
+              {
+                "--calendar-day-count": days.length,
+                "--calendar-all-day-rows": ALL_DAY_WEEK_VISIBLE_LANES + 1,
+              } as CSSProperties
+            }
+          >
+            {allDayLayout.visible.map((segment) => (
+              <button
+                type="button"
+                key={segment.event.id}
+                className={`calendar-all-day-event${segment.continuesBefore ? " calendar-all-day-event--continues-before" : ""}${segment.continuesAfter ? " calendar-all-day-event--continues-after" : ""}`}
+                style={
+                  {
+                    ...calendarColorStyle(segment.event.color),
+                    gridColumn: `${segment.startIndex + 1} / span ${segment.span}`,
+                    gridRow: segment.lane + 1,
+                  } as CSSProperties
+                }
+                title={segment.event.title}
+                onClick={() => onInspectExternal(segment.event)}
+              >
+                <span>{segment.event.title}</span>
+              </button>
+            ))}
+            {allDayLayout.overflowByDay.map((count, dayIndex) =>
+              count ? (
+                <details
+                  className="calendar-all-day-overflow"
+                  key={dayKeys[dayIndex]}
+                  style={{
+                    gridColumn: dayIndex + 1,
+                    gridRow: ALL_DAY_WEEK_VISIBLE_LANES + 1,
+                  }}
+                >
+                  <summary aria-label={`${count} więcej wydarzeń całodniowych`}>
+                    +{count} więcej
+                  </summary>
+                  <div className="calendar-all-day-popover">
+                    {data.externalGoogleEvents
+                      .filter(
+                        (event) =>
+                          event.visible !== false &&
+                          allDayEventOccursOn(event, dayKeys[dayIndex]),
+                      )
+                      .map((event) => (
+                        <button
+                          type="button"
+                          key={event.id}
+                          onClick={() => onInspectExternal(event)}
+                        >
+                          {event.title}
+                        </button>
+                      ))}
+                  </div>
+                </details>
+              ) : null,
+            )}
+          </div>
+        </>
+      )}
       <div className="calendar-times">
         {hours.map((hour) => (
           <time key={hour}>{String(hour).padStart(2, "0")}:00</time>
@@ -1938,7 +2004,7 @@ function CalendarGrid({
   );
 }
 
-function AgendaView({
+export function AgendaView({
   days,
   data,
   timezone,
@@ -1972,6 +2038,12 @@ function AgendaView({
           (event) =>
             event.visible !== false &&
             externalEventOccursOn(event, key, timezone),
+        );
+        const allDayExternalEvents = externalEvents.filter(
+          (event) => event.allDay,
+        );
+        const timedExternalEvents = externalEvents.filter(
+          (event) => !event.allDay,
         );
         const unavailable = availabilityForDay(data, day, timezone);
         const allDayUnavailable = unavailable.some(
@@ -2013,6 +2085,28 @@ function AgendaView({
                 <span>{rule.label || "Czas niedostępny"}</span>
               </p>
             ))}
+            {allDayExternalEvents.length > 0 && (
+              <div
+                className="agenda-all-day"
+                aria-label="Wydarzenia całodniowe"
+              >
+                <span className="agenda-all-day__label">Cały dzień</span>
+                <div>
+                  {allDayExternalEvents.map((event) => (
+                    <button
+                      type="button"
+                      className="agenda-all-day__event"
+                      key={event.id}
+                      style={calendarColorStyle(event.color)}
+                      title={event.title}
+                      onClick={() => onInspectExternal(event)}
+                    >
+                      {event.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             {blocks.map((block) => (
               <div
                 className="agenda-event-row agenda-event-row--block"
@@ -2038,7 +2132,7 @@ function AgendaView({
                 )}
               </div>
             ))}
-            {externalEvents.map((event) => (
+            {timedExternalEvents.map((event) => (
               <div
                 className={`agenda-event-row agenda-event-row--external${event.transparency === "transparent" ? " agenda-event-row--free" : ""}`}
                 key={event.id}
@@ -2053,11 +2147,7 @@ function AgendaView({
                   }
                 }}
               >
-                <time>
-                  {event.allDay
-                    ? "Cały dzień"
-                    : formatTime(event.startsAt!, timezone)}
-                </time>
+                <time>{formatTime(event.startsAt!, timezone)}</time>
                 <span>
                   <strong>{event.title}</strong>
                   <small>
@@ -2170,7 +2260,7 @@ function calendarColorStyle(color: string): CSSProperties {
   } as CSSProperties;
 }
 
-function MonthView({
+export function MonthView({
   anchor,
   data,
   timezone,
@@ -2216,71 +2306,104 @@ function MonthView({
           );
           const allDayUnavailable = isAllDayUnavailable(data, day, timezone);
           const today = dayKey === localDateKey(new Date(), timezone);
+          const monthItems = [
+            ...dayExternalEvents
+              .filter((event) => event.allDay)
+              .map((event) => ({ kind: "external" as const, event })),
+            ...dayLessons.map((lesson) => ({
+              kind: "lesson" as const,
+              lesson,
+            })),
+            ...dayBookings.map((booking) => ({
+              kind: "booking" as const,
+              booking,
+            })),
+            ...dayExternalEvents
+              .filter((event) => !event.allDay)
+              .map((event) => ({ kind: "external" as const, event })),
+          ];
+          const overflowCount = Math.max(
+            0,
+            monthItems.length - MONTH_VISIBLE_ITEMS,
+          );
           return (
-            <button
+            <div
               key={day.toISOString()}
-              aria-label={`${formatInTimeZone(day, timezone, "d MMMM yyyy", { locale: pl })} · ${lessonCountLabel(dayLessons.length)} · ${dayBookings.length} rezerwacji · ${dayExternalEvents.length} wydarzeń Google${allDayUnavailable ? " · Niedostępny cały dzień" : ""}`}
               className={`${today ? "today" : ""}${allDayUnavailable ? " month-day--unavailable" : ""}`}
-              onClick={() => onDay(day)}
             >
-              <strong>{formatInTimeZone(day, timezone, "d")}</strong>
-              {allDayUnavailable ? (
-                <small className="month-unavailable-label">Niedostępny</small>
-              ) : (
-                <small className="month-count">
-                  {dayLessons.length + dayBookings.length || "—"}
-                  <span> zdarzeń</span>
-                </small>
-              )}
-              {dayLessons.slice(0, 3).map((lesson) => (
-                <span key={lesson.id} style={calendarColorStyle(lesson.color)}>
-                  {formatTime(lesson.startsAt, timezone)} ·{" "}
-                  {
-                    data.students.find(
-                      (student) => student.id === lesson.participantIds[0],
-                    )?.name
-                  }
-                </span>
-              ))}
-              {dayBookings
-                .slice(0, Math.max(0, 3 - dayLessons.length))
-                .map((booking) => (
-                  <span className="month-booking-event" key={booking.id}>
-                    {formatTime(booking.startsAt, timezone)} · Rezerwacja ·{" "}
-                    {booking.guestName}
-                  </span>
-                ))}
-              {dayExternalEvents
-                .slice(
-                  0,
-                  Math.max(0, 3 - dayLessons.length - dayBookings.length),
-                )
-                .map((event) => (
-                  <span
-                    className="month-google-event"
+              <button
+                type="button"
+                className="month-day-open"
+                aria-label={`${formatInTimeZone(day, timezone, "d MMMM yyyy", { locale: pl })} · ${lessonCountLabel(dayLessons.length)} · ${dayBookings.length} rezerwacji · ${dayExternalEvents.length} wydarzeń Google${allDayUnavailable ? " · Niedostępny cały dzień" : ""}`}
+                onClick={() => onDay(day)}
+              >
+                <strong>{formatInTimeZone(day, timezone, "d")}</strong>
+                {allDayUnavailable ? (
+                  <small className="month-unavailable-label">Niedostępny</small>
+                ) : (
+                  <small className="month-count">
+                    {monthItems.length || "—"}
+                    <span> zdarzeń</span>
+                  </small>
+                )}
+              </button>
+              {monthItems.slice(0, MONTH_VISIBLE_ITEMS).map((item) => {
+                if (item.kind === "lesson") {
+                  const lesson = item.lesson;
+                  return (
+                    <button
+                      type="button"
+                      className="month-calendar-item"
+                      key={lesson.id}
+                      style={calendarColorStyle(lesson.color)}
+                      onClick={() => onDay(day)}
+                    >
+                      {formatTime(lesson.startsAt, timezone)} ·{" "}
+                      {data.students.find(
+                        (student) => student.id === lesson.participantIds[0],
+                      )?.name ?? "Lekcja"}
+                    </button>
+                  );
+                }
+                if (item.kind === "booking")
+                  return (
+                    <button
+                      type="button"
+                      className="month-calendar-item month-booking-event"
+                      key={item.booking.id}
+                      onClick={() => onDay(day)}
+                    >
+                      {formatTime(item.booking.startsAt, timezone)} · Rezerwacja
+                    </button>
+                  );
+                const event = item.event;
+                return (
+                  <button
+                    type="button"
+                    className={`month-calendar-item month-google-event${event.allDay ? ` month-google-event--${monthContinuation(event, dayKey)}` : ""}`}
                     key={event.id}
                     style={calendarColorStyle(event.color)}
-                    role="button"
-                    tabIndex={0}
-                    onClick={(clickEvent) => {
-                      clickEvent.stopPropagation();
-                      onInspectExternal(event);
-                    }}
-                    onKeyDown={(keyEvent) => {
-                      if (keyEvent.key === "Enter" || keyEvent.key === " ") {
-                        keyEvent.preventDefault();
-                        keyEvent.stopPropagation();
-                        onInspectExternal(event);
-                      }
-                    }}
+                    title={event.title}
+                    onClick={() => onInspectExternal(event)}
                   >
                     {event.allDay
-                      ? "Cały dzień"
-                      : formatTime(event.startsAt!, timezone)}{" "}
-                    · {event.title}
-                  </span>
-                ))}
-            </button>
+                      ? ""
+                      : `${formatTime(event.startsAt!, timezone)} · `}
+                    {event.title}
+                  </button>
+                );
+              })}
+              {overflowCount > 0 && (
+                <button
+                  type="button"
+                  className="month-overflow"
+                  onClick={() => onDay(day)}
+                  aria-label={`${overflowCount} więcej wydarzeń, otwórz dzień`}
+                >
+                  +{overflowCount} więcej
+                </button>
+              )}
+            </div>
           );
         })}
       </div>

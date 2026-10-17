@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(21);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password,
@@ -227,6 +227,67 @@ select throws_ok(
     from public.integration_connections
     where teacher_id = '91000000-0000-4000-8000-000000000001'$$,
   '23514', null, 'all-day events cannot masquerade as midnight timestamps'
+);
+insert into public.external_google_events (
+  connection_id, workspace_id, teacher_id, calendar_id, google_event_id,
+  summary, start_date, end_date, all_day, status, transparency
+)
+select id, workspace_id, teacher_id, 'primary', 'valid-all-day',
+  'Preparation day',
+  (now() at time zone 'Europe/Warsaw')::date + 2,
+  (now() at time zone 'Europe/Warsaw')::date + 3,
+  true, 'confirmed', 'opaque'
+from public.integration_connections
+where teacher_id = '91000000-0000-4000-8000-000000000001';
+select is(
+  (select end_date - start_date from public.external_google_events
+   where google_event_id = 'valid-all-day'),
+  1, 'a valid all-day event preserves the exclusive end date'
+);
+select lives_ok(
+  format($sql$insert into public.lessons (
+    workspace_id, tutor_id, student_id, title, starts_at, ends_at, timezone,
+    status, format, currency, billing_type, creation_mode, sync_status
+  ) values (
+    (select workspace_id from public.tutor_profiles where id = '91000000-0000-4000-8000-000000000001'),
+    '91000000-0000-4000-8000-000000000001',
+    '92000000-0000-4000-8000-000000000001',
+    'Allowed on all-day event', %L, %L,
+    'Europe/Warsaw', 'scheduled', 'online', 'PLN', 'per_lesson', 'single', 'disabled'
+  )$sql$,
+    (((now() at time zone 'Europe/Warsaw')::date + 2 + time '10:00') at time zone 'Europe/Warsaw'),
+    (((now() at time zone 'Europe/Warsaw')::date + 2 + time '11:00') at time zone 'Europe/Warsaw')
+  ),
+  'an all-day Google event does not block lesson creation'
+);
+select ok(
+  private.public_booking_slot_is_available(
+    (select workspace_id from public.tutor_profiles where id = '91000000-0000-4000-8000-000000000001'),
+    '91000000-0000-4000-8000-000000000001', 'Europe/Warsaw', 60,
+    (((now() at time zone 'Europe/Warsaw')::date + 2 + time '12:00') at time zone 'Europe/Warsaw'),
+    (((now() at time zone 'Europe/Warsaw')::date + 2 + time '13:00') at time zone 'Europe/Warsaw')
+  ),
+  'an all-day Google event does not block public booking availability'
+);
+insert into public.external_google_events (
+  connection_id, workspace_id, teacher_id, calendar_id, google_event_id,
+  summary, starts_at, ends_at, all_day, status, transparency
+)
+select id, workspace_id, teacher_id, 'primary', 'timed-public-busy',
+  'Timed busy',
+  (((now() at time zone 'Europe/Warsaw')::date + 3 + time '12:00') at time zone 'Europe/Warsaw'),
+  (((now() at time zone 'Europe/Warsaw')::date + 3 + time '13:00') at time zone 'Europe/Warsaw'),
+  false, 'confirmed', 'opaque'
+from public.integration_connections
+where teacher_id = '91000000-0000-4000-8000-000000000001';
+select is(
+  private.public_booking_slot_is_available(
+    (select workspace_id from public.tutor_profiles where id = '91000000-0000-4000-8000-000000000001'),
+    '91000000-0000-4000-8000-000000000001', 'Europe/Warsaw', 60,
+    (((now() at time zone 'Europe/Warsaw')::date + 3 + time '12:00') at time zone 'Europe/Warsaw'),
+    (((now() at time zone 'Europe/Warsaw')::date + 3 + time '13:00') at time zone 'Europe/Warsaw')
+  ),
+  false, 'an opaque timed Google event still blocks public booking availability'
 );
 select throws_ok(
   $$insert into public.lessons (

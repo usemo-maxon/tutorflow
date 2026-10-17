@@ -64,6 +64,21 @@ export class GoogleApiError extends Error {
   }
 }
 
+export class GoogleEventTimingError extends Error {
+  constructor(
+    public readonly code:
+      | "GOOGLE_EVENT_TIME_MISSING"
+      | "GOOGLE_EVENT_TIME_SHAPE_INVALID"
+      | "GOOGLE_EVENT_DATE_INVALID"
+      | "GOOGLE_EVENT_DATE_RANGE_INVALID"
+      | "GOOGLE_EVENT_DATETIME_INVALID"
+      | "GOOGLE_EVENT_ZERO_DURATION",
+  ) {
+    super(code);
+    this.name = "GoogleEventTimingError";
+  }
+}
+
 const tokenUrl = "https://oauth2.googleapis.com/token";
 const calendarApi = "https://www.googleapis.com/calendar/v3";
 
@@ -301,33 +316,77 @@ export function lessonIdFromGoogleEvent(
   return metadata?.easy4tutorLessonId ?? metadata?.tutorflowLessonId ?? null;
 }
 
+function isDateOnly(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const [, year, month, day] = match;
+  const parsed = new Date(
+    Date.UTC(Number(year), Number(month) - 1, Number(day)),
+  );
+  return (
+    parsed.getUTCFullYear() === Number(year) &&
+    parsed.getUTCMonth() === Number(month) - 1 &&
+    parsed.getUTCDate() === Number(day)
+  );
+}
+
 export function normalizeGoogleEventTiming(event: GoogleEventResource) {
-  const allDay = Boolean(event.start?.date);
-  if (allDay && event.start?.date && event.end?.date) {
+  const startDate = event.start?.date;
+  const endDate = event.end?.date;
+  const startsAt = event.start?.dateTime;
+  const endsAt = event.end?.dateTime;
+  const hasDateOnlyPart = Boolean(startDate || endDate);
+  const hasTimedPart = Boolean(startsAt || endsAt);
+
+  if (hasDateOnlyPart && hasTimedPart)
+    throw new GoogleEventTimingError("GOOGLE_EVENT_TIME_SHAPE_INVALID");
+
+  if (startDate && endDate) {
+    if (!isDateOnly(startDate) || !isDateOnly(endDate))
+      throw new GoogleEventTimingError("GOOGLE_EVENT_DATE_INVALID");
+    // Google Calendar uses an exclusive end.date. Keep that date-only shape
+    // intact so DST and timezone offsets can never change the covered dates.
+    if (endDate <= startDate)
+      throw new GoogleEventTimingError("GOOGLE_EVENT_DATE_RANGE_INVALID");
     return {
       allDay: true as const,
       startsAt: null,
       endsAt: null,
-      startDate: event.start.date,
-      endDate: event.end.date,
-      timezone: event.start.timeZone ?? event.end.timeZone ?? null,
+      startDate,
+      endDate,
+      timezone: event.start?.timeZone ?? event.end?.timeZone ?? null,
     };
   }
-  if (event.start?.dateTime && event.end?.dateTime) {
+  if (startsAt && endsAt) {
+    const startMilliseconds = Date.parse(startsAt);
+    const endMilliseconds = Date.parse(endsAt);
+    if (
+      !Number.isFinite(startMilliseconds) ||
+      !Number.isFinite(endMilliseconds)
+    )
+      throw new GoogleEventTimingError("GOOGLE_EVENT_DATETIME_INVALID");
+    if (endMilliseconds <= startMilliseconds)
+      throw new GoogleEventTimingError("GOOGLE_EVENT_ZERO_DURATION");
     return {
       allDay: false as const,
-      startsAt: new Date(event.start.dateTime).toISOString(),
-      endsAt: new Date(event.end.dateTime).toISOString(),
+      startsAt: new Date(startMilliseconds).toISOString(),
+      endsAt: new Date(endMilliseconds).toISOString(),
       startDate: null,
       endDate: null,
-      timezone: event.start.timeZone ?? event.end.timeZone ?? null,
+      timezone: event.start?.timeZone ?? event.end?.timeZone ?? null,
     };
   }
-  throw new Error("GOOGLE_EVENT_TIME_MISSING");
+  throw new GoogleEventTimingError("GOOGLE_EVENT_TIME_MISSING");
 }
 
 export function safeGoogleError(error: unknown): string {
   if (error instanceof GoogleApiError) return error.message;
-  if (error instanceof Error) return error.message.slice(0, 120);
+  if (error instanceof GoogleEventTimingError) return error.code;
+  if (typeof error === "object" && error !== null) {
+    const code = "code" in error ? String(error.code) : "";
+    if (/^[0-9A-Z]{5}$/.test(code)) return `GOOGLE_DATABASE_${code}`;
+  }
+  if (error instanceof Error && /^[A-Z][A-Z0-9_]{2,119}$/.test(error.message))
+    return error.message;
   return "GOOGLE_UNKNOWN_ERROR";
 }

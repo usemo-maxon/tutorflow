@@ -159,7 +159,6 @@ function isBusy(
   bookings: NonNullable<AvailabilityInput["bookings"]>,
   start: Date,
   end: Date,
-  date: string,
 ) {
   const startTime = start.getTime();
   const endTime = end.getTime();
@@ -205,15 +204,7 @@ function isBusy(
   }
   if (data.integrations.google.status !== "connected") return false;
   return data.externalGoogleEvents.some((event) => {
-    if (!event.blocksTime) return false;
-    if (event.allDay) {
-      return Boolean(
-        event.startDate &&
-        event.endDate &&
-        date >= event.startDate &&
-        date < event.endDate,
-      );
-    }
+    if (!event.blocksTime || event.allDay) return false;
     return Boolean(
       event.startsAt &&
       event.endsAt &&
@@ -287,7 +278,7 @@ export function calculatePublicAvailability({
       if (
         startsAt < earliest ||
         startsAt > latest ||
-        isBusy(data, bookings, startsAt, endsAt, date)
+        isBusy(data, bookings, startsAt, endsAt)
       ) {
         continue;
       }

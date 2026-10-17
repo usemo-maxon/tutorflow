@@ -8,6 +8,7 @@ import {
 } from "node:crypto";
 import {
   GoogleApiError,
+  GoogleEventTimingError,
   type GoogleCalendarListResource,
   type GoogleEventResource,
   googleApiRequest,
@@ -232,6 +233,42 @@ function logSync(
       ...details,
     }),
   );
+}
+
+function safeSqlState(error: unknown): string | undefined {
+  if (typeof error !== "object" || error === null || !("code" in error))
+    return undefined;
+  const code = String(error.code);
+  return /^[0-9A-Z]{5}$/.test(code) ? code : undefined;
+}
+
+export async function reconcileGoogleEventBatch<T>(
+  events: GoogleEventResource[],
+  reconcile: (event: GoogleEventResource) => Promise<T>,
+  onInvalid: (
+    event: GoogleEventResource,
+    error: GoogleEventTimingError,
+  ) => void,
+): Promise<{ results: T[]; invalid: number }> {
+  const results: T[] = [];
+  let invalid = 0;
+  for (const event of events) {
+    try {
+      results.push(await reconcile(event));
+    } catch (error) {
+      if (!(error instanceof GoogleEventTimingError)) throw error;
+      invalid += 1;
+      onInvalid(event, error);
+    }
+  }
+  return { results, invalid };
+}
+
+export function shouldCleanupGoogleEventCache(
+  fullSync: boolean,
+  invalidEventCount: number,
+): boolean {
+  return fullSync && invalidEventCount === 0;
 }
 
 function hashChannelToken(value: string): string {
@@ -641,6 +678,11 @@ async function markConnectionFailure(
   const supabase = createSupabaseAdminClient();
   const reconnect = error instanceof GoogleApiError && error.reconnectRequired;
   const safeError = safeGoogleError(error);
+  logSync("connection_failure", connectionId, {
+    result: "error",
+    error: safeError,
+    sqlState: safeSqlState(error),
+  });
   await supabase
     .from("integration_connections")
     .update({
@@ -770,7 +812,7 @@ export async function syncGoogleConnection(
 ): Promise<{ changed: number; full: boolean }> {
   const supabase = createSupabaseAdminClient();
   const attemptedAt = new Date().toISOString();
-  await supabase
+  const { error: startError } = await supabase
     .from("integration_connections")
     .update({
       sync_state: "syncing",
@@ -779,6 +821,7 @@ export async function syncGoogleConnection(
       updated_at: attemptedAt,
     })
     .eq("id", connectionId);
+  if (startError) throw startError;
   try {
     const connection = await connectionById(connectionId);
     const { token } = await validGoogleAccessToken(
@@ -789,78 +832,114 @@ export async function syncGoogleConnection(
     const counters: Record<string, number> = {};
     let changed = 0;
     let anyFull = false;
+    const failedCalendars: string[] = [];
     for (const calendar of calendars) {
       const scopedConnection = {
         ...connection,
         selected_calendar_id: calendar.calendar_id,
         sync_token: calendar.sync_token,
       };
-      await supabase
+      const { error: calendarStartError } = await supabase
         .from("google_calendars")
-        .update({ sync_state: "syncing" })
+        .update({ sync_state: "syncing", last_error: null })
         .eq("id", calendar.id);
-      const result = await recoverInvalidGoogleSyncToken(
-        () => listChanges(scopedConnection, calendar, token, forceFull),
-        async () => {
-          const { error } = await supabase
-            .from("google_calendars")
-            .update({ sync_token: null })
-            .eq("id", calendar.id);
-          if (error) throw error;
-        },
-        () =>
-          listChanges(
-            scopedConnection,
-            { ...calendar, sync_token: null },
-            token,
-            true,
-          ),
-      );
-      const syncRunId = randomUUID();
-      for (const event of result.events) {
-        const kind = await reconcileGoogleEvent(
-          scopedConnection,
-          event,
-          syncRunId,
+      if (calendarStartError) throw calendarStartError;
+      try {
+        const result = await recoverInvalidGoogleSyncToken(
+          () => listChanges(scopedConnection, calendar, token, forceFull),
+          async () => {
+            const { error } = await supabase
+              .from("google_calendars")
+              .update({ sync_token: null })
+              .eq("id", calendar.id);
+            if (error) throw error;
+          },
+          () =>
+            listChanges(
+              scopedConnection,
+              { ...calendar, sync_token: null },
+              token,
+              true,
+            ),
         );
-        counters[kind] = (counters[kind] ?? 0) + 1;
-      }
-      if (result.full) {
-        const { error: cleanupError } = await supabase
-          .from("external_google_events")
-          .delete()
-          .eq("connection_id", connection.id)
-          .eq("calendar_id", calendar.calendar_id)
-          .neq("last_seen_sync_id", syncRunId);
-        if (cleanupError) throw cleanupError;
-      }
-      const calendarCompletedAt = new Date().toISOString();
-      const { error: calendarUpdateError } = await supabase
-        .from("google_calendars")
-        .update({
-          sync_token: result.syncToken,
-          sync_state: "idle",
-          last_error: null,
-          last_successful_sync_at: calendarCompletedAt,
-          updated_at: calendarCompletedAt,
-        })
-        .eq("id", calendar.id);
-      if (calendarUpdateError) throw calendarUpdateError;
-      changed += result.events.length;
-      anyFull ||= result.full;
-      if (shouldRenewGoogleWatch(calendar.watch_expires_at)) {
-        await registerSingleGoogleWatch(
-          connection.id,
-          calendar.calendar_id,
-        ).catch((watchError) =>
-          logSync("watch_register", connection.id, {
-            calendarId: calendar.calendar_id,
-            result: "error",
-            error: safeGoogleError(watchError),
-          }),
+        const syncRunId = randomUUID();
+        const batch = await reconcileGoogleEventBatch(
+          result.events,
+          (event) => reconcileGoogleEvent(scopedConnection, event, syncRunId),
+          (event, timingError) => {
+            counters.skipped_invalid = (counters.skipped_invalid ?? 0) + 1;
+            logSync("event_skipped", connection.id, {
+              calendarId: calendar.calendar_id,
+              eventKey: createHash("sha256")
+                .update(event.id)
+                .digest("hex")
+                .slice(0, 12),
+              reason: timingError.code,
+            });
+          },
         );
+        for (const kind of batch.results)
+          counters[String(kind)] = (counters[String(kind)] ?? 0) + 1;
+        // A malformed item may represent a previously valid cached event. Keep
+        // unseen cache rows during that full run instead of deleting data that
+        // could not be safely reconciled.
+        if (shouldCleanupGoogleEventCache(result.full, batch.invalid)) {
+          const { error: cleanupError } = await supabase
+            .from("external_google_events")
+            .delete()
+            .eq("connection_id", connection.id)
+            .eq("calendar_id", calendar.calendar_id)
+            .neq("last_seen_sync_id", syncRunId);
+          if (cleanupError) throw cleanupError;
+        }
+        const calendarCompletedAt = new Date().toISOString();
+        const { error: calendarUpdateError } = await supabase
+          .from("google_calendars")
+          .update({
+            sync_token: result.syncToken,
+            sync_state: "idle",
+            last_error: null,
+            last_successful_sync_at: calendarCompletedAt,
+            updated_at: calendarCompletedAt,
+          })
+          .eq("id", calendar.id);
+        if (calendarUpdateError) throw calendarUpdateError;
+        changed += result.events.length - batch.invalid;
+        anyFull ||= result.full;
+        if (shouldRenewGoogleWatch(calendar.watch_expires_at)) {
+          await registerSingleGoogleWatch(
+            connection.id,
+            calendar.calendar_id,
+          ).catch((watchError) =>
+            logSync("watch_register", connection.id, {
+              calendarId: calendar.calendar_id,
+              result: "error",
+              error: safeGoogleError(watchError),
+            }),
+          );
+        }
+      } catch (calendarError) {
+        failedCalendars.push(calendar.calendar_id);
+        const safeError = safeGoogleError(calendarError);
+        const { error: stateError } = await supabase
+          .from("google_calendars")
+          .update({
+            sync_state: "error",
+            last_error: safeError,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", calendar.id);
+        if (stateError) throw stateError;
+        logSync("calendar_reconcile", connection.id, {
+          calendarId: calendar.calendar_id,
+          result: "error",
+          error: safeError,
+          sqlState: safeSqlState(calendarError),
+        });
       }
     }
+    if (failedCalendars.length)
+      throw new Error("GOOGLE_CALENDAR_PARTIAL_FAILURE");
     const completedAt = new Date().toISOString();
     const { error: updateError } = await supabase
       .from("integration_connections")
