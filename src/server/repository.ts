@@ -263,6 +263,7 @@ async function loadTenantStore(
     profileResult,
     tutorResult,
     subscriptionResult,
+    ownerLifetimeResult,
     integrationsResult,
     googleCalendarsResult,
   ] = await Promise.all([
@@ -281,6 +282,7 @@ async function loadTenantStore(
       .select("status,tier,billing_interval,read_only,trial_ends_at,renews_at")
       .eq("teacher_id", teacherId)
       .single(),
+    supabase.rpc("current_user_has_owner_lifetime_access"),
     includesSection(scope, "integrations")
       ? supabase
           .from("integration_connections")
@@ -301,9 +303,12 @@ async function loadTenantStore(
           .order("summary")
       : emptyQueryResult(),
   ]);
-  const failure = [profileResult, tutorResult, subscriptionResult].find(
-    (result) => result.error,
-  );
+  const failure = [
+    profileResult,
+    tutorResult,
+    subscriptionResult,
+    ownerLifetimeResult,
+  ].find((result) => result.error);
   if (failure?.error) throw failure.error;
   const profile = profileResult.data!;
   const subscription = subscriptionResult.data!;
@@ -595,7 +600,10 @@ async function loadTenantStore(
     timezone: profile.timezone,
     onboardingCompletedAt: profile.onboarding_completed_at ?? undefined,
     passwordHash: "",
-    subscription: mapSubscriptionRow(subscription),
+    subscription: mapSubscriptionRow(
+      subscription,
+      ownerLifetimeResult.data === true,
+    ),
     google: states.get("google") ?? defaultIntegration("google"),
     telegram: states.get("telegram") ?? defaultIntegration("telegram"),
     payu: states.get("payu") ?? defaultIntegration("payu"),
@@ -1071,6 +1079,7 @@ async function loadWriteContext(teacherId: string) {
     { data: authData, error: authError },
     tutorResult,
     subscriptionResult,
+    ownerLifetimeResult,
     profileResult,
   ] = await Promise.all([
     supabase.auth.getUser(),
@@ -1084,6 +1093,7 @@ async function loadWriteContext(teacherId: string) {
       .select("status,tier,read_only")
       .eq("teacher_id", teacherId)
       .single(),
+    supabase.rpc("current_user_has_owner_lifetime_access"),
     supabase.from("profiles").select("timezone").eq("id", teacherId).single(),
   ]);
   if (authError || authData.user?.id !== teacherId) {
@@ -1094,8 +1104,9 @@ async function loadWriteContext(teacherId: string) {
   }
   if (tutorResult.error) throw tutorResult.error;
   if (subscriptionResult.error) throw subscriptionResult.error;
+  if (ownerLifetimeResult.error) throw ownerLifetimeResult.error;
   if (profileResult.error) throw profileResult.error;
-  if (subscriptionResult.data.read_only) {
+  if (subscriptionResult.data.read_only && ownerLifetimeResult.data !== true) {
     throw new ApiFailure(403, {
       code: "READ_ONLY",
       message:
@@ -1109,6 +1120,10 @@ async function loadWriteContext(teacherId: string) {
     subscription: {
       status: subscriptionResult.data.status,
       tier: subscriptionResult.data.tier,
+      accessGrant:
+        ownerLifetimeResult.data === true
+          ? ("owner_lifetime" as const)
+          : undefined,
     },
   };
 }

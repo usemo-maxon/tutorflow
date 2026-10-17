@@ -11,7 +11,10 @@ export interface Entitlements {
   ai: boolean;
 }
 
-type EntitlementSubscription = Pick<Teacher["subscription"], "status" | "tier">;
+type EntitlementSubscription = Pick<
+  Teacher["subscription"],
+  "status" | "tier" | "accessGrant"
+>;
 
 const FREE_ENTITLEMENTS: Readonly<Entitlements> = Object.freeze({
   maxActiveStudents: 3,
@@ -38,7 +41,11 @@ const PRO_ENTITLEMENTS: Readonly<Entitlements> = Object.freeze({
 export function resolveEntitlements(
   subscription: EntitlementSubscription,
 ): Entitlements {
-  if (subscription.status === "trial" || subscription.tier !== "free") {
+  if (
+    subscription.accessGrant === "owner_lifetime" ||
+    subscription.status === "trial" ||
+    subscription.tier !== "free"
+  ) {
     return { ...PRO_ENTITLEMENTS };
   }
   return { ...FREE_ENTITLEMENTS };
@@ -60,4 +67,5 @@ export function activeStudentLimit(
 export type EntitlementSubscriptionRow = {
   status: SubscriptionStatus;
   tier: SubscriptionTier;
+  accessGrant?: "owner_lifetime";
 };

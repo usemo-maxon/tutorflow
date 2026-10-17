@@ -20,6 +20,10 @@ import {
 } from "./google-calendar";
 import { GOOGLE_EVENT_COLORS } from "./google-calendar-colors";
 import { entitledTeacherIds } from "./entitlements";
+import {
+  applyOwnerLifetimeAccess,
+  ownerLifetimeUserIds,
+} from "./access-grants";
 import { createSupabaseAdminClient } from "./supabase";
 
 interface ConnectionRow {
@@ -1176,8 +1180,14 @@ export async function acceptGoogleWebhook(
     .eq("teacher_id", data.teacher_id)
     .maybeSingle();
   if (subscriptionError) throw subscriptionError;
+  const lifetimeOwners = await ownerLifetimeUserIds(supabase, [
+    data.teacher_id,
+  ]);
   const entitled = entitledTeacherIds(
-    subscription ? [subscription] : [],
+    applyOwnerLifetimeAccess(
+      subscription ? [subscription] : [],
+      lifetimeOwners,
+    ),
     "googleCalendar",
   );
   if (!entitled.has(data.teacher_id)) return { kind: "skipped_not_entitled" };
@@ -1201,13 +1211,35 @@ export async function acceptGoogleWebhook(
 
 export async function maintainGoogleConnections(limit = 10) {
   const supabase = createSupabaseAdminClient();
+  const lifetimeOwners = await ownerLifetimeUserIds(supabase);
   const { data: subscriptions, error: subscriptionError } = await supabase
     .from("subscriptions")
     .select("teacher_id,status,tier")
     .or("status.eq.trial,tier.neq.free")
     .limit(GOOGLE_MAINTENANCE_SCAN_LIMIT);
   if (subscriptionError) throw subscriptionError;
-  const entitled = entitledTeacherIds(subscriptions ?? [], "googleCalendar");
+  const ownerIds = [...lifetimeOwners];
+  const { data: ownerSubscriptions, error: ownerSubscriptionError } =
+    ownerIds.length
+      ? await supabase
+          .from("subscriptions")
+          .select("teacher_id,status,tier")
+          .in("teacher_id", ownerIds)
+      : { data: [], error: null };
+  if (ownerSubscriptionError) throw ownerSubscriptionError;
+  const subscriptionByTeacher = new Map(
+    [...(subscriptions ?? []), ...(ownerSubscriptions ?? [])].map((row) => [
+      row.teacher_id,
+      row,
+    ]),
+  );
+  const entitled = entitledTeacherIds(
+    applyOwnerLifetimeAccess(
+      [...subscriptionByTeacher.values()],
+      lifetimeOwners,
+    ),
+    "googleCalendar",
+  );
   const teacherIds = [...entitled];
   if (!teacherIds.length)
     return { inspected: 0, synced: 0, watches: 0, skipped: 0, failed: 0 };
@@ -1314,7 +1346,11 @@ export async function processGoogleLessonJobs(
         .in("teacher_id", teacherIds)
     : { data: [], error: null };
   if (subscriptionError) throw subscriptionError;
-  const entitled = entitledTeacherIds(subscriptions ?? [], "googleCalendar");
+  const lifetimeOwners = await ownerLifetimeUserIds(supabase, teacherIds);
+  const entitled = entitledTeacherIds(
+    applyOwnerLifetimeAccess(subscriptions ?? [], lifetimeOwners),
+    "googleCalendar",
+  );
   const processableJobs = (jobs ?? [])
     .filter((job) => entitled.has(job.teacher_id))
     .slice(0, options.limit ?? GOOGLE_OUTBOUND_BATCH_LIMIT);

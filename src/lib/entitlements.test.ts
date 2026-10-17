@@ -49,4 +49,14 @@ describe("resolveEntitlements", () => {
     const annual = resolveEntitlements(annualSubscription);
     expect(monthly).toEqual(annual);
   });
+
+  it("grants every current entitlement and unlimited students to the lifetime owner", () => {
+    expect(
+      resolveEntitlements({
+        status: "past_due",
+        tier: "free",
+        accessGrant: "owner_lifetime",
+      }),
+    ).toEqual(fullAccess);
+  });
 });

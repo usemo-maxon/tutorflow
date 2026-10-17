@@ -18,7 +18,15 @@ export async function GET() {
   try {
     const teacher = await currentTeacher();
     if (!teacher) throw unauthenticated();
-    if (!isLegalOperatorComplete()) throw new ApiFailure(503,{code:"LEGAL_OPERATOR_DATA_MISSING",message:"Płatności są niedostępne do czasu uzupełnienia danych usługodawcy."});
+    if (teacher.subscription.accessGrant === "owner_lifetime") {
+      return Response.json({ founderAvailable: false, lifetimeAccess: true });
+    }
+    if (!isLegalOperatorComplete())
+      throw new ApiFailure(503, {
+        code: "LEGAL_OPERATOR_DATA_MISSING",
+        message:
+          "Płatności są niedostępne do czasu uzupełnienia danych usługodawcy.",
+      });
     return Response.json({
       founderAvailable:
         teacher.subscription.tier === "founder" ||
@@ -33,6 +41,12 @@ export async function POST(request: Request) {
   try {
     const teacher = await currentTeacher();
     if (!teacher) throw unauthenticated();
+    if (teacher.subscription.accessGrant === "owner_lifetime") {
+      throw new ApiFailure(403, {
+        code: "LIFETIME_ACCESS",
+        message: "Konto Platform Owner nie wymaga płatnej subskrypcji.",
+      });
+    }
     const plan = parseCheckoutProduct(await request.json());
     if (!plan)
       throw new ApiFailure(422, {

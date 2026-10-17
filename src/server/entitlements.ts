@@ -19,14 +19,20 @@ export function planRequired(capability: keyof Entitlements): ApiFailure {
 }
 
 export function assertEntitlement(
-  subscription: Pick<Teacher["subscription"], "status" | "tier">,
+  subscription: Pick<
+    Teacher["subscription"],
+    "status" | "tier" | "accessGrant"
+  >,
   capability: Exclude<keyof Entitlements, "maxActiveStudents">,
 ): void {
   if (!hasEntitlement(subscription, capability)) throw planRequired(capability);
 }
 
 export function assertActiveStudentCapacity(
-  subscription: Pick<Teacher["subscription"], "status" | "tier">,
+  subscription: Pick<
+    Teacher["subscription"],
+    "status" | "tier" | "accessGrant"
+  >,
   activeStudents: number,
 ): void {
   const limit = activeStudentLimit(subscription);

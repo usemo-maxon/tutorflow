@@ -17,6 +17,7 @@ import {
   MessageSquareWarning,
   Search,
   Settings,
+  ShieldCheck,
   Users,
   X,
 } from "lucide-react";
@@ -125,6 +126,16 @@ function ShellBody({
     }
   }
   const readOnly = teacher.subscription.readOnly;
+  const visibleNav = teacher.isPlatformAdmin
+    ? [
+        ...nav,
+        {
+          href: "/app/admin/szablony",
+          label: "Moderacja",
+          icon: ShieldCheck,
+        },
+      ]
+    : nav;
   function handleGlobalCreate(action: GlobalCreateAction) {
     setMobileMenu(false);
     if (action === "lesson") {
@@ -174,7 +185,7 @@ function ShellBody({
         />
         <nav className="sidebar-nav" aria-label="Główna nawigacja">
           <p className="sidebar-section-label">Twój obszar pracy</p>
-          {nav.map(({ href, label, icon: Icon }) => {
+          {visibleNav.map(({ href, label, icon: Icon }) => {
             const active =
               pathname === href ||
               (href !== "/app/dzisiaj" &&
@@ -247,7 +258,7 @@ function ShellBody({
               </Dialog.Close>
             </header>
             <nav className="sidebar-nav" aria-label="Menu mobilne">
-              {nav.map(({ href, label, icon: Icon }) => (
+              {visibleNav.map(({ href, label, icon: Icon }) => (
                 <Link
                   key={href}
                   href={href}

@@ -14,6 +14,7 @@ export type SubscriptionTier = "free" | "pro" | "founder";
 export type BillingInterval = "monthly" | "annual";
 export type SubscriptionStatus =
   "trial" | "active" | "past_due" | "read_only" | "cancelled";
+export type InternalAccessGrant = "owner_lifetime";
 
 export interface Student {
   id: EntityId;
@@ -227,6 +228,7 @@ export interface Teacher {
   email: string;
   timezone: string;
   onboardingCompletedAt?: ISODateTime;
+  isPlatformAdmin?: boolean;
   subscription: {
     status: SubscriptionStatus;
     tier: SubscriptionTier;
@@ -234,6 +236,7 @@ export interface Teacher {
     readOnly: boolean;
     trialEndsAt?: ISODateTime;
     renewsAt?: ISODateTime;
+    accessGrant?: InternalAccessGrant;
   };
 }
 

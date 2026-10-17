@@ -35,17 +35,14 @@ export function SubscriptionSettings({
   payment?: "processing" | "failed" | "cancelled";
 }) {
   const session = useSessionTeacher();
-  const { data, isPending } = useAppData(
-    session.id,
-    undefined,
-    "subscription",
-  );
+  const { data, isPending } = useAppData(session.id, undefined, "subscription");
   const [billing, setBilling] = useState<BillingChoice>("annual");
   const [checkout, setCheckout] = useState<BillingChoice | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
   const [founderAvailable, setFounderAvailable] = useState(false);
 
   useEffect(() => {
+    if (session.subscription.accessGrant === "owner_lifetime") return;
     let active = true;
     fetch("/api/payu/checkout")
       .then(async (response) => {
@@ -59,11 +56,14 @@ export function SubscriptionSettings({
     return () => {
       active = false;
     };
-  }, []);
+  }, [session.subscription.accessGrant]);
 
   if (isPending || !data) return <PageLoading />;
 
   const subscription = data.teacher.subscription;
+  if (subscription.accessGrant === "owner_lifetime") {
+    return <OwnerLifetimeSubscription />;
+  }
   const presentation = subscriptionPresentation(subscription);
   const entitlements = resolveEntitlements(subscription);
   const activeStudents = data.students.filter(
@@ -325,12 +325,67 @@ export function SubscriptionSettings({
             Plan zmieni się dopiero po potwierdzeniu płatności przez PayU.
           </p>
         )}
-        <p className="integration-note">Wybrany plan, cena brutto i okres rozliczeniowy są pokazane powyżej. Subskrypcja odnawia się automatycznie zgodnie z wybranym okresem rozliczeniowym, dopóki jej nie anulujesz. Anulowanie zatrzymuje kolejne odnowienie. <Link href="/regulamin">Regulamin i informacje o odstąpieniu</Link>.</p>
+        <p className="integration-note">
+          Wybrany plan, cena brutto i okres rozliczeniowy są pokazane powyżej.
+          Subskrypcja odnawia się automatycznie zgodnie z wybranym okresem
+          rozliczeniowym, dopóki jej nie anulujesz. Anulowanie zatrzymuje
+          kolejne odnowienie.{" "}
+          <Link href="/regulamin">Regulamin i informacje o odstąpieniu</Link>.
+        </p>
         {checkoutError && (
           <div className="form-alert" role="alert">
             {checkoutError}
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+function OwnerLifetimeSubscription() {
+  return (
+    <section className="settings-panel settings-panel--subscription">
+      <div className="settings-copy">
+        <p className="eyebrow">Plan i dostęp</p>
+        <h2>Subskrypcja</h2>
+        <p>
+          To konto ma stały, wewnętrzny dostęp właściciela platformy i nie
+          wymaga rozliczeń ani odnowień.
+        </p>
+      </div>
+
+      <div className="subscription-content">
+        <article className="current-plan-card" aria-labelledby="current-plan">
+          <div className="current-plan-icon" aria-hidden="true">
+            <Crown size={22} />
+          </div>
+          <div className="current-plan-copy">
+            <span className="plan-label">Twój dostęp</span>
+            <h3 id="current-plan">Platform Owner — Lifetime Access</h3>
+            <p>Dostęp do wszystkich funkcji</p>
+            <small>Bezterminowo · Brak konieczności odnawiania</small>
+          </div>
+          <span className="current-plan-badge">Aktywny</span>
+        </article>
+
+        <PlanCard
+          featured
+          title="Lifetime Access"
+          label="Platform Owner"
+          icon={<Crown size={18} aria-hidden="true" />}
+          price="0 zł"
+          description="Bezterminowy dostęp właściciela platformy."
+          features={[
+            "Dostęp do wszystkich funkcji",
+            "Nielimitowani uczniowie",
+            "Bezterminowo",
+            "Brak konieczności odnawiania",
+          ]}
+        />
+
+        <p className="integration-note">
+          Ten dostęp nie korzysta z PayU i nie wymaga zakupu planu Pro.
+        </p>
       </div>
     </section>
   );

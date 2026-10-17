@@ -16,15 +16,17 @@ export interface SubscriptionRow {
 
 export function mapSubscriptionRow(
   row: SubscriptionRow,
+  ownerLifetime = false,
 ): Teacher["subscription"] {
   return {
     status: row.status as SubscriptionStatus,
     tier: row.tier as SubscriptionTier,
     billingInterval:
       (row.billing_interval as BillingInterval | null) ?? undefined,
-    readOnly: row.read_only,
+    readOnly: ownerLifetime ? false : row.read_only,
     trialEndsAt: row.trial_ends_at ?? undefined,
     renewsAt: row.renews_at ?? undefined,
+    accessGrant: ownerLifetime ? "owner_lifetime" : undefined,
   };
 }
 
@@ -32,6 +34,9 @@ export function resolveExpiredTrial(
   subscription: Teacher["subscription"],
   now = new Date(),
 ): Teacher["subscription"] {
+  if (subscription.accessGrant === "owner_lifetime") {
+    return { ...subscription, readOnly: false };
+  }
   if (
     subscription.status !== "trial" ||
     !subscription.trialEndsAt ||

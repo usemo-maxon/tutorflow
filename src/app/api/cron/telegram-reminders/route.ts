@@ -6,6 +6,10 @@ import {
 } from "@/server/cron";
 import { createSupabaseAdminClient } from "@/server/supabase";
 import { entitledTeacherIds } from "@/server/entitlements";
+import {
+  applyOwnerLifetimeAccess,
+  ownerLifetimeUserIds,
+} from "@/server/access-grants";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -41,7 +45,11 @@ async function processReminders() {
         .in("teacher_id", teacherIds)
     : { data: [], error: null };
   if (subscriptionError) throw subscriptionError;
-  const entitled = entitledTeacherIds(subscriptions ?? [], "telegramReminders");
+  const lifetimeOwners = await ownerLifetimeUserIds(supabase, teacherIds);
+  const entitled = entitledTeacherIds(
+    applyOwnerLifetimeAccess(subscriptions ?? [], lifetimeOwners),
+    "telegramReminders",
+  );
   let sent = 0;
   let retried = 0;
   let skipped = (deliveries ?? []).filter(

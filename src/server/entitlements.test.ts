@@ -34,10 +34,34 @@ describe("server entitlement policy", () => {
           { teacher_id: "trial", status: "trial", tier: "free" },
           { teacher_id: "pro", status: "active", tier: "pro" },
           { teacher_id: "founder", status: "active", tier: "founder" },
+          {
+            teacher_id: "lifetime-owner",
+            status: "past_due",
+            tier: "free",
+            accessGrant: "owner_lifetime",
+          },
         ],
         capability,
       );
-      expect([...allowed]).toEqual(["trial", "pro", "founder"]);
+      expect([...allowed]).toEqual([
+        "trial",
+        "pro",
+        "founder",
+        "lifetime-owner",
+      ]);
     },
   );
+
+  it("never applies the active student cap to lifetime access", () => {
+    expect(() =>
+      assertActiveStudentCapacity(
+        {
+          status: "past_due",
+          tier: "free",
+          accessGrant: "owner_lifetime",
+        },
+        100_000,
+      ),
+    ).not.toThrow();
+  });
 });

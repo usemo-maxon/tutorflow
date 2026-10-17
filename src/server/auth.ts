@@ -16,7 +16,12 @@ export const currentTeacher = cache(async (): Promise<Teacher | null> => {
     const supabase = await createSupabaseServerClient();
     const { data, error } = await supabase.auth.getUser();
     if (error || !data.user) return null;
-    const [profileResult, subscriptionResult] = await Promise.all([
+    const [
+      profileResult,
+      subscriptionResult,
+      ownerLifetimeResult,
+      platformAdminResult,
+    ] = await Promise.all([
       supabase
         .from("profiles")
         .select("email,full_name,timezone,onboarding_completed_at")
@@ -29,8 +34,16 @@ export const currentTeacher = cache(async (): Promise<Teacher | null> => {
         )
         .eq("teacher_id", data.user.id)
         .single(),
+      supabase.rpc("current_user_has_owner_lifetime_access"),
+      supabase.rpc("current_user_is_platform_admin"),
     ]);
-    if (profileResult.error || subscriptionResult.error) return null;
+    if (
+      profileResult.error ||
+      subscriptionResult.error ||
+      ownerLifetimeResult.error ||
+      platformAdminResult.error
+    )
+      return null;
     const profile = profileResult.data;
     const subscription = subscriptionResult.data;
     return {
@@ -39,7 +52,11 @@ export const currentTeacher = cache(async (): Promise<Teacher | null> => {
       email: profile.email,
       timezone: profile.timezone,
       onboardingCompletedAt: profile.onboarding_completed_at ?? undefined,
-      subscription: mapSubscriptionRow(subscription),
+      isPlatformAdmin: platformAdminResult.data === true,
+      subscription: mapSubscriptionRow(
+        subscription,
+        ownerLifetimeResult.data === true,
+      ),
     };
   }
   const cookieStore = await cookies();

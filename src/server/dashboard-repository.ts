@@ -71,33 +71,42 @@ export async function queryTodayDashboardSource(
     throw new Error("UNAUTHENTICATED");
   }
 
-  const [profileResult, tutorResult, subscriptionResult, googleResult] =
-    await Promise.all([
-      supabase
-        .from("profiles")
-        .select("full_name,timezone,onboarding_completed_at")
-        .eq("id", teacherId)
-        .single(),
-      supabase
-        .from("tutor_profiles")
-        .select("workspace_id,display_name,timezone")
-        .eq("user_id", teacherId)
-        .single(),
-      supabase
-        .from("subscriptions")
-        .select("read_only,status,tier")
-        .eq("teacher_id", teacherId)
-        .single(),
-      supabase
-        .from("integration_connections")
-        .select("status,sync_state")
-        .eq("teacher_id", teacherId)
-        .eq("provider", "google")
-        .maybeSingle(),
-    ]);
-  const contextFailure = [profileResult, tutorResult, subscriptionResult].find(
-    (result) => result.error,
-  );
+  const [
+    profileResult,
+    tutorResult,
+    subscriptionResult,
+    ownerLifetimeResult,
+    googleResult,
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("full_name,timezone,onboarding_completed_at")
+      .eq("id", teacherId)
+      .single(),
+    supabase
+      .from("tutor_profiles")
+      .select("workspace_id,display_name,timezone")
+      .eq("user_id", teacherId)
+      .single(),
+    supabase
+      .from("subscriptions")
+      .select("read_only,status,tier")
+      .eq("teacher_id", teacherId)
+      .single(),
+    supabase.rpc("current_user_has_owner_lifetime_access"),
+    supabase
+      .from("integration_connections")
+      .select("status,sync_state")
+      .eq("teacher_id", teacherId)
+      .eq("provider", "google")
+      .maybeSingle(),
+  ]);
+  const contextFailure = [
+    profileResult,
+    tutorResult,
+    subscriptionResult,
+    ownerLifetimeResult,
+  ].find((result) => result.error);
   if (contextFailure?.error) throw contextFailure.error;
 
   const workspaceId = tutorResult.data!.workspace_id as string;
@@ -366,12 +375,17 @@ export async function queryTodayDashboardSource(
         (profileResult.data!.full_name as string) ||
         "",
       timezone,
-      readOnly: Boolean(subscriptionResult.data!.read_only),
+      readOnly:
+        ownerLifetimeResult.data === true
+          ? false
+          : Boolean(subscriptionResult.data!.read_only),
       onboardingCompleted: Boolean(profileResult.data!.onboarding_completed_at),
       googleEntitled: hasEntitlement(
         {
           status: subscriptionResult.data!.status,
           tier: subscriptionResult.data!.tier,
+          accessGrant:
+            ownerLifetimeResult.data === true ? "owner_lifetime" : undefined,
         },
         "googleCalendar",
       ),

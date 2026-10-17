@@ -168,4 +168,18 @@ describe("active student entitlements", () => {
       ).resolves.toBeDefined();
     }
   });
+
+  it("allows unlimited active students for owner lifetime access", async () => {
+    const teacherId = await createTeacher("owner-lifetime", "active", "free");
+    await storage.mutateStore((store) => {
+      store.teachers.find(
+        (item) => item.id === teacherId,
+      )!.subscription.accessGrant = "owner_lifetime";
+    });
+    for (const number of [1, 2, 3, 4, 5, 6]) {
+      await expect(
+        perform(teacherId, { type: "createStudent", student: student(number) }),
+      ).resolves.toBeDefined();
+    }
+  });
 });
