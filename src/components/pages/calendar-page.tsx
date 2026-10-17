@@ -534,6 +534,21 @@ export function CalendarPage() {
           <Link href="/app/ustawienia/integracje">Sprawdź połączenie</Link>
         </div>
       )}
+      {(data.integrations.google.calendars ?? []).some(
+        (calendar) =>
+          calendar.syncEnabled &&
+          calendar.syncState !== "idle" &&
+          calendar.syncState !== undefined,
+      ) || data.integrations.google.visibleRangeComplete === false ? (
+        <div className="calendar-sync-notice" role="status">
+          <AlertTriangle size={16} aria-hidden="true" />
+          <span>
+            Dane Google dla tego zakresu mogą być jeszcze niepełne.
+            Synchronizacja jest wznawiana automatycznie.
+          </span>
+          <Link href="/app/ustawienia/integracje">Zobacz stan kalendarzy</Link>
+        </div>
+      ) : null}
       <div className="planning-bar">
         <label>
           <Users size={17} aria-hidden="true" />

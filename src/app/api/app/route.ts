@@ -4,7 +4,10 @@ import type { AppDataScope } from "@/lib/domain";
 import { currentTeacherId } from "@/server/auth";
 import { performAction } from "@/server/app-service";
 import { ApiFailure, errorResponse } from "@/server/errors";
-import { processGoogleLessonJobs } from "@/server/google-calendar-sync";
+import {
+  processGoogleLessonJobs,
+  syncGoogleVisibleRangeForTeacher,
+} from "@/server/google-calendar-sync";
 import { getAppData, isSchedulingAction } from "@/server/repository";
 
 export const runtime = "nodejs";
@@ -51,7 +54,15 @@ export async function GET(request: Request) {
         message: "Nieprawidłowy zakres kalendarza.",
       });
     }
-    return Response.json(await getAppData(teacherId, range, scope));
+    const data = await getAppData(teacherId, range, scope);
+    if (range && scope === "calendar") {
+      after(() =>
+        syncGoogleVisibleRangeForTeacher(teacherId, range).catch(
+          () => undefined,
+        ),
+      );
+    }
+    return Response.json(data);
   } catch (error) {
     return errorResponse(error);
   }

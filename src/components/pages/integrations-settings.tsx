@@ -369,7 +369,25 @@ function GoogleCalendarPreferences({
               {calendar.name}
               {calendar.primary ? " · główny" : ""}
             </strong>
-            <small>{calendar.timezone ?? "Google Calendar"}</small>
+            <small>
+              {!calendar.syncEnabled
+                ? "Niedostępny do synchronizacji"
+                : calendar.syncState === "syncing" ||
+                    calendar.syncState === "pending"
+                  ? "Synchronizacja w toku"
+                  : calendar.syncState === "error"
+                    ? "Synchronizacja wymaga ponowienia"
+                    : "Zsynchronizowano"}
+            </small>
+            {calendar.lastSuccessfulSyncAt && (
+              <small>
+                Ostatnia aktualizacja:{" "}
+                {syncDateFormatter.format(
+                  new Date(calendar.lastSuccessfulSyncAt),
+                )}
+              </small>
+            )}
+            {!calendar.visible && <small>Ukryty w widoku kalendarza</small>}
           </span>
           <div className="google-calendar-toggles">
             <label>

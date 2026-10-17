@@ -246,6 +246,31 @@ describe("Google Calendar production hardening helpers", () => {
     expect(result).toEqual({ results: ["external", "external"], invalid: 1 });
   });
 
+  it("reconciles a synthetic 1,200-event page set with bounded concurrency and stable output", async () => {
+    const events = Array.from({ length: 1_200 }, (_, index) => ({
+      id: `event-${index}`,
+    }));
+    let active = 0;
+    let maximumActive = 0;
+    const result = await reconcileGoogleEventBatch(
+      events,
+      async (event) => {
+        active += 1;
+        maximumActive = Math.max(maximumActive, active);
+        await Promise.resolve();
+        active -= 1;
+        return event.id;
+      },
+      () => undefined,
+    );
+    expect(result.invalid).toBe(0);
+    expect(result.results).toHaveLength(1_200);
+    expect(result.results[0]).toBe("event-0");
+    expect(result.results.at(-1)).toBe("event-1199");
+    expect(maximumActive).toBeLessThanOrEqual(8);
+    expect(maximumActive).toBeGreaterThan(1);
+  });
+
   it("does not swallow persistence failures while isolating malformed items", async () => {
     await expect(
       reconcileGoogleEventBatch(

@@ -87,6 +87,16 @@ interface GoogleCalendarRow {
   watch_expires_at: string | null;
   sync_enabled: boolean;
   is_primary: boolean;
+  sync_state?: string;
+  last_successful_sync_at?: string | null;
+  processed_event_count?: number;
+  recoverable_failure?: boolean;
+  sync_mode?: "full" | "incremental" | null;
+  sync_page_token?: string | null;
+  sync_run_id?: string | null;
+  sync_force_full?: boolean;
+  lease_token?: string | null;
+  lease_expires_at?: string | null;
 }
 
 const reconnectMessage = "Google Calendar wymaga ponownego połączenia.";
@@ -94,6 +104,10 @@ const syncFailureMessage =
   "Lekcja została zapisana, ale nie udało się zsynchronizować jej z Google Calendar.";
 export const GOOGLE_OUTBOUND_BATCH_LIMIT = 20;
 export const GOOGLE_WEBHOOK_REPAIR_BATCH_LIMIT = 10;
+export const GOOGLE_IMPORT_PAGE_SIZE = 100;
+export const GOOGLE_IMPORT_CONCURRENCY = 8;
+export const GOOGLE_SYNC_BUDGET_MS = 42_000;
+export const GOOGLE_SYNC_LEASE_MS = 2 * 60_000;
 export const GOOGLE_WATCH_RENEWAL_WINDOW_MS = 48 * 60 * 60_000;
 const GOOGLE_MAINTENANCE_SCAN_LIMIT = 200;
 
@@ -250,18 +264,32 @@ export async function reconcileGoogleEventBatch<T>(
     error: GoogleEventTimingError,
   ) => void,
 ): Promise<{ results: T[]; invalid: number }> {
-  const results: T[] = [];
+  const ordered: Array<T | undefined> = new Array(events.length);
   let invalid = 0;
-  for (const event of events) {
-    try {
-      results.push(await reconcile(event));
-    } catch (error) {
-      if (!(error instanceof GoogleEventTimingError)) throw error;
-      invalid += 1;
-      onInvalid(event, error);
+  let next = 0;
+  async function worker() {
+    while (next < events.length) {
+      const index = next++;
+      const event = events[index];
+      try {
+        ordered[index] = await reconcile(event);
+      } catch (error) {
+        if (!(error instanceof GoogleEventTimingError)) throw error;
+        invalid += 1;
+        onInvalid(event, error);
+      }
     }
   }
-  return { results, invalid };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(GOOGLE_IMPORT_CONCURRENCY, events.length) },
+      () => worker(),
+    ),
+  );
+  return {
+    results: ordered.filter((value): value is T => value !== undefined),
+    invalid,
+  };
 }
 
 export function shouldCleanupGoogleEventCache(
@@ -328,39 +356,43 @@ async function responseJson<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function listChanges(
+async function listChangesPage(
   connection: ConnectionRow,
   calendar: GoogleCalendarRow,
   token: string,
   forceFull: boolean,
 ): Promise<{
   events: GoogleEventResource[];
-  syncToken: string;
+  nextPageToken: string | null;
+  syncToken: string | null;
   full: boolean;
 }> {
-  const full = forceFull || !calendar.sync_token;
-  return collectGoogleEventPages(async (pageToken) => {
-    const query = new URLSearchParams({
-      singleEvents: "true",
-      showDeleted: "true",
-      maxResults: "2500",
-    });
-    if (!full && calendar.sync_token)
-      query.set("syncToken", calendar.sync_token);
-    if (full)
-      query.set(
-        "timeMin",
-        new Date(Date.now() - 366 * 24 * 60 * 60_000).toISOString(),
-      );
-    if (pageToken) query.set("pageToken", pageToken);
-    const response = await googleApiRequest(
-      token,
-      `/calendars/${encodeURIComponent(calendar.calendar_id)}/events?${query}`,
-    );
-    if (response.status === 410)
-      throw new GoogleApiError("GOOGLE_SYNC_TOKEN_EXPIRED", 410, false);
-    return responseJson<GoogleEventsPage>(response);
-  }, full);
+  const full = calendar.sync_mode
+    ? calendar.sync_mode === "full"
+    : forceFull || !calendar.sync_token;
+  const query = new URLSearchParams({
+    singleEvents: "true",
+    showDeleted: "true",
+    maxResults: String(GOOGLE_IMPORT_PAGE_SIZE),
+  });
+  if (!full && calendar.sync_token) query.set("syncToken", calendar.sync_token);
+  if (calendar.sync_page_token)
+    query.set("pageToken", calendar.sync_page_token);
+  const response = await googleApiRequest(
+    token,
+    `/calendars/${encodeURIComponent(calendar.calendar_id)}/events?${query}`,
+  );
+  if (response.status === 410)
+    throw new GoogleApiError("GOOGLE_SYNC_TOKEN_EXPIRED", 410, false);
+  const page = await responseJson<GoogleEventsPage>(response);
+  if (!page.nextPageToken && !page.nextSyncToken)
+    throw new Error("GOOGLE_NEXT_SYNC_TOKEN_MISSING");
+  return {
+    events: page.items ?? [],
+    nextPageToken: page.nextPageToken ?? null,
+    syncToken: page.nextSyncToken ?? null,
+    full,
+  };
 }
 
 export async function collectGoogleEventPages(
@@ -382,6 +414,29 @@ export async function collectGoogleEventPages(
   } while (pageToken);
   if (!finalSyncToken) throw new Error("GOOGLE_NEXT_SYNC_TOKEN_MISSING");
   return { events, syncToken: finalSyncToken, full };
+}
+
+async function listGoogleRangePage(
+  calendarId: string,
+  token: string,
+  rangeStart: string,
+  rangeEnd: string,
+  pageToken?: string | null,
+): Promise<GoogleEventsPage> {
+  const query = new URLSearchParams({
+    singleEvents: "true",
+    showDeleted: "true",
+    maxResults: String(GOOGLE_IMPORT_PAGE_SIZE),
+    timeMin: rangeStart,
+    timeMax: rangeEnd,
+  });
+  if (pageToken) query.set("pageToken", pageToken);
+  return responseJson<GoogleEventsPage>(
+    await googleApiRequest(
+      token,
+      `/calendars/${encodeURIComponent(calendarId)}/events?${query}`,
+    ),
+  );
 }
 
 export async function recoverInvalidGoogleSyncToken<T>(
@@ -425,6 +480,7 @@ function externalEventRow(
   calendarId: string,
   event: GoogleEventResource,
   syncRunId: string,
+  markSeen = true,
 ) {
   const timing = normalizeGoogleEventTiming(event);
   const providerColor = event.colorId
@@ -454,7 +510,7 @@ function externalEventRow(
     google_updated_at: event.updated ?? null,
     recurring_event_id: event.recurringEventId ?? null,
     original_start_time: eventOriginalStart(event),
-    last_seen_sync_id: syncRunId,
+    ...(markSeen ? { last_seen_sync_id: syncRunId } : {}),
     updated_at: new Date().toISOString(),
   };
 }
@@ -619,19 +675,23 @@ async function reconcileGoogleEvent(
   connection: ConnectionRow,
   event: GoogleEventResource,
   syncRunId: string,
+  known?: { mapping: MappingRow | null },
 ) {
   const supabase = createSupabaseAdminClient();
-  const { data: mappingData, error: mappingError } = await supabase
-    .from("google_event_mappings")
-    .select(
-      "id,lesson_id,google_event_id,google_etag,google_updated_at,last_synced_hash,local_updated_at_at_sync",
-    )
-    .eq("connection_id", connection.id)
-    .eq("calendar_id", connection.selected_calendar_id)
-    .eq("google_event_id", event.id)
-    .maybeSingle();
-  if (mappingError) throw mappingError;
-  const mapping = (mappingData as MappingRow | null) ?? null;
+  let mapping = known?.mapping;
+  if (mapping === undefined) {
+    const { data: mappingData, error: mappingError } = await supabase
+      .from("google_event_mappings")
+      .select(
+        "id,lesson_id,google_event_id,google_etag,google_updated_at,last_synced_hash,local_updated_at_at_sync",
+      )
+      .eq("connection_id", connection.id)
+      .eq("calendar_id", connection.selected_calendar_id)
+      .eq("google_event_id", event.id)
+      .maybeSingle();
+    if (mappingError) throw mappingError;
+    mapping = (mappingData as MappingRow | null) ?? null;
+  }
   const metadataLessonId = lessonIdFromGoogleEvent(event);
   if (
     await reconcileLinkedEvent(connection, event, mapping, metadataLessonId)
@@ -669,6 +729,100 @@ async function reconcileGoogleEvent(
     );
   if (error) throw error;
   return "external";
+}
+
+async function reconcileGoogleEventPage(
+  connection: ConnectionRow,
+  events: GoogleEventResource[],
+  syncRunId: string,
+  onInvalid: (
+    event: GoogleEventResource,
+    error: GoogleEventTimingError,
+  ) => void,
+  markSeen = true,
+): Promise<{ results: string[]; invalid: number }> {
+  if (!events.length) return { results: [], invalid: 0 };
+  const supabase = createSupabaseAdminClient();
+  const { data: mappingsData, error: mappingsError } = await supabase
+    .from("google_event_mappings")
+    .select(
+      "id,lesson_id,google_event_id,google_etag,google_updated_at,last_synced_hash,local_updated_at_at_sync",
+    )
+    .eq("connection_id", connection.id)
+    .eq("calendar_id", connection.selected_calendar_id)
+    .in(
+      "google_event_id",
+      events.map((event) => event.id),
+    );
+  if (mappingsError) throw mappingsError;
+  const mappings = new Map(
+    ((mappingsData ?? []) as MappingRow[]).map((mapping) => [
+      mapping.google_event_id,
+      mapping,
+    ]),
+  );
+  const linked: GoogleEventResource[] = [];
+  const cancelledIds: string[] = [];
+  const externalRows: ReturnType<typeof externalEventRow>[] = [];
+  let invalid = 0;
+  for (const event of events) {
+    if (mappings.has(event.id) || lessonIdFromGoogleEvent(event)) {
+      linked.push(event);
+      continue;
+    }
+    if (event.status === "cancelled") {
+      cancelledIds.push(event.id);
+      continue;
+    }
+    try {
+      externalRows.push(
+        externalEventRow(
+          connection,
+          connection.selected_calendar_id,
+          event,
+          syncRunId,
+          markSeen,
+        ),
+      );
+    } catch (error) {
+      if (!(error instanceof GoogleEventTimingError)) throw error;
+      invalid += 1;
+      onInvalid(event, error);
+    }
+  }
+  if (externalRows.length) {
+    const { error } = await supabase
+      .from("external_google_events")
+      .upsert(externalRows, {
+        onConflict: "connection_id,calendar_id,google_event_id",
+      });
+    if (error) throw error;
+  }
+  if (cancelledIds.length) {
+    const { error } = await supabase
+      .from("external_google_events")
+      .delete()
+      .eq("connection_id", connection.id)
+      .eq("calendar_id", connection.selected_calendar_id)
+      .in("google_event_id", cancelledIds);
+    if (error) throw error;
+  }
+  const linkedBatch = await reconcileGoogleEventBatch(
+    linked,
+    (event) =>
+      reconcileGoogleEvent(connection, event, syncRunId, {
+        mapping: mappings.get(event.id) ?? null,
+      }),
+    onInvalid,
+  );
+  return {
+    results: [
+      ...externalRows.map(() => "external"),
+      ...cancelledIds.map(() => "deleted_external"),
+      ...linkedBatch.results,
+    ],
+    invalid: invalid + linkedBatch.invalid,
+  };
 }
 
 async function markConnectionFailure(
@@ -741,7 +895,7 @@ async function refreshGoogleCalendarList(
       const { data, error: fallbackError } = await supabase
         .from("google_calendars")
         .select(
-          "id,connection_id,calendar_id,sync_token,watch_channel_id,watch_resource_id,watch_token_hash,watch_expires_at,sync_enabled,is_primary",
+          "id,connection_id,calendar_id,sync_token,watch_channel_id,watch_resource_id,watch_token_hash,watch_expires_at,sync_enabled,is_primary,sync_state,last_successful_sync_at,processed_event_count,recoverable_failure,sync_mode,sync_page_token,sync_run_id,sync_force_full,lease_token,lease_expires_at",
         )
         .eq("connection_id", connection.id)
         .eq("sync_enabled", true);
@@ -798,7 +952,7 @@ async function refreshGoogleCalendarList(
   const { data, error } = await supabase
     .from("google_calendars")
     .select(
-      "id,connection_id,calendar_id,sync_token,watch_channel_id,watch_resource_id,watch_token_hash,watch_expires_at,sync_enabled,is_primary",
+      "id,connection_id,calendar_id,sync_token,watch_channel_id,watch_resource_id,watch_token_hash,watch_expires_at,sync_enabled,is_primary,sync_state,last_successful_sync_at,processed_event_count,recoverable_failure,sync_mode,sync_page_token,sync_run_id,sync_force_full,lease_token,lease_expires_at",
     )
     .eq("connection_id", connection.id)
     .eq("sync_enabled", true);
@@ -828,126 +982,240 @@ export async function syncGoogleConnection(
       connection.teacher_id,
       connection.encrypted_credentials,
     );
-    const calendars = await refreshGoogleCalendarList(connection, token);
+    let calendars = await refreshGoogleCalendarList(connection, token);
     const counters: Record<string, number> = {};
     let changed = 0;
     let anyFull = false;
-    const failedCalendars: string[] = [];
-    for (const calendar of calendars) {
-      const scopedConnection = {
-        ...connection,
-        selected_calendar_id: calendar.calendar_id,
-        sync_token: calendar.sync_token,
-      };
-      const { error: calendarStartError } = await supabase
-        .from("google_calendars")
-        .update({ sync_state: "syncing", last_error: null })
-        .eq("id", calendar.id);
-      if (calendarStartError) throw calendarStartError;
-      try {
-        const result = await recoverInvalidGoogleSyncToken(
-          () => listChanges(scopedConnection, calendar, token, forceFull),
-          async () => {
-            const { error } = await supabase
-              .from("google_calendars")
-              .update({ sync_token: null })
-              .eq("id", calendar.id);
-            if (error) throw error;
-          },
-          () =>
-            listChanges(
+    const deadline = Date.now() + GOOGLE_SYNC_BUDGET_MS;
+    const failedCalendars = new Set<string>();
+    let claimedElsewhere = false;
+    // Round-robin pages keep a very large calendar from starving its siblings.
+    while (calendars.length && Date.now() < deadline) {
+      const remaining: GoogleCalendarRow[] = [];
+      for (const calendar of calendars) {
+        if (Date.now() >= deadline) {
+          remaining.push(calendar);
+          continue;
+        }
+        const leaseToken = randomUUID();
+        const leaseExpiresAt = new Date(
+          Date.now() + GOOGLE_SYNC_LEASE_MS,
+        ).toISOString();
+        const runId = calendar.sync_run_id ?? randomUUID();
+        const mode =
+          calendar.sync_mode ??
+          (forceFull || !calendar.sync_token ? "full" : "incremental");
+        const { data: claimed, error: claimError } = await supabase
+          .from("google_calendars")
+          .update({
+            sync_state: "syncing",
+            sync_mode: mode,
+            sync_run_id: runId,
+            sync_force_full: forceFull,
+            lease_token: leaseToken,
+            lease_expires_at: leaseExpiresAt,
+            last_attempted_sync_at: new Date().toISOString(),
+            last_error: null,
+          })
+          .eq("id", calendar.id)
+          .or(
+            `lease_expires_at.is.null,lease_expires_at.lt.${new Date().toISOString()}`,
+          )
+          .select("id")
+          .maybeSingle();
+        if (claimError) throw claimError;
+        if (!claimed) {
+          claimedElsewhere = true;
+          continue;
+        }
+        const scopedConnection = {
+          ...connection,
+          selected_calendar_id: calendar.calendar_id,
+          sync_token: calendar.sync_token,
+        };
+        const started = Date.now();
+        try {
+          let result;
+          try {
+            result = await listChangesPage(
               scopedConnection,
-              { ...calendar, sync_token: null },
+              { ...calendar, sync_mode: mode, sync_run_id: runId },
+              token,
+              forceFull,
+            );
+          } catch (error) {
+            if (!(error instanceof GoogleApiError) || error.status !== 410)
+              throw error;
+            await supabase
+              .from("google_calendars")
+              .update({
+                sync_token: null,
+                sync_page_token: null,
+                sync_mode: "full",
+                sync_run_id: runId,
+              })
+              .eq("id", calendar.id)
+              .eq("lease_token", leaseToken);
+            result = await listChangesPage(
+              scopedConnection,
+              {
+                ...calendar,
+                sync_token: null,
+                sync_page_token: null,
+                sync_mode: "full",
+                sync_run_id: runId,
+              },
               token,
               true,
-            ),
-        );
-        const syncRunId = randomUUID();
-        const batch = await reconcileGoogleEventBatch(
-          result.events,
-          (event) => reconcileGoogleEvent(scopedConnection, event, syncRunId),
-          (event, timingError) => {
-            counters.skipped_invalid = (counters.skipped_invalid ?? 0) + 1;
-            logSync("event_skipped", connection.id, {
-              calendarId: calendar.calendar_id,
-              eventKey: createHash("sha256")
-                .update(event.id)
-                .digest("hex")
-                .slice(0, 12),
-              reason: timingError.code,
-            });
-          },
-        );
-        for (const kind of batch.results)
-          counters[String(kind)] = (counters[String(kind)] ?? 0) + 1;
-        // A malformed item may represent a previously valid cached event. Keep
-        // unseen cache rows during that full run instead of deleting data that
-        // could not be safely reconciled.
-        if (shouldCleanupGoogleEventCache(result.full, batch.invalid)) {
-          const { error: cleanupError } = await supabase
-            .from("external_google_events")
-            .delete()
-            .eq("connection_id", connection.id)
-            .eq("calendar_id", calendar.calendar_id)
-            .neq("last_seen_sync_id", syncRunId);
-          if (cleanupError) throw cleanupError;
-        }
-        const calendarCompletedAt = new Date().toISOString();
-        const { error: calendarUpdateError } = await supabase
-          .from("google_calendars")
-          .update({
-            sync_token: result.syncToken,
-            sync_state: "idle",
-            last_error: null,
-            last_successful_sync_at: calendarCompletedAt,
-            updated_at: calendarCompletedAt,
-          })
-          .eq("id", calendar.id);
-        if (calendarUpdateError) throw calendarUpdateError;
-        changed += result.events.length - batch.invalid;
-        anyFull ||= result.full;
-        if (shouldRenewGoogleWatch(calendar.watch_expires_at)) {
-          await registerSingleGoogleWatch(
-            connection.id,
-            calendar.calendar_id,
-          ).catch((watchError) =>
-            logSync("watch_register", connection.id, {
-              calendarId: calendar.calendar_id,
-              result: "error",
-              error: safeGoogleError(watchError),
-            }),
+            );
+          }
+          const batch = await reconcileGoogleEventPage(
+            scopedConnection,
+            result.events,
+            runId,
+            (event, timingError) => {
+              counters.skipped_invalid = (counters.skipped_invalid ?? 0) + 1;
+              logSync("event_skipped", connection.id, {
+                calendarId: calendar.calendar_id,
+                eventKey: createHash("sha256")
+                  .update(event.id)
+                  .digest("hex")
+                  .slice(0, 12),
+                reason: timingError.code,
+              });
+            },
           );
+          for (const kind of batch.results)
+            counters[String(kind)] = (counters[String(kind)] ?? 0) + 1;
+          const completed = !result.nextPageToken;
+          const hadInvalid =
+            Boolean(calendar.recoverable_failure) || batch.invalid > 0;
+          if (
+            completed &&
+            shouldCleanupGoogleEventCache(result.full, hadInvalid ? 1 : 0)
+          ) {
+            const { error: cleanupError } = await supabase
+              .from("external_google_events")
+              .delete()
+              .eq("connection_id", connection.id)
+              .eq("calendar_id", calendar.calendar_id)
+              .neq("last_seen_sync_id", runId);
+            if (cleanupError) throw cleanupError;
+          }
+          const now = new Date().toISOString();
+          const { data: pageCommit, error: pageCommitError } = await supabase
+            .from("google_calendars")
+            .update({
+              sync_token: completed ? result.syncToken : calendar.sync_token,
+              sync_page_token: result.nextPageToken,
+              sync_mode: completed
+                ? null
+                : result.full
+                  ? "full"
+                  : "incremental",
+              sync_run_id: completed ? null : runId,
+              sync_force_full: completed ? false : forceFull,
+              sync_state: completed ? "idle" : "pending",
+              processed_event_count:
+                (calendar.processed_event_count ?? 0) +
+                result.events.length -
+                batch.invalid,
+              recoverable_failure: completed ? false : hadInvalid,
+              last_error: null,
+              last_successful_sync_at: completed
+                ? now
+                : calendar.last_successful_sync_at,
+              lease_token: null,
+              lease_expires_at: null,
+              updated_at: now,
+            })
+            .eq("id", calendar.id)
+            .eq("lease_token", leaseToken)
+            .select("id")
+            .maybeSingle();
+          if (pageCommitError) throw pageCommitError;
+          if (!pageCommit) throw new Error("GOOGLE_SYNC_LEASE_LOST");
+          changed += result.events.length - batch.invalid;
+          anyFull ||= result.full;
+          logSync("calendar_page", connection.id, {
+            calendarId: calendar.calendar_id,
+            batchSize: result.events.length,
+            processed: result.events.length - batch.invalid,
+            skipped: batch.invalid,
+            durationMs: Date.now() - started,
+            completed,
+            nextPage: Boolean(result.nextPageToken),
+            full: result.full,
+          });
+          if (!completed)
+            remaining.push({
+              ...calendar,
+              sync_page_token: result.nextPageToken,
+              sync_mode: result.full ? "full" : "incremental",
+              sync_run_id: runId,
+              processed_event_count:
+                (calendar.processed_event_count ?? 0) +
+                result.events.length -
+                batch.invalid,
+              recoverable_failure: hadInvalid,
+              lease_token: null,
+              lease_expires_at: null,
+            });
+          else if (shouldRenewGoogleWatch(calendar.watch_expires_at))
+            await registerSingleGoogleWatch(
+              connection.id,
+              calendar.calendar_id,
+            ).catch((watchError) =>
+              logSync("watch_register", connection.id, {
+                calendarId: calendar.calendar_id,
+                result: "error",
+                error: safeGoogleError(watchError),
+              }),
+            );
+        } catch (calendarError) {
+          failedCalendars.add(calendar.calendar_id);
+          const safeError = safeGoogleError(calendarError);
+          await supabase
+            .from("google_calendars")
+            .update({
+              sync_state: "error",
+              recoverable_failure: true,
+              last_error: safeError,
+              lease_token: null,
+              lease_expires_at: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", calendar.id)
+            .eq("lease_token", leaseToken);
+          logSync("calendar_reconcile", connection.id, {
+            calendarId: calendar.calendar_id,
+            result: "error",
+            error: safeError,
+            sqlState: safeSqlState(calendarError),
+          });
         }
-      } catch (calendarError) {
-        failedCalendars.push(calendar.calendar_id);
-        const safeError = safeGoogleError(calendarError);
-        const { error: stateError } = await supabase
-          .from("google_calendars")
-          .update({
-            sync_state: "error",
-            last_error: safeError,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", calendar.id);
-        if (stateError) throw stateError;
-        logSync("calendar_reconcile", connection.id, {
-          calendarId: calendar.calendar_id,
-          result: "error",
-          error: safeError,
-          sqlState: safeSqlState(calendarError),
-        });
       }
+      calendars = remaining;
     }
-    if (failedCalendars.length)
-      throw new Error("GOOGLE_CALENDAR_PARTIAL_FAILURE");
     const completedAt = new Date().toISOString();
+    const unfinished = calendars.length > 0 || claimedElsewhere;
     const { error: updateError } = await supabase
       .from("integration_connections")
       .update({
         status: "connected",
-        sync_state: "idle",
-        last_successful_sync_at: completedAt,
-        last_error: null,
+        sync_state: failedCalendars.size
+          ? "error"
+          : unfinished
+            ? "pending"
+            : "idle",
+        sync_requested_at: unfinished ? completedAt : null,
+        last_successful_sync_at:
+          !unfinished && !failedCalendars.size
+            ? completedAt
+            : connection.last_successful_sync_at,
+        last_error: failedCalendars.size
+          ? "GOOGLE_CALENDAR_PARTIAL_FAILURE"
+          : null,
         updated_at: completedAt,
       })
       .eq("id", connection.id);
@@ -957,7 +1225,13 @@ export async function syncGoogleConnection(
       changed,
       full: anyFull,
       counters,
-      result: "success",
+      unfinished,
+      failedCalendars: failedCalendars.size,
+      result: failedCalendars.size
+        ? "partial"
+        : unfinished
+          ? "resumable"
+          : "success",
     });
     return { changed, full: anyFull };
   } catch (error) {
@@ -968,6 +1242,206 @@ export async function syncGoogleConnection(
     });
     throw error;
   }
+}
+
+/**
+ * Completes the user's visible range independently from the global incremental
+ * stream. Range cursors never become global sync tokens.
+ */
+export async function syncGoogleVisibleRangeForTeacher(
+  teacherId: string,
+  range: { start: string; end: string },
+): Promise<{ processed: number; complete: boolean }> {
+  const startMs = Date.parse(range.start);
+  const endMs = Date.parse(range.end);
+  if (
+    !Number.isFinite(startMs) ||
+    !Number.isFinite(endMs) ||
+    endMs <= startMs ||
+    endMs - startMs > 370 * 24 * 60 * 60_000
+  )
+    throw new Error("GOOGLE_RANGE_INVALID");
+  const rangeStart = new Date(startMs).toISOString();
+  const rangeEnd = new Date(endMs).toISOString();
+  const supabase = createSupabaseAdminClient();
+  const { data: connectionData, error: connectionError } = await supabase
+    .from("integration_connections")
+    .select("id")
+    .eq("teacher_id", teacherId)
+    .eq("provider", "google")
+    .eq("status", "connected")
+    .maybeSingle();
+  if (connectionError) throw connectionError;
+  if (!connectionData) return { processed: 0, complete: true };
+  const connection = await connectionById(connectionData.id as string);
+  const { token } = await validGoogleAccessToken(
+    connection.teacher_id,
+    connection.encrypted_credentials,
+  );
+  const calendars = await refreshGoogleCalendarList(connection, token);
+  const requestedAt = new Date().toISOString();
+  const requestedRows = calendars.map((calendar) => ({
+    calendar_id: calendar.id,
+    connection_id: connection.id,
+    workspace_id: connection.workspace_id,
+    teacher_id: connection.teacher_id,
+    range_start: rangeStart,
+    range_end: rangeEnd,
+    updated_at: requestedAt,
+  }));
+  if (requestedRows.length) {
+    const { error } = await supabase
+      .from("google_calendar_range_backfills")
+      .upsert(requestedRows, {
+        onConflict: "calendar_id,range_start,range_end",
+        ignoreDuplicates: true,
+      });
+    if (error) throw error;
+  }
+  const { data: workData, error: workError } = await supabase
+    .from("google_calendar_range_backfills")
+    .select(
+      "id,calendar_id,page_token,sync_run_id,state,processed_event_count,lease_expires_at",
+    )
+    .eq("connection_id", connection.id)
+    .eq("range_start", rangeStart)
+    .eq("range_end", rangeEnd)
+    .neq("state", "idle");
+  if (workError) throw workError;
+  const calendarById = new Map(
+    calendars.map((calendar) => [calendar.id, calendar]),
+  );
+  let work = workData ?? [];
+  let processed = 0;
+  let claimedElsewhere = false;
+  const deadline = Date.now() + GOOGLE_SYNC_BUDGET_MS;
+  while (work.length && Date.now() < deadline) {
+    const remaining: typeof work = [];
+    for (const item of work) {
+      if (Date.now() >= deadline) {
+        remaining.push(item);
+        continue;
+      }
+      const calendar = calendarById.get(item.calendar_id as string);
+      if (!calendar) continue;
+      const leaseToken = randomUUID();
+      const { data: claimed, error: claimError } = await supabase
+        .from("google_calendar_range_backfills")
+        .update({
+          state: "syncing",
+          lease_token: leaseToken,
+          lease_expires_at: new Date(
+            Date.now() + GOOGLE_SYNC_LEASE_MS,
+          ).toISOString(),
+          last_attempted_at: new Date().toISOString(),
+          last_error: null,
+        })
+        .eq("id", item.id)
+        .or(
+          `lease_expires_at.is.null,lease_expires_at.lt.${new Date().toISOString()}`,
+        )
+        .select("id")
+        .maybeSingle();
+      if (claimError) throw claimError;
+      if (!claimed) {
+        claimedElsewhere = true;
+        continue;
+      }
+      const started = Date.now();
+      try {
+        const page = await listGoogleRangePage(
+          calendar.calendar_id,
+          token,
+          rangeStart,
+          rangeEnd,
+          item.page_token as string | null,
+        );
+        const scopedConnection = {
+          ...connection,
+          selected_calendar_id: calendar.calendar_id,
+          sync_token: calendar.sync_token,
+        };
+        const batch = await reconcileGoogleEventPage(
+          scopedConnection,
+          page.items ?? [],
+          item.sync_run_id as string,
+          (event, timingError) =>
+            logSync("range_event_skipped", connection.id, {
+              calendarId: calendar.calendar_id,
+              eventKey: createHash("sha256")
+                .update(event.id)
+                .digest("hex")
+                .slice(0, 12),
+              reason: timingError.code,
+            }),
+          false,
+        );
+        const nextPageToken = page.nextPageToken ?? null;
+        const count = (page.items?.length ?? 0) - batch.invalid;
+        const completedAt = nextPageToken ? null : new Date().toISOString();
+        const { data: commit, error: commitError } = await supabase
+          .from("google_calendar_range_backfills")
+          .update({
+            page_token: nextPageToken,
+            state: nextPageToken ? "pending" : "idle",
+            processed_event_count:
+              Number(item.processed_event_count ?? 0) + count,
+            completed_at: completedAt,
+            lease_token: null,
+            lease_expires_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.id)
+          .eq("lease_token", leaseToken)
+          .select("id")
+          .maybeSingle();
+        if (commitError) throw commitError;
+        if (!commit) throw new Error("GOOGLE_RANGE_LEASE_LOST");
+        processed += count;
+        logSync("range_page", connection.id, {
+          calendarId: calendar.calendar_id,
+          rangeStart,
+          rangeEnd,
+          batchSize: page.items?.length ?? 0,
+          processed: count,
+          skipped: batch.invalid,
+          durationMs: Date.now() - started,
+          completed: !nextPageToken,
+        });
+        if (nextPageToken)
+          remaining.push({
+            ...item,
+            page_token: nextPageToken,
+            state: "pending",
+            processed_event_count:
+              Number(item.processed_event_count ?? 0) + count,
+            lease_expires_at: null,
+          });
+      } catch (error) {
+        const safeError = safeGoogleError(error);
+        await supabase
+          .from("google_calendar_range_backfills")
+          .update({
+            state: "error",
+            last_error: safeError,
+            lease_token: null,
+            lease_expires_at: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item.id)
+          .eq("lease_token", leaseToken);
+        logSync("range_page", connection.id, {
+          calendarId: calendar.calendar_id,
+          rangeStart,
+          rangeEnd,
+          result: "error",
+          error: safeError,
+        });
+      }
+    }
+    work = remaining;
+  }
+  return { processed, complete: work.length === 0 && !claimedElsewhere };
 }
 
 async function registerSingleGoogleWatch(

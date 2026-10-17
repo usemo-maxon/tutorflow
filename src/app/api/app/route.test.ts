@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getAppData: vi.fn(),
   performAction: vi.fn(),
   processJobs: vi.fn(),
+  syncVisibleRange: vi.fn(),
 }));
 
 vi.mock("next/server", async (importOriginal) => {
@@ -30,6 +31,7 @@ vi.mock("@/server/app-service", () => ({
 
 vi.mock("@/server/google-calendar-sync", () => ({
   processGoogleLessonJobs: mocks.processJobs,
+  syncGoogleVisibleRangeForTeacher: mocks.syncVisibleRange,
 }));
 
 vi.mock("@/server/repository", () => ({
@@ -57,6 +59,7 @@ describe("Lesson mutation Google synchronization", () => {
       skipped: 0,
       failed: 0,
     });
+    mocks.syncVisibleRange.mockResolvedValue({ processed: 0, complete: true });
   });
 
   it("processes a newly enqueued Lesson job immediately after the local save", async () => {
@@ -117,5 +120,23 @@ describe("Lesson mutation Google synchronization", () => {
 
     expect(response.status).toBe(422);
     expect(mocks.getAppData).not.toHaveBeenCalled();
+  });
+
+  it("prioritizes a valid visible calendar range after returning cached data", async () => {
+    const start = "2026-10-01T00:00:00.000Z";
+    const end = "2026-11-01T00:00:00.000Z";
+    const response = await GET(
+      new Request(
+        `https://easy4tutor.pl/api/app?scope=calendar&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.after).toHaveBeenCalledOnce();
+    await mocks.background?.();
+    expect(mocks.syncVisibleRange).toHaveBeenCalledWith(
+      "11111111-1111-4111-8111-111111111111",
+      { start, end },
+    );
   });
 });

@@ -254,6 +254,7 @@ export interface IntegrationState {
   lastSuccessfulSyncAt?: ISODateTime;
   easy4TutorVisible?: boolean;
   calendars?: GoogleCalendar[];
+  visibleRangeComplete?: boolean;
 }
 
 export interface GoogleCalendar {
@@ -269,6 +270,11 @@ export interface GoogleCalendar {
   visible: boolean;
   countAsBusy: boolean;
   syncEnabled: boolean;
+  syncState?: "idle" | "pending" | "syncing" | "error" | "reconnect_required";
+  lastAttemptedSyncAt?: ISODateTime;
+  lastSuccessfulSyncAt?: ISODateTime;
+  processedEventCount?: number;
+  recoverableFailure?: boolean;
 }
 
 export interface AvailabilityRule {

@@ -266,6 +266,7 @@ async function loadTenantStore(
     ownerLifetimeResult,
     integrationsResult,
     googleCalendarsResult,
+    googleRangeCoverageResult,
   ] = await Promise.all([
     supabase
       .from("profiles")
@@ -296,11 +297,19 @@ async function loadTenantStore(
       ? supabase
           .from("google_calendars")
           .select(
-            "id,calendar_id,summary,description,timezone,access_role,is_primary,google_background_color,custom_color,visible,count_as_busy,sync_enabled",
+            "id,calendar_id,summary,description,timezone,access_role,is_primary,google_background_color,custom_color,visible,count_as_busy,sync_enabled,sync_state,last_attempted_sync_at,last_successful_sync_at,processed_event_count,recoverable_failure",
           )
           .eq("teacher_id", teacherId)
           .order("is_primary", { ascending: false })
           .order("summary")
+      : emptyQueryResult(),
+    range && includesSection(scope, "calendar-events")
+      ? supabase
+          .from("google_calendar_range_backfills")
+          .select("calendar_id,state")
+          .eq("teacher_id", teacherId)
+          .eq("range_start", new Date(range.start).toISOString())
+          .eq("range_end", new Date(range.end).toISOString())
       : emptyQueryResult(),
   ]);
   const failure = [
@@ -570,6 +579,11 @@ async function loadTenantStore(
     visible: row.visible,
     countAsBusy: row.count_as_busy,
     syncEnabled: row.sync_enabled,
+    syncState: row.sync_state ?? undefined,
+    lastAttemptedSyncAt: row.last_attempted_sync_at ?? undefined,
+    lastSuccessfulSyncAt: row.last_successful_sync_at ?? undefined,
+    processedEventCount: row.processed_event_count ?? 0,
+    recoverableFailure: row.recoverable_failure ?? false,
   }));
   const calendarsByProviderId = new Map(
     googleCalendars.map((calendar) => [calendar.calendarId, calendar]),
@@ -590,6 +604,18 @@ async function loadTenantStore(
         lastSuccessfulSyncAt: row.last_successful_sync_at ?? undefined,
         easy4TutorVisible: row.easy4tutor_visible ?? true,
         calendars: row.provider === "google" ? googleCalendars : undefined,
+        visibleRangeComplete:
+          row.provider === "google" && range
+            ? googleCalendars
+                .filter((calendar) => calendar.syncEnabled)
+                .every((calendar) =>
+                  (googleRangeCoverageResult.data ?? []).some(
+                    (coverage) =>
+                      coverage.calendar_id === calendar.id &&
+                      coverage.state === "idle",
+                  ),
+                )
+            : undefined,
       } as IntegrationState,
     ]),
   );
