@@ -1,95 +1,116 @@
-# Platform Owner lifetime access provisioning
+# Platform Owner: secure role and Lifetime provisioning
 
-This is a production runbook, not an automatic seed. Do not execute it until
-the exact founder Supabase Auth UUID and trusted platform-administrator UUID
-have been reviewed and explicitly approved.
+This is a production runbook, not a seed. No UUID, role, or Lifetime grant is
+created automatically. Do not run a write statement until the exact Supabase
+Auth UUIDs and approval reference have been reviewed and explicitly approved.
+
+Administrator authorization and `owner_lifetime` are independent. A platform
+owner may have either, both, or neither. Granting or revoking one never changes
+the other.
 
 ## Preconditions
 
-1. Apply the `owner_lifetime_access` migration through the normal reviewed
-   deployment process.
-2. Obtain the founder UUID from Supabase Auth and independently verify the
-   account email and `email_confirmed_at` value.
-3. Obtain the UUID of an existing trusted administrator in
-   `public.platform_admins`.
-4. Record the approval reference in the audit reason.
+1. Deploy all reviewed migrations through
+   `20261018150945_platform_administration.sql`.
+2. Locate the intended account in Supabase Auth by the human-confirmed e-mail,
+   copy its UUID, and independently confirm `email_confirmed_at`.
+3. Record the approver, change reference, exact target UUID, intended role, and
+   reason outside the database.
+4. Use a short-lived privileged SQL session. Never put a service key in the
+   browser, client bundle, chat transcript, or analytics.
 
 ## Read-only verification
 
-Replace both placeholders with the exact approved UUIDs, then run only these
-queries first:
-
 ```sql
-select id, email, email_confirmed_at
+select id, email, email_confirmed_at, created_at
 from auth.users
-where id = '<FOUNDER_AUTH_USER_UUID>'::uuid;
+where id = '<TARGET_AUTH_USER_UUID>'::uuid;
 
-select user_id, granted_at, granted_by
+select user_id, role, status, granted_at, revoked_at
 from public.platform_admins
-where user_id = '<TRUSTED_ADMIN_AUTH_USER_UUID>'::uuid;
+where user_id = '<TARGET_AUTH_USER_UUID>'::uuid;
 
 select user_id, grant_type, granted_at, revoked_at
 from public.internal_access_grants
-where user_id = '<FOUNDER_AUTH_USER_UUID>'::uuid;
+where user_id = '<TARGET_AUTH_USER_UUID>'::uuid;
 ```
 
-Stop if the founder query does not return exactly the verified account, if the
-email is unconfirmed, or if the trusted administrator query does not return
-exactly one row.
+Stop unless the Auth query returns exactly one verified account.
 
-## Explicitly approved grant
+## One-time first owner role bootstrap
 
-After approval of the exact query values, execute one transaction:
+Use this only when no active `platform_owner` exists. It needs separate,
+explicit production approval because no existing owner can authorize the first
+owner.
+
+```sql
+begin;
+
+select id, email, email_confirmed_at
+from auth.users
+where id = '<OWNER_AUTH_USER_UUID>'::uuid
+for update;
+
+insert into public.platform_admins (
+  user_id, role, status, granted_by, reason
+) values (
+  '<OWNER_AUTH_USER_UUID>'::uuid,
+  'platform_owner',
+  'active',
+  '<OWNER_AUTH_USER_UUID>'::uuid,
+  'Initial platform owner bootstrap — <APPROVAL_REFERENCE>'
+);
+
+select user_id, role, status, reason
+from public.platform_admins
+where user_id = '<OWNER_AUTH_USER_UUID>'::uuid;
+
+commit;
+```
+
+If an active owner already exists, use the audited role workflow under
+`/app/admin/settings` or `manage_platform_admin_role(...)` instead.
+
+## Lifetime grant
+
+The actor must already be an active `platform_owner`. The target may be the same
+verified UUID, but the grant remains a separate record.
 
 ```sql
 begin;
 
 select public.manage_owner_lifetime_access(
-  '<FOUNDER_AUTH_USER_UUID>'::uuid,
+  '<TARGET_AUTH_USER_UUID>'::uuid,
   'grant',
-  'Approved founder lifetime access — <APPROVAL_REFERENCE>',
-  '<TRUSTED_ADMIN_AUTH_USER_UUID>'::uuid
+  'Approved owner Lifetime access — <APPROVAL_REFERENCE>',
+  '<PLATFORM_OWNER_AUTH_USER_UUID>'::uuid
 );
 
 select user_id, grant_type, granted_at, granted_by, revoked_at
 from public.internal_access_grants
-where user_id = '<FOUNDER_AUTH_USER_UUID>'::uuid;
+where user_id = '<TARGET_AUTH_USER_UUID>'::uuid;
 
-select user_id, granted_at, granted_by
-from public.platform_admins
-where user_id = '<FOUNDER_AUTH_USER_UUID>'::uuid;
-
-select action, actor_user_id, reason, occurred_at
-from public.internal_access_grant_audit
-where user_id = '<FOUNDER_AUTH_USER_UUID>'::uuid
+select actor_user_id, action, target_id, reason, occurred_at
+from public.platform_admin_audit_logs
+where target_id = '<TARGET_AUTH_USER_UUID>'
 order by occurred_at desc;
 
 commit;
 ```
 
-The procedure keeps the existing subscription and payment history. It adds the
-internal lifetime grant, clears an operational read-only lock, and provisions
-the existing platform-administrator authorization without creating a paid
-order or public pricing tier.
+The procedure preserves PayU and subscription history, clears the operational
+read-only lock, and adds no payment or public pricing tier.
 
-## Explicit revocation
-
-Revocation also requires approval and a trusted administrator UUID:
+## Lifetime revocation
 
 ```sql
-begin;
-
 select public.manage_owner_lifetime_access(
-  '<FOUNDER_AUTH_USER_UUID>'::uuid,
+  '<TARGET_AUTH_USER_UUID>'::uuid,
   'revoke',
-  'Approved founder lifetime revocation — <APPROVAL_REFERENCE>',
-  '<TRUSTED_ADMIN_AUTH_USER_UUID>'::uuid
+  'Approved Lifetime revocation — <APPROVAL_REFERENCE>',
+  '<PLATFORM_OWNER_AUTH_USER_UUID>'::uuid
 );
-
-commit;
 ```
 
-If the provisioning procedure originally added the founder to
-`platform_admins`, revocation removes that managed administrator row. A
-platform-administrator role that predated the lifetime grant remains separate
-and is not removed automatically.
+Revocation restores normal billing-derived access and does not remove any
+administrator role.

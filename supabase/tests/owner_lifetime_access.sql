@@ -32,8 +32,8 @@ insert into auth.users (
   ('aa100000-0000-4000-8000-000000000002', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'platform-moderator@example.test', '', '{}', '{"full_name":"Platform Moderator"}', now(), now()),
   ('aa100000-0000-4000-8000-000000000003', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'ordinary-tutor@example.test', '', '{}', '{"full_name":"Ordinary Tutor"}', now(), now());
 
-insert into public.platform_admins (user_id)
-values ('aa100000-0000-4000-8000-000000000002');
+insert into public.platform_admins (user_id, role, reason)
+values ('aa100000-0000-4000-8000-000000000002', 'platform_owner', 'Test owner');
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"aa100000-0000-4000-8000-000000000002","role":"authenticated"}';
@@ -99,8 +99,8 @@ select is(
   'provisioned founder receives lifetime access'
 );
 select is(
-  public.current_user_is_platform_admin(), true,
-  'provisioned founder receives platform administration permission'
+  public.current_user_is_platform_admin(), false,
+  'lifetime access does not implicitly grant platform administration'
 );
 
 reset role;
@@ -198,7 +198,7 @@ select is(
 );
 select is(
   public.current_user_is_platform_admin(), false,
-  'managed platform administrator permission is removed on revocation'
+  'revocation does not alter the independent administrator role'
 );
 
 reset role;

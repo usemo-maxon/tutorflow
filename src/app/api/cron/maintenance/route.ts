@@ -4,6 +4,7 @@ import {
   schedulerUnauthorizedResponse,
 } from "@/server/cron";
 import { createSupabaseAdminClient } from "@/server/supabase";
+import { recordOperationalEvent } from "@/server/operational-events";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
   try {
     return await runMaintenance();
   } catch {
+    await recordOperationalEvent({ type: "scheduler.maintenance_failed", severity: "error", service: "scheduler", summary: "Dzienne zadanie utrzymaniowe nie zakończyło się poprawnie.", idempotencyKey: `maintenance:${new Date().toISOString().slice(0, 10)}` });
     return schedulerFailureResponse();
   }
 }

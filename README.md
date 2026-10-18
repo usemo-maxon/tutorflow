@@ -55,7 +55,11 @@ npx supabase test db
 8. Do not expose the `private` schema in Data API settings. Keep `public` exposed; RLS is enabled on every application table. Admins can read account/subscription rows, but RLS intentionally denies them access to `teacher_states`, attachments, integration credentials, and lesson/student content.
 9. Enable daily backups/PITR according to the selected Supabase plan and configure project network restrictions where operational access allows it.
 
-To create an SaaS admin manually, update `public.profiles.role` to `admin` for that already-created Auth user. Never put a role in user-editable `user_metadata` and never use an admin account to bypass private-content policies.
+Platform administration is independent from `public.profiles.role`. Follow
+`docs/owner-lifetime-provisioning.md` for the one-time first-owner bootstrap,
+then manage later roles through the audited `/app/admin/settings` workflow.
+Never put a role in user-editable `user_metadata` and never use an admin account
+to bypass private teaching-content policies.
 
 ### 3. Google Calendar
 

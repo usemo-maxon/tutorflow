@@ -63,6 +63,7 @@ const nav = [
   { href: "/app/rezerwacje", label: "Rezerwacje", icon: CalendarCheck2 },
   { href: "/app/platnosci", label: copy.nav.payments, icon: CircleDollarSign },
   { href: "/app/statystyki", label: copy.nav.statistics, icon: BarChart3 },
+  { href: "/app/pomoc", label: "Pomoc", icon: MessageSquareWarning },
   { href: "/app/ustawienia/profil", label: copy.nav.settings, icon: Settings },
 ];
 
@@ -148,6 +149,20 @@ function ShellBody({
     }
     const destination = getGlobalCreateRoute(action);
     if (destination) router.push(destination);
+  }
+
+  if (pathname.startsWith("/app/admin")) {
+    return (
+      <div className="admin-app-shell">
+        <a className="skip-link" href="#main-content">
+          Przejdź do treści
+        </a>
+        <main id="main-content" className="admin-root" tabIndex={-1}>
+          {children}
+        </main>
+        <ToastNotification toast={toast} dismissToast={dismissToast} />
+      </div>
+    );
   }
 
   return (
@@ -385,31 +400,33 @@ function ShellBody({
         timezone={teacher.timezone}
         onCreate={handleGlobalCreate}
       />
-      {toast && (
-        <div
-          className={`toast toast--${toast.tone ?? "success"}`}
-          role={toast.tone === "error" ? "alert" : "status"}
-          aria-live={toast.tone === "error" ? "assertive" : "polite"}
-        >
-          <span>{toast.message}</span>
-          <button
-            className="toast-dismiss"
-            aria-label="Zamknij powiadomienie"
-            onClick={dismissToast}
-          >
-            <X size={17} />
-          </button>
-          {toast.actionLabel && toast.onAction && (
-            <button
-              onClick={() => {
-                dismissToast();
-                toast.onAction?.();
-              }}
-            >
-              {toast.actionLabel}
-            </button>
-          )}
-        </div>
+      <ToastNotification toast={toast} dismissToast={dismissToast} />
+    </div>
+  );
+}
+
+function ToastNotification({
+  toast,
+  dismissToast,
+}: {
+  toast: ReturnType<typeof useAppUi>["toast"];
+  dismissToast: () => void;
+}) {
+  if (!toast) return null;
+  return (
+    <div
+      className={`toast toast--${toast.tone ?? "success"}`}
+      role={toast.tone === "error" ? "alert" : "status"}
+      aria-live={toast.tone === "error" ? "assertive" : "polite"}
+    >
+      <span>{toast.message}</span>
+      <button className="toast-dismiss" aria-label="Zamknij powiadomienie" onClick={dismissToast}>
+        <X size={17} />
+      </button>
+      {toast.actionLabel && toast.onAction && (
+        <button onClick={() => { dismissToast(); toast.onAction?.(); }}>
+          {toast.actionLabel}
+        </button>
       )}
     </div>
   );

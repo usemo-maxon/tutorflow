@@ -1,13 +1,12 @@
-import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
-import { currentTeacher } from "@/server/auth";
+import { AdminShell } from "@/components/admin/admin-shell";
+import { requirePlatformAdmin } from "@/server/platform-admin";
 
 export default async function AdminLayout({
   children,
 }: {
   children: ReactNode;
 }) {
-  const teacher = await currentTeacher();
-  if (!teacher?.isPlatformAdmin) notFound();
-  return children;
+  const admin = await requirePlatformAdmin();
+  return <AdminShell role={admin.role}>{children}</AdminShell>;
 }

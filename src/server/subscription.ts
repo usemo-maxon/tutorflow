@@ -17,13 +17,14 @@ export interface SubscriptionRow {
 export function mapSubscriptionRow(
   row: SubscriptionRow,
   ownerLifetime = false,
+  overrideTier?: "pro" | "founder",
 ): Teacher["subscription"] {
   return {
-    status: row.status as SubscriptionStatus,
-    tier: row.tier as SubscriptionTier,
+    status: (overrideTier ? "active" : row.status) as SubscriptionStatus,
+    tier: (overrideTier ?? row.tier) as SubscriptionTier,
     billingInterval:
       (row.billing_interval as BillingInterval | null) ?? undefined,
-    readOnly: ownerLifetime ? false : row.read_only,
+    readOnly: ownerLifetime || overrideTier ? false : row.read_only,
     trialEndsAt: row.trial_ends_at ?? undefined,
     renewsAt: row.renews_at ?? undefined,
     accessGrant: ownerLifetime ? "owner_lifetime" : undefined,

@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { createSupabaseAdminClient } from "@/server/supabase";
+import { recordOperationalEvent } from "@/server/operational-events";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,10 @@ export async function POST(request: Request) {
       p_ext_order_id: order.extOrderId,
       p_payu_order_id: order.orderId,
     });
-    if (error) return Response.json({ ok: false }, { status: 500 });
+    if (error) {
+      await recordOperationalEvent({ type: "payu.callback_processing_failed", severity: "error", service: "payu", summary: "Nie udało się potwierdzić zweryfikowanej płatności PayU.", metadata: { errorCode: error.code ?? null }, idempotencyKey: `payu:${externalId}` });
+      return Response.json({ ok: false }, { status: 500 });
+    }
   } else {
     await supabase
       .from("payu_orders")
