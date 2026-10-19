@@ -10,6 +10,8 @@ import { ApiFailure } from "./errors";
 import { getAppData } from "./repository";
 import { mutateStore, queryStore } from "./store";
 import { createSupabaseServerClient } from "./supabase";
+import { resolveEntitlements } from "@/lib/entitlements";
+import { publishedProfileOffers } from "@/lib/profile-entitlements";
 
 export type PublicAvailability = {
   timezone: string;
@@ -132,13 +134,14 @@ export async function getPublicTutorAvailability(
         (item) =>
           item.publicProfile?.enabled && item.publicProfile.slug === slug,
       );
-      const eventType = store.bookingEventTypes?.find(
-        (item) =>
-          item.id === eventTypeId &&
-          item.teacherId === teacher?.id &&
-          item.active &&
-          item.isPublic,
-      );
+      const eventType = teacher
+        ? publishedProfileOffers(
+            (store.bookingEventTypes ?? []).filter(
+              (item) => item.teacherId === teacher.id,
+            ),
+            resolveEntitlements(teacher.subscription),
+          ).find((item) => item.id === eventTypeId)
+        : undefined;
       return teacher && eventType ? { teacher, eventType } : undefined;
     });
     if (!published)

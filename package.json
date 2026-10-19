@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:browser:shared-templates": "node scripts/test-shared-template-browser.mjs",
+    "test:browser:public-profile": "node scripts/test-public-profile-browser.mjs",
     "check": "npm run lint && npm run typecheck && npm test && npm run build",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

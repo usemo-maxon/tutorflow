@@ -1,15 +1,84 @@
 import type { PublicBookingEventType } from "./booking-event-types";
 
-export const RESERVED_PUBLIC_SLUGS = new Set(["app", "api", "admin", "logowanie", "rejestracja", "pricing", "ustawienia", "odzyskaj-haslo", "regulamin", "polityka-prywatnosci", "favicon.ico"]);
+export const RESERVED_PUBLIC_SLUGS = new Set([
+  "app",
+  "api",
+  "admin",
+  "logowanie",
+  "rejestracja",
+  "pricing",
+  "ustawienia",
+  "odzyskaj-haslo",
+  "regulamin",
+  "polityka-prywatnosci",
+  "favicon.ico",
+]);
 export type LessonFormat = "online" | "offline";
 export type ProfileTheme = "minimal" | "professional" | "friendly" | "modern";
-export type ProfileSectionId = "about" | "video" | "subjects" | "approach" | "experience" | "certificates" | "offers" | "faq" | "contact";
-export interface ProfileSection { id: ProfileSectionId; visible: boolean; title: string }
-export interface ProfileVideo { source: "youtube" | "upload"; videoId?: string; storagePath?: string; url?: string; posterPath?: string; posterUrl?: string; title: string; description?: string }
-export interface ProfileCertificate { id: string; title: string; issuer: string; issuedAt?: string; expiresAt?: string; credentialNumber?: string; verificationUrl?: string; description?: string; storagePath?: string; fileUrl?: string; fileType?: "image" | "pdf"; visible: boolean }
-export interface ProfileTimelineEntry { id: string; kind: "education" | "experience"; institution: string; title: string; startYear?: number; endYear?: number; current?: boolean; description?: string }
-export interface ProfileFaq { id: string; question: string; answer: string; visible: boolean }
-export interface TeachingApproach { philosophy?: string; lessonStructure?: string; materials?: string; homework?: string; personalization?: string; outcomes?: string; highlights: string[] }
+export type ProfileSectionId =
+  | "about"
+  | "video"
+  | "subjects"
+  | "approach"
+  | "experience"
+  | "certificates"
+  | "offers"
+  | "faq"
+  | "contact";
+export interface ProfileSection {
+  id: ProfileSectionId;
+  visible: boolean;
+  title: string;
+}
+export interface ProfileVideo {
+  source: "youtube" | "upload";
+  videoId?: string;
+  storagePath?: string;
+  url?: string;
+  posterPath?: string;
+  posterUrl?: string;
+  title: string;
+  description?: string;
+}
+export interface ProfileCertificate {
+  id: string;
+  title: string;
+  issuer: string;
+  issuedAt?: string;
+  expiresAt?: string;
+  credentialNumber?: string;
+  verificationUrl?: string;
+  description?: string;
+  storagePath?: string;
+  fileUrl?: string;
+  fileType?: "image" | "pdf";
+  visible: boolean;
+}
+export interface ProfileTimelineEntry {
+  id: string;
+  kind: "education" | "experience";
+  institution: string;
+  title: string;
+  startYear?: number;
+  endYear?: number;
+  current?: boolean;
+  description?: string;
+}
+export interface ProfileFaq {
+  id: string;
+  question: string;
+  answer: string;
+  visible: boolean;
+}
+export interface TeachingApproach {
+  philosophy?: string;
+  lessonStructure?: string;
+  materials?: string;
+  homework?: string;
+  personalization?: string;
+  outcomes?: string;
+  highlights: string[];
+}
 
 export const DEFAULT_PROFILE_SECTIONS: ProfileSection[] = [
   { id: "about", visible: true, title: "O mnie" },
@@ -52,28 +121,66 @@ export interface TutorPublicProfile {
   teachingApproach?: TeachingApproach;
   faq?: ProfileFaq[];
   publishedAt?: string;
+  publishedSlug?: string;
   draftUpdatedAt?: string;
   hasUnpublishedChanges?: boolean;
 }
 
-export interface PublicTutorProfile extends Omit<TutorPublicProfile, "enabled"> { eventTypes: PublicBookingEventType[]; canonicalSlug?: string }
-
-export function defaultPublicProfile(name: string): TutorPublicProfile {
-  return { enabled: false, slug: normalizePublicSlug(name) || "moj-profil", publicName: name, subjects: [], specializations: [], levels: [], audiences: [], languages: [], lessonFormats: [], contactLinks: [], theme: "professional", accentColor: "#137d60", heroLayout: "portrait", highlights: [], sections: DEFAULT_PROFILE_SECTIONS.map((section) => ({ ...section })), certificates: [], timeline: [], teachingApproach: { highlights: [] }, faq: [] };
+export interface PublicTutorProfile extends Omit<
+  TutorPublicProfile,
+  "enabled"
+> {
+  eventTypes: PublicBookingEventType[];
+  canonicalSlug?: string;
 }
 
-export function normalizeProfileAccentColor(value?: string): string | undefined {
+export function defaultPublicProfile(name: string): TutorPublicProfile {
+  return {
+    enabled: false,
+    slug: normalizePublicSlug(name) || "moj-profil",
+    publicName: name,
+    subjects: [],
+    specializations: [],
+    levels: [],
+    audiences: [],
+    languages: [],
+    lessonFormats: [],
+    contactLinks: [],
+    theme: "professional",
+    accentColor: "#137d60",
+    heroLayout: "portrait",
+    highlights: [],
+    sections: DEFAULT_PROFILE_SECTIONS.map((section) => ({ ...section })),
+    certificates: [],
+    timeline: [],
+    teachingApproach: { highlights: [] },
+    faq: [],
+  };
+}
+
+export function normalizeProfileAccentColor(
+  value?: string,
+): string | undefined {
   const color = value?.trim().toLowerCase();
   return color && /^#[0-9a-f]{6}$/.test(color) ? color : undefined;
 }
 
 export function normalizePublicSlug(value: string): string {
-  return value.replace(/ł/gi, "l").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pl").trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-");
+  return value
+    .replace(/ł/gi, "l")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pl")
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .replace(/-{2,}/g, "-");
 }
 
 export function publicSlugError(value: string): string | undefined {
   const slug = normalizePublicSlug(value);
-  if (slug.length < 3 || slug.length > 60) return "Adres musi mieć od 3 do 60 znaków.";
+  if (slug.length < 3 || slug.length > 60)
+    return "Adres musi mieć od 3 do 60 znaków.";
   if (RESERVED_PUBLIC_SLUGS.has(slug)) return "Ten adres jest zarezerwowany.";
   return undefined;
 }
@@ -81,17 +188,98 @@ export function publicSlugError(value: string): string | undefined {
 export function youtubeVideoId(value: string): string | undefined {
   try {
     const url = new URL(value);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return undefined;
     const host = url.hostname.replace(/^www\./, "");
-    const id = host === "youtu.be" ? url.pathname.slice(1) : host === "youtube.com" || host === "m.youtube.com" ? url.searchParams.get("v") : undefined;
+    const id =
+      host === "youtu.be"
+        ? url.pathname.slice(1)
+        : host === "youtube.com" || host === "m.youtube.com"
+          ? url.searchParams.get("v")
+          : undefined;
     return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : undefined;
-  } catch { return undefined; }
+  } catch {
+    return undefined;
+  }
 }
 
-export function profileCompletion(profile: TutorPublicProfile, hasOffer = false) {
-  const checks = [Boolean(profile.photoUrl), Boolean(profile.headline?.trim()), Boolean(profile.about?.trim()), profile.subjects.length > 0, hasOffer, Boolean(profile.video), Boolean(profile.certificates?.some((certificate) => certificate.visible)), profile.enabled];
+/** Ignore response-only metadata and temporary signed URLs when comparing content. */
+export function profileContentKey(profile: TutorPublicProfile): string {
+  const ignored = new Set([
+    "enabled",
+    "publishedAt",
+    "publishedSlug",
+    "draftUpdatedAt",
+    "hasUnpublishedChanges",
+    "url",
+    "fileUrl",
+    "posterUrl",
+  ]);
+  const stable = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(stable);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(
+        Object.entries(value)
+          .filter(([key, item]) => !ignored.has(key) && item !== undefined)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, item]) => [key, stable(item)]),
+      );
+    }
+    return value;
+  };
+  return JSON.stringify(stable(profile));
+}
+
+/** Redact before serialization/signing, not merely when rendering the section. */
+export function visiblePublicProfile<
+  T extends TutorPublicProfile | PublicTutorProfile,
+>(profile: T): T {
+  const visible = (id: ProfileSectionId) =>
+    profile.sections?.find((section) => section.id === id)?.visible !== false;
+  return {
+    ...profile,
+    about: visible("about") ? profile.about : undefined,
+    video: visible("video") ? profile.video : undefined,
+    certificates: visible("certificates")
+      ? (profile.certificates ?? []).filter((item) => item.visible)
+      : [],
+    faq: visible("faq")
+      ? (profile.faq ?? []).filter(
+          (item) => item.visible && item.question && item.answer,
+        )
+      : [],
+    timeline: visible("experience") ? profile.timeline : [],
+    teachingApproach: visible("approach")
+      ? profile.teachingApproach
+      : undefined,
+    specializations: visible("subjects") ? profile.specializations : [],
+    levels: visible("subjects") ? profile.levels : [],
+    audiences: visible("subjects") ? profile.audiences : [],
+    contactLinks: visible("contact") ? profile.contactLinks : [],
+  };
+}
+
+export function profileCompletion(
+  profile: TutorPublicProfile,
+  hasOffer = false,
+) {
+  const checks = [
+    Boolean(profile.photoUrl),
+    Boolean(profile.headline?.trim()),
+    Boolean(profile.about?.trim()),
+    profile.subjects.length > 0,
+    hasOffer,
+    Boolean(profile.video),
+    Boolean(profile.certificates?.some((certificate) => certificate.visible)),
+    profile.enabled,
+  ];
   return Math.round((checks.filter(Boolean).length / checks.length) * 100);
 }
 
 export function publicProfileDescription(profile: PublicTutorProfile): string {
-  return profile.shortIntro || profile.headline || profile.about?.slice(0, 155) || `Korepetycje z ${profile.subjects.join(", ") || "wybranego przedmiotu"}.`;
+  return (
+    profile.shortIntro ||
+    profile.headline ||
+    profile.about?.slice(0, 155) ||
+    `Korepetycje z ${profile.subjects.join(", ") || "wybranego przedmiotu"}.`
+  );
 }

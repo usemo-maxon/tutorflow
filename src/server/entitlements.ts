@@ -7,14 +7,27 @@ import {
   resolveEntitlements,
   type EntitlementSubscriptionRow,
   type Entitlements,
+  type BooleanEntitlement,
 } from "@/lib/entitlements";
 import { ApiFailure } from "./errors";
 
 export function planRequired(capability: keyof Entitlements): ApiFailure {
   return new ApiFailure(403, {
     code: "PLAN_REQUIRED",
-    message: "Ta funkcja jest dostępna w planie Pro.",
+    message: "Ta funkcja jest dostępna w planie Premium.",
     details: { capability },
+  });
+}
+
+export function planLimitReached(
+  resource: string,
+  limit: number,
+  message: string,
+): ApiFailure {
+  return new ApiFailure(403, {
+    code: "PLAN_LIMIT_REACHED",
+    message,
+    details: { limit, resource },
   });
 }
 
@@ -23,7 +36,7 @@ export function assertEntitlement(
     Teacher["subscription"],
     "status" | "tier" | "accessGrant"
   >,
-  capability: Exclude<keyof Entitlements, "maxActiveStudents">,
+  capability: BooleanEntitlement,
 ): void {
   if (!hasEntitlement(subscription, capability)) throw planRequired(capability);
 }
@@ -47,7 +60,7 @@ export function assertActiveStudentCapacity(
 
 export function entitledTeacherIds(
   rows: Array<EntitlementSubscriptionRow & { teacher_id: string }>,
-  capability: Exclude<keyof Entitlements, "maxActiveStudents">,
+  capability: BooleanEntitlement,
 ): Set<string> {
   return new Set(
     rows

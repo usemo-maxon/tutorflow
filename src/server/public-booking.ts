@@ -1,4 +1,6 @@
 import "server-only";
+import { resolveEntitlements } from "@/lib/entitlements";
+import { publishedProfileOffers } from "@/lib/profile-entitlements";
 
 import { randomUUID } from "node:crypto";
 import type {
@@ -95,13 +97,14 @@ async function createLocalPublicBooking(
       (item) =>
         item.publicProfile?.enabled && item.publicProfile.slug === input.slug,
     );
-    const eventType = store.bookingEventTypes?.find(
-      (item) =>
-        item.id === input.eventTypeId &&
-        item.teacherId === teacher?.id &&
-        item.active &&
-        item.isPublic,
-    );
+    const eventType = teacher
+      ? publishedProfileOffers(
+          (store.bookingEventTypes ?? []).filter(
+            (item) => item.teacherId === teacher.id,
+          ),
+          resolveEntitlements(teacher.subscription),
+        ).find((item) => item.id === input.eventTypeId)
+      : undefined;
     if (!teacher || !eventType) throw offerNotFound();
 
     const localDate = localDateForTimezone(

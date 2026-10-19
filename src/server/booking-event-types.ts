@@ -8,6 +8,42 @@ import type {
 import { isSupabaseConfigured } from "./env";
 import { mutateStore, queryStore } from "./store";
 import { createSupabaseServerClient } from "./supabase";
+import { resolveEntitlements } from "@/lib/entitlements";
+import { ApiFailure } from "./errors";
+import { profileDatabaseFailure } from "./profile-entitlements";
+
+function assertLocalOfferCapacity(
+  store: import("./store").StoreShape,
+  teacherId: string,
+  input: BookingEventTypeInput,
+  previous?: BookingEventType,
+) {
+  if (
+    !input.active ||
+    !input.isPublic ||
+    (previous?.active && previous.isPublic)
+  )
+    return;
+  const teacher = store.teachers.find((item) => item.id === teacherId);
+  if (!teacher) throw new Error("NOT_FOUND");
+  const cap =
+    resolveEntitlements(teacher.subscription).maxPublishedLessonOffers ?? 500;
+  if (
+    (store.bookingEventTypes ?? []).filter(
+      (item) =>
+        item.teacherId === teacherId &&
+        item.active &&
+        item.isPublic &&
+        item.id !== previous?.id,
+    ).length >= cap
+  ) {
+    throw new ApiFailure(403, {
+      code: "PLAN_LIMIT_REACHED",
+      message:
+        "Osiągnięto limit publicznych ofert. Ukryj inną ofertę lub wybierz Premium.",
+    });
+  }
+}
 
 type Row = {
   id: string;
@@ -91,6 +127,7 @@ export async function createBookingEventType(
   if (!isSupabaseConfigured() && process.env.NODE_ENV !== "production")
     return mutateStore((store) => {
       const types = (store.bookingEventTypes ??= []);
+      assertLocalOfferCapacity(store, teacherId, eventType);
       const displayOrder =
         types
           .filter((item) => item.teacherId === teacherId)
@@ -135,7 +172,7 @@ export async function createBookingEventType(
       "id,name,description,duration_minutes,price_grosz,currency,format,is_active,is_public,display_order",
     )
     .single();
-  if (error) throw error;
+  if (error) profileDatabaseFailure(error);
   return mapRow(data);
 }
 
@@ -151,6 +188,7 @@ export async function updateBookingEventType(
         (item) => item.id === eventTypeId && item.teacherId === teacherId,
       );
       if (!current) throw new Error("NOT_FOUND");
+      assertLocalOfferCapacity(store, teacherId, eventType, current);
       Object.assign(current, eventType);
       return withoutTeacherId(current);
     });
@@ -174,7 +212,7 @@ export async function updateBookingEventType(
       "id,name,description,duration_minutes,price_grosz,currency,format,is_active,is_public,display_order",
     )
     .maybeSingle();
-  if (error) throw error;
+  if (error) profileDatabaseFailure(error);
   if (!data) throw new Error("NOT_FOUND");
   return mapRow(data);
 }

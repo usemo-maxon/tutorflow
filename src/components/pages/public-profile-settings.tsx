@@ -1,6 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { resolveEntitlements } from "@/lib/entitlements";
+import {
+  entitledPublicProfile,
+  publishedProfileOffers,
+} from "@/lib/profile-entitlements";
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
@@ -21,7 +26,12 @@ import {
   type BookingEventTypeInput,
 } from "@/lib/booking-event-types";
 import type { TutorPublicProfile } from "@/lib/public-profile";
-import { normalizePublicSlug, profileCompletion } from "@/lib/public-profile";
+import {
+  normalizePublicSlug,
+  profileCompletion,
+  profileContentKey,
+} from "@/lib/public-profile";
+import { useUnsavedChanges } from "@/hooks/use-unsaved-changes";
 import { PublicTutorPage } from "@/components/public-tutor-page";
 import { ProfileContentEditor } from "@/components/profile-content-editor";
 import {
@@ -191,6 +201,7 @@ function PublicPageInsights({
 
 export function PublicProfileSettings() {
   const teacher = useSessionTeacher();
+  const entitlements = resolveEntitlements(teacher.subscription);
   const [profile, setProfile] = useState<TutorPublicProfile | null>(null);
   const [savedProfile, setSavedProfile] = useState<TutorPublicProfile | null>(
     null,
@@ -200,11 +211,17 @@ export function PublicProfileSettings() {
     useState<BookingAvailabilitySettings>(DEFAULT_BOOKING_AVAILABILITY);
   const [draft, setDraft] = useState<EventTypeDraft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [savingEventType, setSavingEventType] = useState(false);
   const [savingAvailability, setSavingAvailability] = useState(false);
   const [message, setMessage] = useState("");
-  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">(
+    "saved",
+  );
   const [mobilePreview, setMobilePreview] = useState(false);
+  const mutationInFlight = useRef(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadError, setLoadError] = useState(false);
   const loaded = useRef(false);
   const [analyticsDays, setAnalyticsDays] = useState<7 | 30 | 90>(30);
   const [analytics, setAnalytics] = useState<{
@@ -213,6 +230,7 @@ export function PublicProfileSettings() {
   } | null>(null);
 
   useEffect(() => {
+    let active = true;
     void Promise.all([
       fetch("/api/public-profile", { cache: "no-store" }).then(
         async (response) => ({ response, data: await response.json() }),
@@ -225,6 +243,7 @@ export function PublicProfileSettings() {
       ),
     ])
       .then(([profileResult, eventTypesResult, availabilityResult]) => {
+        if (!active) return;
         if (
           !profileResult.response.ok ||
           !eventTypesResult.response.ok ||
@@ -241,8 +260,16 @@ export function PublicProfileSettings() {
         });
         loaded.current = true;
       })
-      .catch(() => setMessage("Nie udało się pobrać ustawień."));
-  }, []);
+      .catch(() => {
+        if (active) {
+          setLoadError(true);
+          setMessage("Nie udało się pobrać ustawień.");
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [loadAttempt]);
 
   useEffect(() => {
     void fetch(`/api/public-profile/analytics?days=${analyticsDays}`, {
@@ -264,68 +291,160 @@ export function PublicProfileSettings() {
   ) =>
     setDraft((current) => (current ? { ...current, [key]: value } : current));
 
+  const dirty = Boolean(
+    profile &&
+    savedProfile &&
+    profileContentKey(profile) !== profileContentKey(savedProfile),
+  );
+  useUnsavedChanges(dirty);
+
   async function saveProfile(silent = false) {
-    if (!profile) return;
+    if (!profile || mutationInFlight.current || teacher.subscription.readOnly)
+      return;
+    mutationInFlight.current = true;
     const submittedProfile = profile;
     setSaving(true);
     setSaveState("saving");
     if (!silent) setMessage("");
-    const response = await fetch("/api/public-profile", {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(profile),
-    });
-    const data = await response.json();
-    setSaving(false);
-    if (!response.ok) {
+    try {
+      const response = await fetch("/api/public-profile", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(profile),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Nie udało się zapisać.");
+      }
+      const saved = data as TutorPublicProfile;
+      setProfile((current) =>
+        current &&
+        profileContentKey(current) === profileContentKey(submittedProfile)
+          ? saved
+          : current,
+      );
+      setSavedProfile(saved);
+      setSaveState("saved");
+      if (!silent) setMessage("Wersja robocza została zapisana.");
+    } catch (error) {
       setSaveState("error");
-      return setMessage(data.message || "Nie udało się zapisać.");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się zapisać. Twoje zmiany pozostały w edytorze.",
+      );
+    } finally {
+      mutationInFlight.current = false;
+      setSaving(false);
     }
-    const saved = data as TutorPublicProfile;
-    setProfile((current) => current && JSON.stringify(current) === JSON.stringify(submittedProfile) ? saved : current);
-    setSavedProfile(saved);
-    setSaveState("saved");
-    if (!silent) setMessage("Wersja robocza została zapisana.");
   }
 
   async function publishProfile() {
-    if (!profile) return;
-    setSaving(true); setSaveState("saving"); setMessage("");
-    const response = await fetch("/api/public-profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(profile) });
-    const data = await response.json();
-    setSaving(false);
-    if (!response.ok) { setSaveState("error"); return setMessage(data.message || "Nie udało się opublikować profilu."); }
-    setProfile(data as TutorPublicProfile); setSavedProfile(data as TutorPublicProfile); setSaveState("saved"); setMessage("Profil został opublikowany. Link pokazuje najnowszą wersję.");
+    if (!profile || mutationInFlight.current || teacher.subscription.readOnly)
+      return;
+    mutationInFlight.current = true;
+    setPublishing(true);
+    setSaving(true);
+    setSaveState("saving");
+    setMessage("");
+    try {
+      const response = await fetch("/api/public-profile", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(profile),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.message || "Nie udało się opublikować profilu.");
+      setProfile(data as TutorPublicProfile);
+      setSavedProfile(data as TutorPublicProfile);
+      setSaveState("saved");
+      setMessage("Profil został opublikowany. Link pokazuje najnowszą wersję.");
+    } catch (error) {
+      setSaveState("error");
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się opublikować profilu.",
+      );
+    } finally {
+      mutationInFlight.current = false;
+      setSaving(false);
+      setPublishing(false);
+    }
   }
 
   async function unpublishProfile() {
-    if (!profile) return;
-    setSaving(true); setMessage("");
-    const response = await fetch("/api/public-profile", { method: "DELETE" });
-    setSaving(false);
-    if (!response.ok) return setMessage("Nie udało się wyłączyć profilu.");
-    const next = { ...profile, enabled: false }; setProfile(next); setSavedProfile(next); setMessage("Profil publiczny został wyłączony. Wersja robocza pozostała zapisana.");
+    if (!profile || mutationInFlight.current || teacher.subscription.readOnly)
+      return;
+    mutationInFlight.current = true;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/public-profile", { method: "DELETE" });
+      if (!response.ok) throw new Error("Nie udało się wyłączyć profilu.");
+      setProfile((current) =>
+        current
+          ? { ...current, enabled: false, publishedSlug: undefined }
+          : current,
+      );
+      setSavedProfile((current) =>
+        current
+          ? { ...current, enabled: false, publishedSlug: undefined }
+          : current,
+      );
+      setMessage(
+        "Profil publiczny został wyłączony. Wersja robocza pozostała zapisana.",
+      );
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : "Nie udało się wyłączyć profilu.",
+      );
+    } finally {
+      mutationInFlight.current = false;
+      setSaving(false);
+    }
   }
 
   useEffect(() => {
-    if (!loaded.current || !profile || !savedProfile || JSON.stringify(profile) === JSON.stringify(savedProfile)) return;
+    if (
+      !loaded.current ||
+      !dirty ||
+      saving ||
+      saveState === "error" ||
+      teacher.subscription.readOnly
+    )
+      return;
     const timer = window.setTimeout(() => void saveProfile(true), 1200);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, savedProfile]);
+  }, [
+    profile,
+    savedProfile,
+    dirty,
+    saving,
+    saveState,
+    teacher.subscription.readOnly,
+  ]);
 
   async function photo(file?: File) {
     if (!file) return;
-    const form = new FormData();
-    form.set("photo", file);
-    const response = await fetch("/api/public-profile/photo", {
-      method: "POST",
-      body: form,
-    });
-    const data = await response.json();
-    if (!response.ok)
-      return setMessage(data.message || "Nie udało się przesłać zdjęcia.");
-    update("photoUrl", data.photoUrl);
+    try {
+      const form = new FormData();
+      form.set("photo", file);
+      const response = await fetch("/api/public-profile/photo", {
+        method: "POST",
+        body: form,
+      });
+      const data = await response.json();
+      if (!response.ok)
+        return setMessage(data.message || "Nie udało się przesłać zdjęcia.");
+      update("photoUrl", data.photoUrl);
+    } catch {
+      setMessage("Nie udało się przesłać zdjęcia. Spróbuj ponownie.");
+    }
   }
 
   async function saveAvailabilitySettings() {
@@ -490,10 +609,30 @@ export function PublicProfileSettings() {
   if (!profile)
     return (
       <section className="settings-panel">
-        <LoaderCircle className="spin" /> Ładowanie strony publicznej…
+        {loadError ? (
+          <>
+            <p role="alert">Nie udało się pobrać ustawień.</p>
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() => {
+                setLoadError(false);
+                setLoadAttempt((value) => value + 1);
+              }}
+            >
+              Spróbuj ponownie
+            </button>
+          </>
+        ) : (
+          <>
+            <LoaderCircle className="spin" /> Ładowanie strony publicznej…
+          </>
+        )}
       </section>
     );
-  const publicHref = savedProfile ? `/${savedProfile.slug}` : undefined;
+  const publicHref = savedProfile?.publishedSlug
+    ? `/${savedProfile.publishedSlug}`
+    : undefined;
   const isPublished = Boolean(savedProfile?.enabled);
   return (
     <section className="public-profile-settings">
@@ -505,40 +644,201 @@ export function PublicProfileSettings() {
           informacje z obszaru pracy nigdy nie trafiają na tę stronę.
         </p>
       </div>
-      <div className={`public-settings-layout${mobilePreview ? " is-previewing" : ""}`}>
+      <div
+        className={`public-settings-layout${mobilePreview ? " is-previewing" : ""}`}
+      >
         <div className="public-settings-stack">
           <section className="profile-studio">
             <div className="profile-studio-toolbar">
-              <div className="profile-completion" style={{ "--completion": `${profileCompletion(profile, eventTypes.length > 0)}%` } as React.CSSProperties}>
-                <strong>{profileCompletion(profile, eventTypes.length > 0)}%</strong>
+              <div
+                className="profile-completion"
+                style={
+                  {
+                    "--completion": `${profileCompletion(profile, eventTypes.length > 0)}%`,
+                  } as React.CSSProperties
+                }
+              >
+                <strong>
+                  {profileCompletion(profile, eventTypes.length > 0)}%
+                </strong>
                 <span>gotowości profilu</span>
               </div>
               <div className="profile-save-state" aria-live="polite">
-                {saveState === "saving" && <><LoaderCircle size={15} className="spin" />Zapisywanie…</>}
-                {saveState === "saved" && "Wersja robocza zapisana"}
+                {saveState === "saving" && (
+                  <>
+                    <LoaderCircle size={15} className="spin" />
+                    Zapisywanie…
+                  </>
+                )}
+                {saveState === "saved" &&
+                  (dirty ? "Oczekiwanie na zapis…" : "Wersja robocza zapisana")}
                 {saveState === "error" && "Nie udało się zapisać"}
               </div>
-              <button type="button" className="button button--quiet profile-mobile-preview" onClick={() => setMobilePreview((value) => !value)}><MonitorSmartphone size={16} />{mobilePreview ? "Wróć do edycji" : "Podgląd"}</button>
+              <button
+                type="button"
+                className="button button--quiet profile-mobile-preview"
+                onClick={() => setMobilePreview((value) => !value)}
+              >
+                <MonitorSmartphone size={16} />
+                {mobilePreview ? "Wróć do edycji" : "Podgląd"}
+              </button>
             </div>
+            {saveState === "error" && (
+              <button
+                type="button"
+                className="button button--secondary"
+                disabled={saving || teacher.subscription.readOnly}
+                onClick={() => void saveProfile()}
+              >
+                Ponów zapis
+              </button>
+            )}
             <div className="profile-publish-bar">
-              <div><span className={`profile-status-dot${isPublished ? " is-live" : ""}`} /><strong>{isPublished ? "Profil jest publiczny" : "Profil jest prywatny"}</strong><small>{isPublished ? "Zmiany trafiają na stronę dopiero po ponownym opublikowaniu." : "Automatyczny zapis nie publikuje danych."}</small></div>
+              <div>
+                <span
+                  className={`profile-status-dot${isPublished ? " is-live" : ""}`}
+                />
+                <strong>
+                  {isPublished
+                    ? "Profil jest publiczny"
+                    : "Profil jest prywatny"}
+                </strong>
+                <small>
+                  {isPublished
+                    ? "Zmiany trafiają na stronę dopiero po ponownym opublikowaniu."
+                    : "Automatyczny zapis nie publikuje danych."}
+                </small>
+              </div>
               <div className="public-settings-actions">
-                {isPublished && <button type="button" className="button button--quiet" onClick={() => void unpublishProfile()} disabled={saving || teacher.subscription.readOnly}>Wyłącz</button>}
-                <button type="button" className="button button--primary" onClick={() => void publishProfile()} disabled={saving || teacher.subscription.readOnly}>{saving && <LoaderCircle size={16} className="spin" />}{isPublished ? "Opublikuj zmiany" : "Opublikuj profil"}</button>
+                {isPublished && (
+                  <button
+                    type="button"
+                    className="button button--quiet"
+                    onClick={() => void unpublishProfile()}
+                    disabled={saving || teacher.subscription.readOnly}
+                  >
+                    Wyłącz
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="button button--primary"
+                  onClick={() => void publishProfile()}
+                  disabled={saving || teacher.subscription.readOnly}
+                >
+                  {saving && <LoaderCircle size={16} className="spin" />}
+                  {isPublished ? "Opublikuj zmiany" : "Opublikuj profil"}
+                </button>
               </div>
             </div>
-            <div className="profile-studio-basics">
-              <label className="field"><span>Publiczny adres</span><div className="public-slug-field"><span>easy4tutor.pl/</span><input value={profile.slug} onChange={(event) => update("slug", normalizePublicSlug(event.target.value))} disabled={teacher.subscription.readOnly} /></div><small>Po zmianie stare opublikowane linki przekierują na nowy adres.</small></label>
-              <label className="field"><span>Zdjęcie profilowe</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void photo(event.target.files?.[0])} disabled={teacher.subscription.readOnly} /><small>JPG, PNG lub WebP, maks. 3 MB.</small></label>
-              <div className="form-row"><label className="field"><span>Format lekcji</span><select value={profile.lessonFormats.join(",")} onChange={(event) => update("lessonFormats", event.target.value ? event.target.value.split(",") as TutorPublicProfile["lessonFormats"] : [])} disabled={teacher.subscription.readOnly}><option value="">Nie pokazuj</option><option value="online">Online</option><option value="offline">Stacjonarnie</option><option value="online,offline">Online i stacjonarnie</option></select></label><label className="field"><span>Miasto / lokalizacja</span><input value={profile.city ?? ""} onChange={(event) => update("city", event.target.value)} disabled={teacher.subscription.readOnly} /></label></div>
-              <label className="field"><span>Publiczne linki</span><textarea rows={2} value={profile.contactLinks.join("\n")} onChange={(event) => update("contactLinks", split(event.target.value))} disabled={teacher.subscription.readOnly} placeholder="https://linkedin.com/in/…" /><small>E-mail i telefon konta nigdy nie są dodawane automatycznie.</small></label>
-            </div>
-            <ProfileContentEditor profile={profile} disabled={teacher.subscription.readOnly} onChange={setProfile} onMessage={setMessage} />
-            {message && <p className="profile-studio-message" role="status">{message}</p>}
-            {isPublished && publicHref && <Link className="button button--secondary" href={publicHref} target="_blank"><ExternalLink size={16} />Otwórz opublikowany profil</Link>}
+            <fieldset
+              className="profile-editor-fieldset"
+              disabled={publishing || teacher.subscription.readOnly}
+            >
+              <div className="profile-studio-basics">
+                <label className="field">
+                  <span>Publiczny adres</span>
+                  <div className="public-slug-field">
+                    <span>easy4tutor.pl/</span>
+                    <input
+                      value={profile.slug}
+                      onChange={(event) =>
+                        update("slug", normalizePublicSlug(event.target.value))
+                      }
+                      disabled={teacher.subscription.readOnly}
+                    />
+                  </div>
+                  <small>
+                    Po zmianie stare opublikowane linki przekierują na nowy
+                    adres.
+                  </small>
+                </label>
+                <label className="field">
+                  <span>Zdjęcie profilowe</span>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(event) => void photo(event.target.files?.[0])}
+                    disabled={teacher.subscription.readOnly}
+                  />
+                  <small>JPG, PNG lub WebP, maks. 3 MB.</small>
+                </label>
+                <div className="form-row">
+                  <label className="field">
+                    <span>Format lekcji</span>
+                    <select
+                      value={profile.lessonFormats.join(",")}
+                      onChange={(event) =>
+                        update(
+                          "lessonFormats",
+                          event.target.value
+                            ? (event.target.value.split(
+                                ",",
+                              ) as TutorPublicProfile["lessonFormats"])
+                            : [],
+                        )
+                      }
+                      disabled={teacher.subscription.readOnly}
+                    >
+                      <option value="">Nie pokazuj</option>
+                      <option value="online">Online</option>
+                      <option value="offline">Stacjonarnie</option>
+                      <option value="online,offline">
+                        Online i stacjonarnie
+                      </option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Miasto / lokalizacja</span>
+                    <input
+                      value={profile.city ?? ""}
+                      onChange={(event) => update("city", event.target.value)}
+                      disabled={teacher.subscription.readOnly}
+                    />
+                  </label>
+                </div>
+                <label className="field">
+                  <span>Publiczne linki</span>
+                  <textarea
+                    rows={2}
+                    value={profile.contactLinks.join("\n")}
+                    onChange={(event) =>
+                      update("contactLinks", split(event.target.value))
+                    }
+                    disabled={teacher.subscription.readOnly}
+                    placeholder="https://linkedin.com/in/…"
+                  />
+                  <small>
+                    E-mail i telefon konta nigdy nie są dodawane automatycznie.
+                  </small>
+                </label>
+              </div>
+              <ProfileContentEditor
+                profile={profile}
+                entitlements={entitlements}
+                disabled={teacher.subscription.readOnly}
+                onChange={setProfile}
+                onMessage={setMessage}
+              />
+            </fieldset>
+            {message && (
+              <p className="profile-studio-message" role="status">
+                {message}
+              </p>
+            )}
+            {isPublished && publicHref && (
+              <Link
+                className="button button--secondary"
+                href={publicHref}
+                target="_blank"
+              >
+                <ExternalLink size={16} />
+                Otwórz opublikowany profil
+              </Link>
+            )}
           </section>
           <PublicPageInsights
-            slug={savedProfile?.slug ?? profile.slug}
+            slug={savedProfile?.publishedSlug ?? profile.slug}
             published={isPublished}
             days={analyticsDays}
             onDays={setAnalyticsDays}
@@ -688,13 +988,26 @@ export function PublicProfileSettings() {
               <button
                 type="button"
                 className="button button--secondary"
-                onClick={() => setDraft(newDraft())}
+                onClick={() =>
+                  setDraft({
+                    ...newDraft(),
+                    isPublic:
+                      eventTypes.filter((item) => item.active && item.isPublic)
+                        .length <
+                      (entitlements.maxPublishedLessonOffers ?? 500),
+                  })
+                }
                 disabled={teacher.subscription.readOnly || Boolean(draft)}
               >
                 <Plus size={16} />
                 Dodaj
               </button>
             </div>
+            <p className="profile-editor-help">
+              {entitlements.maxPublishedLessonOffers === null
+                ? "Premium: bez limitu planowego publicznych ofert."
+                : `Free: maksymalnie ${entitlements.maxPublishedLessonOffers} publiczne oferty. Nadmiarowe oferty są zachowane, ale nie są dostępne do rezerwacji.`}
+            </p>
             {eventTypes.length === 0 && !draft && (
               <p className="inline-empty">
                 Nie masz jeszcze typów zajęć. Możesz dodać np. pierwsze
@@ -717,7 +1030,9 @@ export function PublicProfileSettings() {
                         : `${groszToPriceInput(eventType.priceGrosz)} zł`}
                     </p>
                     <small>
-                      {eventType.active && eventType.isPublic
+                      {publishedProfileOffers(eventTypes, entitlements).some(
+                        (item) => item.id === eventType.id,
+                      )
                         ? "Widoczny publicznie"
                         : eventType.active
                           ? "Ukryty publicznie"
@@ -916,31 +1231,36 @@ export function PublicProfileSettings() {
           </section>
         </div>
         <aside className="public-profile-preview">
+          <button
+            type="button"
+            className="button button--secondary profile-mobile-preview"
+            onClick={() => setMobilePreview(false)}
+          >
+            Wróć do edycji
+          </button>
           <p className="eyebrow">Podgląd strony</p>
           <PublicTutorPage
             profile={{
-              ...profile,
-              eventTypes: eventTypes
-                .filter((item) => item.active && item.isPublic)
-                .map(
-                  ({
-                    id,
-                    name,
-                    description,
-                    durationMinutes,
-                    priceGrosz,
-                    currency,
-                    format,
-                  }) => ({
-                    id,
-                    name,
-                    description,
-                    durationMinutes,
-                    priceGrosz,
-                    currency,
-                    format,
-                  }),
-                ),
+              ...entitledPublicProfile(profile, entitlements),
+              eventTypes: publishedProfileOffers(eventTypes, entitlements).map(
+                ({
+                  id,
+                  name,
+                  description,
+                  durationMinutes,
+                  priceGrosz,
+                  currency,
+                  format,
+                }) => ({
+                  id,
+                  name,
+                  description,
+                  durationMinutes,
+                  priceGrosz,
+                  currency,
+                  format,
+                }),
+              ),
             }}
             preview
           />
