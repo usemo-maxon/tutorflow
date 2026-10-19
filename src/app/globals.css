@@ -363,10 +363,22 @@ h3 {
 }
 .public-tutor-page {
   min-height: 100vh;
-  background: #f6f8f5;
-  color: #20342d;
+  background: var(--profile-page);
+  color: var(--profile-ink);
   font-family: var(--font-ui), sans-serif;
   --profile-accent: #137d60;
+  --profile-accent-strong: color-mix(in srgb, var(--profile-accent) 70%, #17211d);
+  --profile-accent-deep: color-mix(in srgb, var(--profile-accent) 48%, #17211d);
+  --profile-accent-soft: color-mix(in srgb, var(--profile-accent) 12%, white);
+  --profile-accent-wash: color-mix(in srgb, var(--profile-accent) 5%, white);
+  --profile-accent-border: color-mix(in srgb, var(--profile-accent) 30%, white);
+  --profile-accent-shadow: color-mix(in srgb, var(--profile-accent) 24%, transparent);
+  --profile-page: color-mix(in srgb, var(--profile-accent) 5%, #f8faf9);
+  --profile-surface: #ffffff;
+  --profile-surface-raised: #ffffff;
+  --profile-ink: color-mix(in srgb, var(--profile-accent) 15%, #252b29);
+  --profile-muted: color-mix(in srgb, var(--profile-accent) 12%, #66716c);
+  --profile-on-accent: #ffffff;
 }
 .public-tutor-hero {
   position: relative;
@@ -377,13 +389,27 @@ h3 {
   margin: 0 auto;
   padding: 46px 24px 30px;
   background:
-    radial-gradient(circle at 95% 3%, #d5f0e3 0, transparent 32%), #f6f8f5;
+    radial-gradient(circle at 95% 3%, var(--profile-accent-soft) 0, transparent 32%),
+    var(--profile-page);
 }
-.public-tutor-page.theme-minimal { background: #f5f5f3; color: #262b29; }
-.public-tutor-page.theme-friendly { background: #fff8f0; color: #40332e; }
-.public-tutor-page.theme-modern { background: #f2f0f8; color: #29243b; }
-.public-tutor-page.theme-friendly .public-tutor-hero { background: radial-gradient(circle at 95% 3%, #ffe1c7 0, transparent 32%), #fff8f0; }
-.public-tutor-page.theme-modern .public-tutor-hero { background: radial-gradient(circle at 95% 3%, #ded6f2 0, transparent 32%), #f2f0f8; }
+.public-tutor-page.theme-minimal {
+  --profile-page: color-mix(in srgb, var(--profile-accent) 3%, #f5f5f3);
+  --profile-surface: #fbfbfa;
+}
+.public-tutor-page.theme-friendly {
+  --profile-page: color-mix(in srgb, var(--profile-accent) 7%, #fffaf5);
+  --profile-surface: color-mix(in srgb, var(--profile-accent) 2%, white);
+}
+.public-tutor-page.theme-modern {
+  --profile-page: color-mix(in srgb, var(--profile-accent) 8%, #f8f7fc);
+  --profile-surface: color-mix(in srgb, var(--profile-accent) 2%, white);
+}
+.public-tutor-page.theme-friendly .public-tutor-hero,
+.public-tutor-page.theme-modern .public-tutor-hero {
+  background:
+    radial-gradient(circle at 95% 3%, var(--profile-accent-soft) 0, transparent 32%),
+    var(--profile-page);
+}
 .public-tutor-page .public-book-button { background: var(--profile-accent); }
 .public-tutor-intro { position: relative; z-index: 1; max-width: 580px; margin: 10px 0 0; color: #465a52; font-size: 15px; line-height: 1.65; }
 .public-profile-highlights { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 7px; margin: 0; padding: 0; list-style: none; }
@@ -976,6 +1002,187 @@ h3 {
   display: grid;
   gap: 5px;
   font-size: 14px;
+}
+
+/* The selected profile color drives the complete public-page palette. */
+.public-tutor-page .public-tutor-hero::after {
+  border-color: color-mix(in srgb, var(--profile-accent) 11%, transparent);
+}
+.public-tutor-page .public-tutor-photo {
+  border-color: var(--profile-surface-raised);
+  background: var(--profile-accent-strong);
+  box-shadow: 0 12px 24px var(--profile-accent-shadow);
+}
+.public-tutor-page .public-tutor-brand,
+.public-tutor-page .public-section-kicker,
+.public-tutor-page .public-certificate-grid a,
+.public-tutor-page .public-certificate-icon,
+.public-tutor-page .public-event-type-card__price,
+.public-tutor-page .public-event-type-card__action,
+.public-tutor-page .public-availability__heading svg,
+.public-tutor-page .public-booking-soon svg,
+.public-tutor-page .public-booking-success > svg,
+.public-tutor-page .public-booking-success__eyebrow {
+  color: var(--profile-accent-strong);
+}
+.public-tutor-page .public-tutor-intro,
+.public-tutor-page .public-tutor-headline,
+.public-tutor-page .public-tutor-meta,
+.public-tutor-page .public-tutor-about,
+.public-tutor-page .public-profile-taxonomy p,
+.public-tutor-page .public-method-note p,
+.public-tutor-page .public-timeline small,
+.public-tutor-page .public-timeline p,
+.public-tutor-page .public-certificate-grid p,
+.public-tutor-page .public-credential-note,
+.public-tutor-page .public-faq p,
+.public-tutor-page .public-event-types > p,
+.public-tutor-page .public-event-type-card__description,
+.public-tutor-page .public-event-type-card__meta,
+.public-tutor-page .public-availability__heading p,
+.public-tutor-page .public-availability__notice,
+.public-tutor-page .public-availability__empty,
+.public-tutor-page .public-booking-form > div:first-child p,
+.public-tutor-page .public-availability__summary small {
+  color: var(--profile-muted);
+}
+.public-tutor-page .public-profile-highlights li {
+  border-color: var(--profile-accent-border);
+  background: color-mix(in srgb, var(--profile-surface-raised) 80%, transparent);
+  color: var(--profile-accent-strong);
+}
+.public-tutor-page .public-profile-taxonomy p,
+.public-tutor-page .public-certificate-grid article,
+.public-tutor-page .public-faq details,
+.public-tutor-page .public-tutor-facts div,
+.public-tutor-page .public-event-type-card,
+.public-tutor-page .public-availability,
+.public-tutor-page .public-booking-form-section {
+  border-color: var(--profile-accent-border);
+}
+.public-tutor-page .public-profile-taxonomy strong,
+.public-tutor-page .public-event-type-card,
+.public-tutor-page .public-booking-form__fields input,
+.public-tutor-page .public-booking-form__fields textarea {
+  color: var(--profile-ink);
+}
+.public-tutor-page .public-method-grid li,
+.public-tutor-page .public-tutor-chips li,
+.public-tutor-page .public-certificate-icon,
+.public-tutor-page .public-booking-progress .is-complete {
+  background: var(--profile-accent-soft);
+  color: var(--profile-accent-deep);
+}
+.public-tutor-page .public-method-note,
+.public-tutor-page .public-timeline article > div {
+  border-color: var(--profile-accent-border);
+}
+.public-tutor-page .public-timeline article > span {
+  background: var(--profile-accent-soft);
+  color: var(--profile-accent-strong);
+}
+.public-tutor-page .public-certificate-grid article,
+.public-tutor-page .public-event-type-card,
+.public-tutor-page .public-availability__date,
+.public-tutor-page .public-availability__slot,
+.public-tutor-page .public-booking-form__fields input,
+.public-tutor-page .public-booking-form__fields textarea {
+  background: var(--profile-surface-raised);
+}
+.public-tutor-page .public-certificate-grid img {
+  background: var(--profile-accent-wash);
+}
+.public-tutor-page .public-book-button,
+.public-tutor-page .public-booking-progress .is-current,
+.public-tutor-page .public-availability__date--selected,
+.public-tutor-page .public-availability__slot--selected,
+.public-tutor-page .public-booking-submit {
+  background: var(--profile-accent-strong);
+  color: var(--profile-on-accent);
+  box-shadow: 0 8px 18px var(--profile-accent-shadow);
+}
+.public-tutor-page .public-booking-progress {
+  color: var(--profile-muted);
+}
+.public-tutor-page .public-booking-progress li {
+  background: var(--profile-accent-wash);
+}
+.public-tutor-page .public-tutor-content {
+  background: var(--profile-surface);
+}
+.public-tutor-page .public-tutor-facts dt {
+  color: var(--profile-muted);
+}
+.public-tutor-page .public-contact-links a {
+  border-color: var(--profile-accent-border);
+  color: var(--profile-accent-strong);
+}
+.public-tutor-page .public-event-type-card:hover {
+  border-color: var(--profile-accent-strong);
+  box-shadow: 0 5px 16px var(--profile-accent-shadow);
+}
+.public-tutor-page .public-event-type-card--selected {
+  border-color: var(--profile-accent-strong);
+  background: var(--profile-accent-wash);
+  box-shadow: inset 0 0 0 1px var(--profile-accent-soft);
+}
+.public-tutor-page .public-booking-soon,
+.public-tutor-page .public-availability__summary,
+.public-tutor-page .public-booking-summary {
+  background: var(--profile-accent-soft);
+  color: var(--profile-accent-deep);
+}
+.public-tutor-page .public-availability,
+.public-tutor-page .public-booking-form-section {
+  background: color-mix(in srgb, var(--profile-accent) 2.5%, var(--profile-surface-raised));
+}
+.public-tutor-page .public-availability__date,
+.public-tutor-page .public-availability__slot,
+.public-tutor-page .public-booking-form__fields input,
+.public-tutor-page .public-booking-form__fields textarea {
+  border-color: var(--profile-accent-border);
+}
+.public-tutor-page .public-availability__date--selected,
+.public-tutor-page .public-availability__slot--selected {
+  border-color: var(--profile-accent-strong);
+}
+.public-tutor-page .public-booking-form__fields label,
+.public-tutor-page .public-booking-success {
+  color: var(--profile-accent-deep);
+}
+.public-tutor-page .public-booking-form__fields input:focus,
+.public-tutor-page .public-booking-form__fields textarea:focus {
+  border-color: var(--profile-accent-strong);
+  outline-color: var(--profile-accent-soft);
+}
+.public-tutor-page :focus-visible {
+  border-radius: 8px;
+  outline-color: var(--profile-accent-strong);
+  box-shadow: 0 0 0 4px var(--profile-accent-soft);
+}
+.public-tutor-page.theme-minimal .public-tutor-photo,
+.public-tutor-page.theme-minimal .public-book-button,
+.public-tutor-page.theme-minimal .public-event-type-card,
+.public-tutor-page.theme-minimal .public-availability,
+.public-tutor-page.theme-minimal .public-booking-form-section {
+  border-radius: 6px;
+  box-shadow: none;
+}
+.public-tutor-page.theme-friendly .public-tutor-photo {
+  border-radius: 50%;
+}
+.public-tutor-page.theme-friendly .public-book-button,
+.public-tutor-page.theme-friendly .public-event-type-card,
+.public-tutor-page.theme-friendly .public-availability,
+.public-tutor-page.theme-friendly .public-booking-form-section {
+  border-radius: 20px;
+}
+.public-tutor-page.theme-modern .public-tutor-hero::after {
+  border-radius: 28%;
+  transform: rotate(18deg);
+}
+.public-tutor-page.theme-modern .public-tutor-photo {
+  border-radius: 18px;
 }
 .public-preview-label {
   margin: 0;
