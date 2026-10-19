@@ -2,6 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- Supabase public URLs are runtime-selected. */
 import {
+  type CSSProperties,
   type FormEvent,
   useCallback,
   useEffect,
@@ -17,14 +18,19 @@ import type {
   PublicTutorProfile,
   TutorPublicProfile,
 } from "@/lib/public-profile";
+import { DEFAULT_PROFILE_SECTIONS } from "@/lib/public-profile";
 import {
   BookOpen,
+  Award,
   CalendarDays,
   Check,
   CircleCheckBig,
   Clock3,
+  ExternalLink,
+  GraduationCap,
   MapPin,
   Monitor,
+  Play,
   School,
   Sparkles,
 } from "lucide-react";
@@ -32,6 +38,15 @@ import {
 type PreviewProfile = TutorPublicProfile & {
   eventTypes?: PublicBookingEventType[];
 };
+
+function PrivacyVideo({ profile }: { profile: PublicTutorProfile | PreviewProfile }) {
+  const [playing, setPlaying] = useState(false);
+  const video = profile.video;
+  if (!video) return null;
+  if (video.source === "upload" && video.url) return <video className="public-profile-video" controls preload="metadata" poster={video.posterUrl}><source src={video.url} /></video>;
+  if (video.source === "youtube" && video.videoId) return playing ? <iframe className="public-profile-video" src={`https://www.youtube-nocookie.com/embed/${video.videoId}?autoplay=1`} title={video.title} allow="accelerometer; autoplay; encrypted-media; picture-in-picture" allowFullScreen /> : <button type="button" className="public-video-consent" onClick={() => setPlaying(true)} style={video.posterUrl ? { backgroundImage: `url(${video.posterUrl})` } : undefined}><span><Play size={26} fill="currentColor" /></span><strong>Odtwórz film</strong><small>Film zostanie załadowany z YouTube dopiero po kliknięciu.</small></button>;
+  return null;
+}
 
 export function PublicTutorPage({
   profile,
@@ -214,9 +229,12 @@ export function PublicTutorPage({
       hour12: false,
       timeZone: timezone,
     }).format(new Date(timestamp));
+  const sections = profile.sections ?? DEFAULT_PROFILE_SECTIONS;
+  const section = (id: (typeof DEFAULT_PROFILE_SECTIONS)[number]["id"]) => sections.find((item) => item.id === id) ?? DEFAULT_PROFILE_SECTIONS.find((item) => item.id === id)!;
+  const sectionStyle = (id: (typeof DEFAULT_PROFILE_SECTIONS)[number]["id"]): CSSProperties => ({ order: Math.max(1, sections.findIndex((item) => item.id === id) + 1) });
 
   return (
-    <main className="public-tutor-page">
+    <main className={`public-tutor-page theme-${profile.theme ?? "professional"}`} style={{ "--profile-accent": profile.accentColor ?? "#137d60" } as CSSProperties}>
       {preview && (
         <p className="public-preview-label">
           Podgląd — nieopublikowane zmiany są widoczne tylko dla Ciebie
@@ -240,7 +258,9 @@ export function PublicTutorPage({
           {profile.headline && (
             <p className="public-tutor-headline">{profile.headline}</p>
           )}
+          {profile.shortIntro && <p className="public-tutor-intro">{profile.shortIntro}</p>}
         </div>
+        {(profile.highlights ?? []).length > 0 && <ul className="public-profile-highlights">{profile.highlights!.map((item) => <li key={item}>{item}</li>)}</ul>}
         {(profile.subjects.length > 0 ||
           formats.length > 0 ||
           profile.city) && (
@@ -288,6 +308,7 @@ export function PublicTutorPage({
         {selectedEventType && (
           <ol
             className="public-booking-progress"
+            style={{ order: 90 }}
             aria-label="Postęp rezerwacji"
           >
             <li className="is-complete">1. Rodzaj lekcji</li>
@@ -295,26 +316,35 @@ export function PublicTutorPage({
             <li className={selectedSlot ? "is-current" : ""}>3. Twoje dane</li>
           </ol>
         )}
-        {profile.about && (
-          <section>
-            <h2>O mnie</h2>
+        {profile.about && section("about").visible && (
+          <section style={sectionStyle("about")}>
+            <h2>{section("about").title}</h2>
             <p className="public-tutor-about">{profile.about}</p>
           </section>
         )}
-        {profile.subjects.length > 0 && (
-          <section>
-            <h2>Jak mogę Ci pomóc?</h2>
+        {profile.video && section("video").visible && (
+          <section style={sectionStyle("video")} className="public-video-section">
+            <p className="public-section-kicker">Film powitalny</p>
+            <h2>{profile.video.title || section("video").title}</h2>
+            {profile.video.description && <p>{profile.video.description}</p>}
+            <PrivacyVideo profile={profile} />
+          </section>
+        )}
+        {(profile.subjects.length > 0 || (profile.specializations ?? []).length > 0) && section("subjects").visible && (
+          <section style={sectionStyle("subjects")}>
+            <h2>{section("subjects").title}</h2>
             <ul className="public-tutor-chips">
-              {profile.subjects.map((subject) => (
+              {[...profile.subjects, ...(profile.specializations ?? [])].map((subject) => (
                 <li key={subject}>{subject}</li>
               ))}
             </ul>
+            {((profile.audiences ?? []).length > 0 || (profile.languages ?? []).length > 0) && <div className="public-profile-taxonomy">{(profile.audiences ?? []).length > 0 && <p><strong>Dla kogo</strong>{profile.audiences!.join(" · ")}</p>}{(profile.languages ?? []).length > 0 && <p><strong>Języki zajęć</strong>{profile.languages!.join(" · ")}</p>}</div>}
           </section>
         )}
         {(profile.levels.length > 0 ||
           formats.length > 0 ||
           profile.priceText) && (
-          <section>
+          <section style={sectionStyle("subjects")}>
             <h2>Informacje</h2>
             <dl className="public-tutor-facts">
               {profile.levels.length > 0 && (
@@ -338,9 +368,25 @@ export function PublicTutorPage({
             </dl>
           </section>
         )}
-        {profile.contactLinks.length > 0 && (
-          <section>
-            <h2>Znajdź mnie</h2>
+        {profile.teachingApproach?.philosophy && section("approach").visible && (
+          <section style={sectionStyle("approach")} className="public-approach">
+            <p className="public-section-kicker">Podejście</p><h2>{section("approach").title}</h2>
+            <p className="public-tutor-about">{profile.teachingApproach.philosophy}</p>
+            {(profile.teachingApproach.highlights ?? []).length > 0 && <ul className="public-method-grid">{profile.teachingApproach.highlights.map((item) => <li key={item}><Check size={16} />{item}</li>)}</ul>}
+            {profile.teachingApproach.lessonStructure && <div className="public-method-note"><strong>Jak wygląda lekcja</strong><p>{profile.teachingApproach.lessonStructure}</p></div>}
+            {profile.teachingApproach.materials && <div className="public-method-note"><strong>Materiały i ćwiczenia</strong><p>{profile.teachingApproach.materials}</p></div>}
+          </section>
+        )}
+        {(profile.timeline ?? []).length > 0 && section("experience").visible && (
+          <section style={sectionStyle("experience")}><p className="public-section-kicker">Droga zawodowa</p><h2>{section("experience").title}</h2><div className="public-timeline">{profile.timeline!.map((item) => <article key={item.id}><span>{item.kind === "education" ? <GraduationCap size={18} /> : <BookOpen size={18} />}</span><div><small>{item.startYear}{item.current ? " — obecnie" : item.endYear ? ` — ${item.endYear}` : ""}</small><h3>{item.title}</h3><strong>{item.institution}</strong>{item.description && <p>{item.description}</p>}</div></article>)}</div></section>
+        )}
+        {(profile.certificates ?? []).some((item) => item.visible) && section("certificates").visible && (
+          <section style={sectionStyle("certificates")}><p className="public-section-kicker">Dokumenty dodane przez tutora</p><h2>{section("certificates").title}</h2><div className="public-certificate-grid">{profile.certificates!.filter((item) => item.visible).map((item) => <article key={item.id}>{item.fileType === "image" && item.fileUrl ? <img src={item.fileUrl} alt="" loading="lazy" /> : <div className="public-certificate-icon"><Award size={25} /></div>}<div><h3>{item.title}</h3><p>{item.issuer}{item.issuedAt ? ` · ${item.issuedAt.slice(0, 4)}` : ""}</p>{item.fileUrl && <a href={item.fileUrl} target="_blank" rel="noreferrer">Zobacz dokument <ExternalLink size={14} /></a>}{item.verificationUrl && <a href={item.verificationUrl} target="_blank" rel="noreferrer">Sprawdź u wystawcy <ExternalLink size={14} /></a>}</div></article>)}</div><small className="public-credential-note">Dokumenty są publikowane przez tutora i nie oznaczają weryfikacji przez Easy4Tutor.</small></section>
+        )}
+        {(profile.faq ?? []).some((item) => item.visible) && section("faq").visible && <section style={sectionStyle("faq")}><h2>{section("faq").title}</h2><div className="public-faq">{profile.faq!.filter((item) => item.visible).map((item) => <details key={item.id}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div></section>}
+        {profile.contactLinks.length > 0 && section("contact").visible && (
+          <section style={sectionStyle("contact")}>
+            <h2>{section("contact").title}</h2>
             <div className="public-contact-links">
               {profile.contactLinks.map((link) => (
                 <a key={link} href={link} rel="noreferrer" target="_blank">
@@ -350,9 +396,9 @@ export function PublicTutorPage({
             </div>
           </section>
         )}
-        {eventTypes.length > 0 && (
-          <section id="wybierz-rodzaj-lekcji" className="public-event-types">
-            <h2>Wybierz rodzaj lekcji</h2>
+        {eventTypes.length > 0 && section("offers").visible && (
+          <section id="wybierz-rodzaj-lekcji" className="public-event-types" style={sectionStyle("offers")}>
+            <h2>{section("offers").title}</h2>
             <p>Wybierz ofertę, aby przejść do kolejnego kroku.</p>
             <div className="public-event-type-list">
               {eventTypes.map((eventType) => {
@@ -412,7 +458,7 @@ export function PublicTutorPage({
           </section>
         )}
         {selectedEventType && (
-          <section id="termin" className="public-availability">
+          <section id="termin" className="public-availability" style={{ order: 91 }}>
             <div className="public-availability__heading">
               <CalendarDays size={23} />
               <div>
@@ -517,7 +563,7 @@ export function PublicTutorPage({
           </section>
         )}
         {selectedEventType && selectedSlot && availability && !preview && (
-          <section id="twoje-dane" className="public-booking-form-section">
+          <section id="twoje-dane" className="public-booking-form-section" style={{ order: 92 }}>
             {confirmation ? (
               <div className="public-booking-success" aria-live="polite">
                 <CircleCheckBig size={34} />
@@ -675,7 +721,7 @@ export function PublicTutorPage({
           </section>
         )}
         {!eventTypes.length && (
-          <section className="public-booking-soon">
+          <section className="public-booking-soon" style={{ order: 93 }}>
             <School size={23} />
             <div>
               <h2>Oferta jest przygotowywana</h2>

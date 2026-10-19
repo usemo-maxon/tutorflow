@@ -48,6 +48,7 @@ export interface TeacherRecord extends Teacher {
   payu: AppData["integrations"]["payu"];
   demo?: boolean;
   publicProfile?: import("@/lib/public-profile").TutorPublicProfile;
+  publicProfileDraft?: import("@/lib/public-profile").TutorPublicProfile;
 }
 
 export interface StudentRecord extends Student {

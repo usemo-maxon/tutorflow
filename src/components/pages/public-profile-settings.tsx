@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
   ExternalLink,
   LoaderCircle,
+  MonitorSmartphone,
   Pencil,
   Plus,
   Trash2,
@@ -20,8 +21,9 @@ import {
   type BookingEventTypeInput,
 } from "@/lib/booking-event-types";
 import type { TutorPublicProfile } from "@/lib/public-profile";
-import { normalizePublicSlug } from "@/lib/public-profile";
+import { normalizePublicSlug, profileCompletion } from "@/lib/public-profile";
 import { PublicTutorPage } from "@/components/public-tutor-page";
+import { ProfileContentEditor } from "@/components/profile-content-editor";
 import {
   conversionPercent,
   type FunnelEvent,
@@ -201,6 +203,9 @@ export function PublicProfileSettings() {
   const [savingEventType, setSavingEventType] = useState(false);
   const [savingAvailability, setSavingAvailability] = useState(false);
   const [message, setMessage] = useState("");
+  const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
+  const [mobilePreview, setMobilePreview] = useState(false);
+  const loaded = useRef(false);
   const [analyticsDays, setAnalyticsDays] = useState<7 | 30 | 90>(30);
   const [analytics, setAnalytics] = useState<{
     funnel: Record<FunnelEvent, number>;
@@ -234,6 +239,7 @@ export function PublicProfileSettings() {
           ...DEFAULT_BOOKING_AVAILABILITY,
           ...(availabilityResult.data as BookingAvailabilitySettings),
         });
+        loaded.current = true;
       })
       .catch(() => setMessage("Nie udało się pobrać ustawień."));
   }, []);
@@ -258,10 +264,12 @@ export function PublicProfileSettings() {
   ) =>
     setDraft((current) => (current ? { ...current, [key]: value } : current));
 
-  async function saveProfile() {
+  async function saveProfile(silent = false) {
     if (!profile) return;
+    const submittedProfile = profile;
     setSaving(true);
-    setMessage("");
+    setSaveState("saving");
+    if (!silent) setMessage("");
     const response = await fetch("/api/public-profile", {
       method: "PUT",
       headers: { "content-type": "application/json" },
@@ -269,17 +277,42 @@ export function PublicProfileSettings() {
     });
     const data = await response.json();
     setSaving(false);
-    if (!response.ok)
+    if (!response.ok) {
+      setSaveState("error");
       return setMessage(data.message || "Nie udało się zapisać.");
+    }
     const saved = data as TutorPublicProfile;
-    setProfile(saved);
+    setProfile((current) => current && JSON.stringify(current) === JSON.stringify(submittedProfile) ? saved : current);
     setSavedProfile(saved);
-    setMessage(
-      saved.enabled
-        ? "Strona została opublikowana i link jest już aktywny."
-        : "Zmiany zapisane. Strona publiczna pozostaje wyłączona.",
-    );
+    setSaveState("saved");
+    if (!silent) setMessage("Wersja robocza została zapisana.");
   }
+
+  async function publishProfile() {
+    if (!profile) return;
+    setSaving(true); setSaveState("saving"); setMessage("");
+    const response = await fetch("/api/public-profile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(profile) });
+    const data = await response.json();
+    setSaving(false);
+    if (!response.ok) { setSaveState("error"); return setMessage(data.message || "Nie udało się opublikować profilu."); }
+    setProfile(data as TutorPublicProfile); setSavedProfile(data as TutorPublicProfile); setSaveState("saved"); setMessage("Profil został opublikowany. Link pokazuje najnowszą wersję.");
+  }
+
+  async function unpublishProfile() {
+    if (!profile) return;
+    setSaving(true); setMessage("");
+    const response = await fetch("/api/public-profile", { method: "DELETE" });
+    setSaving(false);
+    if (!response.ok) return setMessage("Nie udało się wyłączyć profilu.");
+    const next = { ...profile, enabled: false }; setProfile(next); setSavedProfile(next); setMessage("Profil publiczny został wyłączony. Wersja robocza pozostała zapisana.");
+  }
+
+  useEffect(() => {
+    if (!loaded.current || !profile || !savedProfile || JSON.stringify(profile) === JSON.stringify(savedProfile)) return;
+    const timer = window.setTimeout(() => void saveProfile(true), 1200);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, savedProfile]);
 
   async function photo(file?: File) {
     if (!file) return;
@@ -462,9 +495,6 @@ export function PublicProfileSettings() {
     );
   const publicHref = savedProfile ? `/${savedProfile.slug}` : undefined;
   const isPublished = Boolean(savedProfile?.enabled);
-  const hasUnsavedProfileChanges = savedProfile
-    ? JSON.stringify(profile) !== JSON.stringify(savedProfile)
-    : false;
   return (
     <section className="public-profile-settings">
       <div className="settings-copy">
@@ -475,193 +505,38 @@ export function PublicProfileSettings() {
           informacje z obszaru pracy nigdy nie trafiają na tę stronę.
         </p>
       </div>
-      <div className="public-settings-layout">
+      <div className={`public-settings-layout${mobilePreview ? " is-previewing" : ""}`}>
         <div className="public-settings-stack">
-          <form
-            className="settings-form public-settings-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveProfile();
-            }}
-          >
-            <label className="toggle-row">
-              <input
-                type="checkbox"
-                checked={profile.enabled}
-                onChange={(event) => update("enabled", event.target.checked)}
-                disabled={teacher.subscription.readOnly}
-              />
-              <span>
-                <strong>
-                  {profile.enabled ? "Strona opublikowana" : "Strona wyłączona"}
-                </strong>
-                <small>
-                  {profile.enabled
-                    ? "Jest dostępna pod wybranym adresem."
-                    : "Adres nie pokazuje Twojego profilu."}
-                </small>
-              </span>
-            </label>
-            <label className="field">
-              <span>Publiczny adres</span>
-              <div className="public-slug-field">
-                <span>easy4tutor.pl/</span>
-                <input
-                  value={profile.slug}
-                  onChange={(event) =>
-                    update("slug", normalizePublicSlug(event.target.value))
-                  }
-                  disabled={teacher.subscription.readOnly}
-                />
+          <section className="profile-studio">
+            <div className="profile-studio-toolbar">
+              <div className="profile-completion" style={{ "--completion": `${profileCompletion(profile, eventTypes.length > 0)}%` } as React.CSSProperties}>
+                <strong>{profileCompletion(profile, eventTypes.length > 0)}%</strong>
+                <span>gotowości profilu</span>
               </div>
-              <small>3–60 znaków: małe litery, cyfry i myślniki.</small>
-            </label>
-            <label className="field">
-              <span>Publiczna nazwa</span>
-              <input
-                value={profile.publicName}
-                onChange={(event) => update("publicName", event.target.value)}
-                disabled={teacher.subscription.readOnly}
-              />
-            </label>
-            <label className="field">
-              <span>Zdjęcie profilowe</span>
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                onChange={(event) => void photo(event.target.files?.[0])}
-                disabled={teacher.subscription.readOnly}
-              />
-              <small>JPG, PNG lub WebP, maks. 3 MB.</small>
-            </label>
-            <label className="field">
-              <span>Hasło pod nazwą</span>
-              <input
-                value={profile.headline ?? ""}
-                onChange={(event) => update("headline", event.target.value)}
-                disabled={teacher.subscription.readOnly}
-                placeholder="np. Angielski bez stresu"
-              />
-            </label>
-            <label className="field">
-              <span>O mnie</span>
-              <textarea
-                rows={5}
-                value={profile.about ?? ""}
-                onChange={(event) => update("about", event.target.value)}
-                disabled={teacher.subscription.readOnly}
-              />
-            </label>
-            <label className="field">
-              <span>Przedmioty lub tematy</span>
-              <input
-                value={profile.subjects.join(", ")}
-                onChange={(event) =>
-                  update("subjects", split(event.target.value))
-                }
-                disabled={teacher.subscription.readOnly}
-                placeholder="Angielski, konwersacje"
-              />
-            </label>
-            <label className="field">
-              <span>Poziomy</span>
-              <input
-                value={profile.levels.join(", ")}
-                onChange={(event) =>
-                  update("levels", split(event.target.value))
-                }
-                disabled={teacher.subscription.readOnly}
-                placeholder="A2–C1, matura"
-              />
-            </label>
-            <label className="field">
-              <span>Format lekcji</span>
-              <select
-                value={profile.lessonFormats.join(",")}
-                onChange={(event) =>
-                  update(
-                    "lessonFormats",
-                    event.target.value
-                      ? (event.target.value.split(
-                          ",",
-                        ) as TutorPublicProfile["lessonFormats"])
-                      : [],
-                  )
-                }
-                disabled={teacher.subscription.readOnly}
-              >
-                <option value="">Nie pokazuj</option>
-                <option value="online">Online</option>
-                <option value="offline">Stacjonarnie</option>
-                <option value="online,offline">Online i stacjonarnie</option>
-              </select>
-            </label>
-            <label className="field">
-              <span>Miasto / lokalizacja</span>
-              <input
-                value={profile.city ?? ""}
-                onChange={(event) => update("city", event.target.value)}
-                disabled={teacher.subscription.readOnly}
-              />
-            </label>
-            <label className="field">
-              <span>Cena (opcjonalnie)</span>
-              <input
-                value={profile.priceText ?? ""}
-                onChange={(event) => update("priceText", event.target.value)}
-                disabled={teacher.subscription.readOnly}
-                placeholder="np. od 100 zł / 60 min"
-              />
-            </label>
-            <label className="field">
-              <span>Linki kontaktowe</span>
-              <textarea
-                rows={3}
-                value={profile.contactLinks.join("\n")}
-                onChange={(event) =>
-                  update("contactLinks", split(event.target.value))
-                }
-                disabled={teacher.subscription.readOnly}
-                placeholder="https://instagram.com/..."
-              />
-            </label>
-            <div className="public-settings-actions">
-              <button
-                className="button button--primary"
-                disabled={saving || teacher.subscription.readOnly}
-              >
-                {saving && <LoaderCircle size={16} className="spin" />}
-                {profile.enabled
-                  ? "Zapisz opublikowaną stronę"
-                  : "Zapisz stronę"}
-              </button>
-              {isPublished && publicHref ? (
-                <Link
-                  className="button button--secondary"
-                  href={publicHref}
-                  target="_blank"
-                >
-                  <ExternalLink size={16} />
-                  Otwórz opublikowaną stronę
-                </Link>
-              ) : (
-                <button
-                  type="button"
-                  className="button button--secondary"
-                  disabled
-                >
-                  <ExternalLink size={16} />
-                  Najpierw opublikuj i zapisz
-                </button>
-              )}
+              <div className="profile-save-state" aria-live="polite">
+                {saveState === "saving" && <><LoaderCircle size={15} className="spin" />Zapisywanie…</>}
+                {saveState === "saved" && "Wersja robocza zapisana"}
+                {saveState === "error" && "Nie udało się zapisać"}
+              </div>
+              <button type="button" className="button button--quiet profile-mobile-preview" onClick={() => setMobilePreview((value) => !value)}><MonitorSmartphone size={16} />{mobilePreview ? "Wróć do edycji" : "Podgląd"}</button>
             </div>
-            {hasUnsavedProfileChanges && (
-              <p className="form-note">
-                Masz niezapisane zmiany. Publiczny link nadal pokazuje ostatnią
-                zapisaną wersję.
-              </p>
-            )}
-          </form>
+            <div className="profile-publish-bar">
+              <div><span className={`profile-status-dot${isPublished ? " is-live" : ""}`} /><strong>{isPublished ? "Profil jest publiczny" : "Profil jest prywatny"}</strong><small>{isPublished ? "Zmiany trafiają na stronę dopiero po ponownym opublikowaniu." : "Automatyczny zapis nie publikuje danych."}</small></div>
+              <div className="public-settings-actions">
+                {isPublished && <button type="button" className="button button--quiet" onClick={() => void unpublishProfile()} disabled={saving || teacher.subscription.readOnly}>Wyłącz</button>}
+                <button type="button" className="button button--primary" onClick={() => void publishProfile()} disabled={saving || teacher.subscription.readOnly}>{saving && <LoaderCircle size={16} className="spin" />}{isPublished ? "Opublikuj zmiany" : "Opublikuj profil"}</button>
+              </div>
+            </div>
+            <div className="profile-studio-basics">
+              <label className="field"><span>Publiczny adres</span><div className="public-slug-field"><span>easy4tutor.pl/</span><input value={profile.slug} onChange={(event) => update("slug", normalizePublicSlug(event.target.value))} disabled={teacher.subscription.readOnly} /></div><small>Po zmianie stare opublikowane linki przekierują na nowy adres.</small></label>
+              <label className="field"><span>Zdjęcie profilowe</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => void photo(event.target.files?.[0])} disabled={teacher.subscription.readOnly} /><small>JPG, PNG lub WebP, maks. 3 MB.</small></label>
+              <div className="form-row"><label className="field"><span>Format lekcji</span><select value={profile.lessonFormats.join(",")} onChange={(event) => update("lessonFormats", event.target.value ? event.target.value.split(",") as TutorPublicProfile["lessonFormats"] : [])} disabled={teacher.subscription.readOnly}><option value="">Nie pokazuj</option><option value="online">Online</option><option value="offline">Stacjonarnie</option><option value="online,offline">Online i stacjonarnie</option></select></label><label className="field"><span>Miasto / lokalizacja</span><input value={profile.city ?? ""} onChange={(event) => update("city", event.target.value)} disabled={teacher.subscription.readOnly} /></label></div>
+              <label className="field"><span>Publiczne linki</span><textarea rows={2} value={profile.contactLinks.join("\n")} onChange={(event) => update("contactLinks", split(event.target.value))} disabled={teacher.subscription.readOnly} placeholder="https://linkedin.com/in/…" /><small>E-mail i telefon konta nigdy nie są dodawane automatycznie.</small></label>
+            </div>
+            <ProfileContentEditor profile={profile} disabled={teacher.subscription.readOnly} onChange={setProfile} onMessage={setMessage} />
+            {message && <p className="profile-studio-message" role="status">{message}</p>}
+            {isPublished && publicHref && <Link className="button button--secondary" href={publicHref} target="_blank"><ExternalLink size={16} />Otwórz opublikowany profil</Link>}
+          </section>
           <PublicPageInsights
             slug={savedProfile?.slug ?? profile.slug}
             published={isPublished}

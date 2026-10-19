@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   normalizePublicSlug,
   publicProfileDescription,
+  profileCompletion,
   publicSlugError,
+  youtubeVideoId,
 } from "./public-profile";
 
 describe("public tutor profile slug", () => {
@@ -25,4 +27,14 @@ describe("public tutor profile slug", () => {
         eventTypes: [],
       }),
     ).toBe("Angielski bez stresu"));
+  it("accepts only supported YouTube watch and short URLs", () => {
+    expect(youtubeVideoId("https://youtu.be/dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+    expect(youtubeVideoId("https://www.youtube.com/watch?v=dQw4w9WgXcQ")).toBe("dQw4w9WgXcQ");
+    expect(youtubeVideoId("https://example.com/watch?v=dQw4w9WgXcQ")).toBeUndefined();
+  });
+  it("calculates completion only from real profile inputs", () => {
+    expect(profileCompletion({
+      enabled: false, slug: "ania", publicName: "Ania", headline: "Angielski bez stresu", about: "Pomagam mówić swobodnie.", photoUrl: "https://example.com/a.jpg", subjects: ["Angielski"], levels: [], lessonFormats: [], contactLinks: [], certificates: [],
+    }, true)).toBe(63);
+  });
 });
