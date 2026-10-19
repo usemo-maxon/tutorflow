@@ -6,6 +6,7 @@ import { toPublicBookingEventType } from "@/lib/booking-event-types";
 import {
   DEFAULT_PROFILE_SECTIONS,
   defaultPublicProfile,
+  normalizeProfileAccentColor,
   normalizePublicSlug,
   publicSlugError,
   type ProfileCertificate,
@@ -70,7 +71,7 @@ export function cleanPublicProfile(input: TutorPublicProfile, teacherId = ""): T
     lessonFormats: (input.lessonFormats ?? []).filter((item) => item === "online" || item === "offline").slice(0, 2),
     city: textValue(input.city, 120), priceText: textValue(input.priceText, 120), contactLinks: listValue(input.contactLinks, 8, 500).map(safeHttpsUrl).filter((url): url is string => Boolean(url)),
     theme: ["minimal", "professional", "friendly", "modern"].includes(input.theme ?? "") ? input.theme : "professional",
-    accentColor: ["#137d60", "#315c8c", "#a65358", "#7659a7"].includes(input.accentColor ?? "") ? input.accentColor : "#137d60",
+    accentColor: normalizeProfileAccentColor(input.accentColor) ?? "#137d60",
     heroLayout: input.heroLayout === "cover" ? "cover" : "portrait", coverUrl: safeHttpsUrl(input.coverUrl),
     highlights: listValue(input.highlights, 6, 70), sections, video: video?.videoId || video?.storagePath ? video : undefined,
     certificates, timeline,

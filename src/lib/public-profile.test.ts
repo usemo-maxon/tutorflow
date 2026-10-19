@@ -1,11 +1,24 @@
 import { describe, expect, it } from "vitest";
 import {
+  normalizeProfileAccentColor,
   normalizePublicSlug,
   publicProfileDescription,
   profileCompletion,
   publicSlugError,
   youtubeVideoId,
 } from "./public-profile";
+
+describe("public profile accent color", () => {
+  it("accepts and normalizes arbitrary six-digit hex colors", () => {
+    expect(normalizeProfileAccentColor(" #A1B2C3 ")).toBe("#a1b2c3");
+  });
+
+  it("rejects values that cannot safely be used as profile colors", () => {
+    expect(normalizeProfileAccentColor("red")).toBeUndefined();
+    expect(normalizeProfileAccentColor("#123")).toBeUndefined();
+    expect(normalizeProfileAccentColor("#123456; color: red")).toBeUndefined();
+  });
+});
 
 describe("public tutor profile slug", () => {
   it("normalizes Polish names into a stable URL", () =>

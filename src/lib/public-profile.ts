@@ -62,6 +62,11 @@ export function defaultPublicProfile(name: string): TutorPublicProfile {
   return { enabled: false, slug: normalizePublicSlug(name) || "moj-profil", publicName: name, subjects: [], specializations: [], levels: [], audiences: [], languages: [], lessonFormats: [], contactLinks: [], theme: "professional", accentColor: "#137d60", heroLayout: "portrait", highlights: [], sections: DEFAULT_PROFILE_SECTIONS.map((section) => ({ ...section })), certificates: [], timeline: [], teachingApproach: { highlights: [] }, faq: [] };
 }
 
+export function normalizeProfileAccentColor(value?: string): string | undefined {
+  const color = value?.trim().toLowerCase();
+  return color && /^#[0-9a-f]{6}$/.test(color) ? color : undefined;
+}
+
 export function normalizePublicSlug(value: string): string {
   return value.replace(/ł/gi, "l").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pl").trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").replace(/-{2,}/g, "-");
 }

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, FileBadge2, GripVertical, Plus, Trash2, Upload, Video } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase-browser";
-import { DEFAULT_PROFILE_SECTIONS, youtubeVideoId, type ProfileCertificate, type ProfileFaq, type ProfileTimelineEntry, type TutorPublicProfile } from "@/lib/public-profile";
+import { DEFAULT_PROFILE_SECTIONS, normalizeProfileAccentColor, youtubeVideoId, type ProfileCertificate, type ProfileFaq, type ProfileTimelineEntry, type TutorPublicProfile } from "@/lib/public-profile";
+import { TagInput } from "@/components/tag-input";
 
 const split = (value: string) => value.split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
 
@@ -61,7 +62,7 @@ export function ProfileContentEditor({ profile, disabled, onChange, onMessage }:
             <label className="field"><span>Poziomy</span><input value={profile.levels.join(", ")} onChange={(event) => update("levels", split(event.target.value))} disabled={disabled} placeholder="A2, B1, B2, C1" /></label>
             <label className="field"><span>Dla kogo</span><input value={(profile.audiences ?? []).join(", ")} onChange={(event) => update("audiences", split(event.target.value))} disabled={disabled} placeholder="Dorośli, licealiści" /></label>
           </div>
-          <label className="field"><span>Wyróżniki</span><input value={(profile.highlights ?? []).join(", ")} onChange={(event) => update("highlights", split(event.target.value).slice(0, 6))} disabled={disabled} placeholder="5 lat doświadczenia, Lekcje online, Przygotowanie do matury" /><small>Pokazuj tylko informacje, które możesz rzetelnie potwierdzić.</small></label>
+          <div className="field"><span>Wyróżniki</span><TagInput value={profile.highlights ?? []} onChange={(highlights) => update("highlights", highlights)} disabled={disabled} maxItems={6} placeholder="Wpisz wyróżnik i naciśnij Enter" ariaLabel="Dodaj wyróżnik" /><small>Rozdzielaj wyróżniki przecinkiem lub klawiszem Enter. Maksymalnie 6. Pokazuj tylko informacje, które możesz rzetelnie potwierdzić.</small></div>
         </div>
       </details>
 
@@ -119,7 +120,7 @@ export function ProfileContentEditor({ profile, disabled, onChange, onMessage }:
         <summary><span className="profile-editor-step"><GripVertical size={17} /></span><span><strong>Wygląd i kolejność</strong><small>Spójny motyw bez edycji kodu.</small></span></summary>
         <div className="profile-editor-body">
           <div className="profile-theme-grid">{(["minimal", "professional", "friendly", "modern"] as const).map((theme) => <button type="button" key={theme} className={`profile-theme-option${(profile.theme ?? "professional") === theme ? " is-selected" : ""}`} onClick={() => update("theme", theme)}><span className={`profile-theme-swatch theme-${theme}`} />{({ minimal: "Minimalny", professional: "Profesjonalny", friendly: "Przyjazny", modern: "Nowoczesny" })[theme]}</button>)}</div>
-          <div className="profile-accent-row">{["#137d60", "#315c8c", "#a65358", "#7659a7"].map((color) => <button type="button" key={color} className="profile-accent" style={{ background: color }} aria-label={`Kolor ${color}`} aria-pressed={(profile.accentColor ?? "#137d60") === color} onClick={() => update("accentColor", color)} />)}</div>
+          <div className="profile-color-field"><span>Kolor profilu</span><div className="profile-accent-row">{["#137d60", "#315c8c", "#a65358", "#7659a7"].map((color) => <button type="button" key={color} className="profile-accent" style={{ background: color }} aria-label={`Wybierz kolor ${color}`} aria-pressed={(profile.accentColor ?? "#137d60") === color} onClick={() => update("accentColor", color)} disabled={disabled} />)}<label className="profile-custom-color"><input type="color" value={normalizeProfileAccentColor(profile.accentColor) ?? "#137d60"} onChange={(event) => update("accentColor", event.target.value)} disabled={disabled} aria-label="Wybierz własny kolor profilu" /><span>Własny</span></label><output>{(profile.accentColor ?? "#137d60").toUpperCase()}</output></div></div>
           <div className="profile-section-list">{sections.map((section, index) => <div key={section.id}><GripVertical size={16} /><input value={section.title} aria-label={`Tytuł sekcji ${section.title}`} onChange={(event) => { const next = [...sections]; next[index] = { ...section, title: event.target.value }; update("sections", next); }} /><label className="profile-visibility"><input type="checkbox" checked={section.visible} onChange={(event) => { const next = [...sections]; next[index] = { ...section, visible: event.target.checked }; update("sections", next); }} />Pokaż</label><button type="button" className="icon-button" onClick={() => moveSection(index, -1)} disabled={index === 0}><ArrowUp size={15} /></button><button type="button" className="icon-button" onClick={() => moveSection(index, 1)} disabled={index === sections.length - 1}><ArrowDown size={15} /></button></div>)}</div>
         </div>
       </details>
