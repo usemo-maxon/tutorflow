@@ -1391,7 +1391,7 @@ h3 {
   }
 
   .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-facts {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   }
 
   .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-facts div {

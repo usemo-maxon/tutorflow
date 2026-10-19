@@ -341,9 +341,7 @@ export function PublicTutorPage({
             {((profile.audiences ?? []).length > 0 || (profile.languages ?? []).length > 0) && <div className="public-profile-taxonomy">{(profile.audiences ?? []).length > 0 && <p><strong>Dla kogo</strong>{profile.audiences!.join(" · ")}</p>}{(profile.languages ?? []).length > 0 && <p><strong>Języki zajęć</strong>{profile.languages!.join(" · ")}</p>}</div>}
           </section>
         )}
-        {(profile.levels.length > 0 ||
-          formats.length > 0 ||
-          profile.priceText) && (
+        {(profile.levels.length > 0 || formats.length > 0) && (
           <section className="public-profile-section public-profile-section--facts" style={sectionStyle("subjects")}>
             <h2>Informacje</h2>
             <dl className="public-tutor-facts">
@@ -357,12 +355,6 @@ export function PublicTutorPage({
                 <div>
                   <dt>Format</dt>
                   <dd>{formats.join(" i ")}</dd>
-                </div>
-              )}
-              {profile.priceText && (
-                <div>
-                  <dt>Cena</dt>
-                  <dd>{profile.priceText}</dd>
                 </div>
               )}
             </dl>
