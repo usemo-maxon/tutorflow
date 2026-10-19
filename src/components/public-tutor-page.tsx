@@ -317,13 +317,13 @@ export function PublicTutorPage({
           </ol>
         )}
         {profile.about && section("about").visible && (
-          <section style={sectionStyle("about")}>
+          <section className="public-profile-section public-profile-section--about" style={sectionStyle("about")}>
             <h2>{section("about").title}</h2>
             <p className="public-tutor-about">{profile.about}</p>
           </section>
         )}
         {profile.video && section("video").visible && (
-          <section style={sectionStyle("video")} className="public-video-section">
+          <section style={sectionStyle("video")} className="public-profile-section public-video-section">
             <p className="public-section-kicker">Film powitalny</p>
             <h2>{profile.video.title || section("video").title}</h2>
             {profile.video.description && <p>{profile.video.description}</p>}
@@ -331,7 +331,7 @@ export function PublicTutorPage({
           </section>
         )}
         {(profile.subjects.length > 0 || (profile.specializations ?? []).length > 0) && section("subjects").visible && (
-          <section style={sectionStyle("subjects")}>
+          <section className="public-profile-section public-profile-section--subjects" style={sectionStyle("subjects")}>
             <h2>{section("subjects").title}</h2>
             <ul className="public-tutor-chips">
               {[...profile.subjects, ...(profile.specializations ?? [])].map((subject) => (
@@ -344,7 +344,7 @@ export function PublicTutorPage({
         {(profile.levels.length > 0 ||
           formats.length > 0 ||
           profile.priceText) && (
-          <section style={sectionStyle("subjects")}>
+          <section className="public-profile-section public-profile-section--facts" style={sectionStyle("subjects")}>
             <h2>Informacje</h2>
             <dl className="public-tutor-facts">
               {profile.levels.length > 0 && (
@@ -369,7 +369,7 @@ export function PublicTutorPage({
           </section>
         )}
         {profile.teachingApproach?.philosophy && section("approach").visible && (
-          <section style={sectionStyle("approach")} className="public-approach">
+          <section style={sectionStyle("approach")} className="public-profile-section public-approach">
             <p className="public-section-kicker">Podejście</p><h2>{section("approach").title}</h2>
             <p className="public-tutor-about">{profile.teachingApproach.philosophy}</p>
             {(profile.teachingApproach.highlights ?? []).length > 0 && <ul className="public-method-grid">{profile.teachingApproach.highlights.map((item) => <li key={item}><Check size={16} />{item}</li>)}</ul>}
@@ -378,14 +378,14 @@ export function PublicTutorPage({
           </section>
         )}
         {(profile.timeline ?? []).length > 0 && section("experience").visible && (
-          <section style={sectionStyle("experience")}><p className="public-section-kicker">Droga zawodowa</p><h2>{section("experience").title}</h2><div className="public-timeline">{profile.timeline!.map((item) => <article key={item.id}><span>{item.kind === "education" ? <GraduationCap size={18} /> : <BookOpen size={18} />}</span><div><small>{item.startYear}{item.current ? " — obecnie" : item.endYear ? ` — ${item.endYear}` : ""}</small><h3>{item.title}</h3><strong>{item.institution}</strong>{item.description && <p>{item.description}</p>}</div></article>)}</div></section>
+          <section className="public-profile-section" style={sectionStyle("experience")}><p className="public-section-kicker">Droga zawodowa</p><h2>{section("experience").title}</h2><div className="public-timeline">{profile.timeline!.map((item) => <article key={item.id}><span>{item.kind === "education" ? <GraduationCap size={18} /> : <BookOpen size={18} />}</span><div><small>{item.startYear}{item.current ? " — obecnie" : item.endYear ? ` — ${item.endYear}` : ""}</small><h3>{item.title}</h3><strong>{item.institution}</strong>{item.description && <p>{item.description}</p>}</div></article>)}</div></section>
         )}
         {(profile.certificates ?? []).some((item) => item.visible) && section("certificates").visible && (
-          <section style={sectionStyle("certificates")}><p className="public-section-kicker">Dokumenty dodane przez tutora</p><h2>{section("certificates").title}</h2><div className="public-certificate-grid">{profile.certificates!.filter((item) => item.visible).map((item) => <article key={item.id}>{item.fileType === "image" && item.fileUrl ? <img src={item.fileUrl} alt="" loading="lazy" /> : <div className="public-certificate-icon"><Award size={25} /></div>}<div><h3>{item.title}</h3><p>{item.issuer}{item.issuedAt ? ` · ${item.issuedAt.slice(0, 4)}` : ""}</p>{item.fileUrl && <a href={item.fileUrl} target="_blank" rel="noreferrer">Zobacz dokument <ExternalLink size={14} /></a>}{item.verificationUrl && <a href={item.verificationUrl} target="_blank" rel="noreferrer">Sprawdź u wystawcy <ExternalLink size={14} /></a>}</div></article>)}</div><small className="public-credential-note">Dokumenty są publikowane przez tutora i nie oznaczają weryfikacji przez Easy4Tutor.</small></section>
+          <section className="public-profile-section public-profile-section--wide" style={sectionStyle("certificates")}><p className="public-section-kicker">Dokumenty dodane przez tutora</p><h2>{section("certificates").title}</h2><div className="public-certificate-grid">{profile.certificates!.filter((item) => item.visible).map((item) => <article key={item.id}>{item.fileType === "image" && item.fileUrl ? <img src={item.fileUrl} alt="" loading="lazy" /> : <div className="public-certificate-icon"><Award size={25} /></div>}<div><h3>{item.title}</h3><p>{item.issuer}{item.issuedAt ? ` · ${item.issuedAt.slice(0, 4)}` : ""}</p>{item.fileUrl && <a href={item.fileUrl} target="_blank" rel="noreferrer">Zobacz dokument <ExternalLink size={14} /></a>}{item.verificationUrl && <a href={item.verificationUrl} target="_blank" rel="noreferrer">Sprawdź u wystawcy <ExternalLink size={14} /></a>}</div></article>)}</div><small className="public-credential-note">Dokumenty są publikowane przez tutora i nie oznaczają weryfikacji przez Easy4Tutor.</small></section>
         )}
-        {(profile.faq ?? []).some((item) => item.visible) && section("faq").visible && <section style={sectionStyle("faq")}><h2>{section("faq").title}</h2><div className="public-faq">{profile.faq!.filter((item) => item.visible).map((item) => <details key={item.id}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div></section>}
+        {(profile.faq ?? []).some((item) => item.visible) && section("faq").visible && <section className="public-profile-section public-profile-section--wide" style={sectionStyle("faq")}><h2>{section("faq").title}</h2><div className="public-faq">{profile.faq!.filter((item) => item.visible).map((item) => <details key={item.id}><summary>{item.question}</summary><p>{item.answer}</p></details>)}</div></section>}
         {profile.contactLinks.length > 0 && section("contact").visible && (
-          <section style={sectionStyle("contact")}>
+          <section className="public-profile-section" style={sectionStyle("contact")}>
             <h2>{section("contact").title}</h2>
             <div className="public-contact-links">
               {profile.contactLinks.map((link) => (
@@ -397,7 +397,7 @@ export function PublicTutorPage({
           </section>
         )}
         {eventTypes.length > 0 && section("offers").visible && (
-          <section id="wybierz-rodzaj-lekcji" className="public-event-types" style={sectionStyle("offers")}>
+          <section id="wybierz-rodzaj-lekcji" className="public-profile-section public-profile-section--wide public-event-types" style={sectionStyle("offers")}>
             <h2>{section("offers").title}</h2>
             <p>Wybierz ofertę, aby przejść do kolejnego kroku.</p>
             <div className="public-event-type-list">

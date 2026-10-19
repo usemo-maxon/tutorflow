@@ -1281,6 +1281,181 @@ h3 {
     min-height: 148px;
   }
 }
+
+/* Public profiles use the available browser canvas on tablets and desktops. */
+@media (min-width: 861px) {
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) {
+    padding-bottom: 72px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-hero {
+    grid-template-columns: 132px minmax(0, 1fr) minmax(230px, 290px);
+    column-gap: 30px;
+    row-gap: 18px;
+    width: min(calc(100% - 64px), 1180px);
+    max-width: none;
+    margin: 0 auto;
+    padding: 64px 56px 44px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-photo {
+    grid-column: 1;
+    grid-row: 1 / span 4;
+    width: 120px;
+    height: 120px;
+    border-radius: 32px;
+    font-size: 46px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-hero > div:nth-child(2) {
+    grid-column: 2 / 4;
+    min-width: 0;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-hero h1 {
+    max-width: 900px;
+    font-size: clamp(48px, 5vw, 72px);
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-intro {
+    max-width: 760px;
+    font-size: 17px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-profile-highlights {
+    grid-column: 2 / 4;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-meta {
+    grid-column: 2;
+    align-self: center;
+    font-size: 15px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-book-button {
+    grid-column: 3;
+    align-self: end;
+    margin: 0;
+    padding: 16px 22px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-content {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 22px;
+    width: min(calc(100% - 64px), 1180px);
+    max-width: none;
+    margin: 0 auto;
+    padding: 0 0 72px;
+    background: transparent;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-profile-section {
+    height: 100%;
+    padding: 28px;
+    border: 1px solid var(--profile-accent-border);
+    border-radius: 20px;
+    background: var(--profile-surface);
+    box-shadow: 0 12px 34px color-mix(in srgb, var(--profile-accent) 7%, transparent);
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-profile-section--about,
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-profile-section--wide,
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-approach,
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-booking-progress,
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-availability,
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-booking-form-section {
+    grid-column: 1 / -1;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-profile-section--about {
+    display: grid;
+    grid-template-columns: minmax(180px, .42fr) minmax(0, 1.58fr);
+    column-gap: 32px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-profile-section--about h2 {
+    margin: 0;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-profile-section--about .public-tutor-about {
+    font-size: 16px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-profile-section--subjects {
+    background: linear-gradient(145deg, var(--profile-surface) 35%, var(--profile-accent-wash));
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-profile-section--facts {
+    background: var(--profile-accent-wash);
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-facts div {
+    min-height: 92px;
+    padding: 17px;
+    background: color-mix(in srgb, var(--profile-surface-raised) 86%, transparent);
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-event-type-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-event-type-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-content: start;
+    min-height: 178px;
+    padding: 22px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-event-type-card--selected {
+    padding: 21px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-event-type-card__title,
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-event-type-card__description,
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-event-type-card__meta {
+    grid-column: 1;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-event-type-card__price {
+    grid-column: 2;
+    grid-row: 1;
+    padding-left: 18px;
+    font-size: 19px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-event-type-card__action {
+    grid-column: 2;
+    grid-row: 3;
+    align-self: end;
+    justify-self: end;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-certificate-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 861px) and (max-width: 1050px) {
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-hero {
+    grid-template-columns: 104px minmax(0, 1fr) 220px;
+    width: min(calc(100% - 40px), 1180px);
+    padding: 48px 38px 38px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-photo {
+    width: 96px;
+    height: 96px;
+  }
+
+  .public-tutor-page:not(.public-profile-preview .public-tutor-page) .public-tutor-content {
+    width: min(calc(100% - 40px), 1180px);
+  }
+}
 .sr-only {
   position: absolute;
   width: 1px;
