@@ -80,7 +80,7 @@ export function BookingsPage({
 
   return (
     <section className="bookings-page">
-      <header className="page-header">
+      <header className="page-header" data-tour="bookings-overview">
         <div>
           <span className="eyebrow">Rezerwacje publiczne i historia</span>
           <h1>Rezerwacje</h1>

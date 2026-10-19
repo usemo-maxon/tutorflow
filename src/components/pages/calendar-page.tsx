@@ -416,7 +416,10 @@ export function CalendarPage() {
 
   return (
     <div className="calendar-page page-enter">
-      <header className="page-header calendar-header">
+      <header
+        className="page-header calendar-header"
+        data-tour="calendar-overview"
+      >
         <div>
           <p className="eyebrow">Czas pod kontrolą</p>
           <h1>Kalendarz</h1>

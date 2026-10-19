@@ -172,7 +172,10 @@ export function MaterialsPage() {
 
   return (
     <div className="materials-page page-enter">
-      <header className="page-header materials-header">
+      <header
+        className="page-header materials-header"
+        data-tour="materials-overview"
+      >
         <div>
           <p className="eyebrow">Twoja półka</p>
           <h1>Materiały</h1>

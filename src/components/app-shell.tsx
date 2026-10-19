@@ -41,6 +41,7 @@ import {
 } from "@/lib/global-create";
 import { AppUiProvider, useAppUi } from "./app-ui-context";
 import { GlobalCreateMenu } from "./global-create-menu";
+import { ProductTour } from "./product-tour";
 import {
   GlobalCommandPalette,
   type GlobalCommandPaletteHandle,
@@ -171,7 +172,7 @@ function ShellBody({
         Przejdź do treści
       </a>
 
-      <aside className="sidebar">
+      <aside className="sidebar" data-tour="desktop-navigation">
         <div className="sidebar-head">
           <Link className="brand" href="/app/dzisiaj">
             <BrandLogo />
@@ -197,6 +198,7 @@ function ShellBody({
           className="button button--secondary sidebar-add"
           disabled={readOnly}
           onAction={handleGlobalCreate}
+          tourTarget="desktop-global-create"
         />
         <nav className="sidebar-nav" aria-label="Główna nawigacja">
           <p className="sidebar-section-label">Twój obszar pracy</p>
@@ -331,6 +333,7 @@ function ShellBody({
             iconOnly
             placement="end"
             onAction={handleGlobalCreate}
+            tourTarget="mobile-global-create"
           />
         </div>
       </header>
@@ -369,7 +372,11 @@ function ShellBody({
         {children}
       </main>
 
-      <nav className="bottom-nav" aria-label="Nawigacja mobilna">
+      <nav
+        className="bottom-nav"
+        aria-label="Nawigacja mobilna"
+        data-tour="mobile-navigation"
+      >
         {nav.slice(0, 3).map(({ href, label, icon: Icon }) => (
           <Link
             key={href}
@@ -401,6 +408,7 @@ function ShellBody({
         onCreate={handleGlobalCreate}
       />
       <ToastNotification toast={toast} dismissToast={dismissToast} />
+      <ProductTour teacher={teacher} />
     </div>
   );
 }
@@ -420,11 +428,20 @@ function ToastNotification({
       aria-live={toast.tone === "error" ? "assertive" : "polite"}
     >
       <span>{toast.message}</span>
-      <button className="toast-dismiss" aria-label="Zamknij powiadomienie" onClick={dismissToast}>
+      <button
+        className="toast-dismiss"
+        aria-label="Zamknij powiadomienie"
+        onClick={dismissToast}
+      >
         <X size={17} />
       </button>
       {toast.actionLabel && toast.onAction && (
-        <button onClick={() => { dismissToast(); toast.onAction?.(); }}>
+        <button
+          onClick={() => {
+            dismissToast();
+            toast.onAction?.();
+          }}
+        >
           {toast.actionLabel}
         </button>
       )}

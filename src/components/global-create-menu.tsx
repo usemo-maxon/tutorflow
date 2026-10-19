@@ -34,12 +34,14 @@ export function GlobalCreateMenu({
   iconOnly = false,
   placement = "start",
   onAction,
+  tourTarget,
 }: {
   className: string;
   disabled?: boolean;
   iconOnly?: boolean;
   placement?: "start" | "end";
   onAction: (action: GlobalCreateAction) => void;
+  tourTarget?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{
@@ -171,6 +173,7 @@ export function GlobalCreateMenu({
     <>
       <button
         ref={triggerRef}
+        data-tour={tourTarget}
         type="button"
         className={className}
         aria-label={disabled ? readOnlyLabel : iconOnly ? "Dodaj" : undefined}

@@ -129,7 +129,7 @@ export function StudentsPage() {
 
   return (
     <div className="students-page page-enter">
-      <header className="page-header">
+      <header className="page-header" data-tour="students-overview">
         <div>
           <p className="eyebrow">Baza uczniów</p>
           <h1>Uczniowie</h1>

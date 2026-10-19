@@ -1,5 +1,5 @@
 {
-  "siteType": "authenticated lesson workflow",
+  "siteType": "authenticated tutor workspace with guided onboarding",
   "renderMode": "ssr",
   "accessMode": "authenticated",
   "routes": [
@@ -8,18 +8,35 @@
       "heading": "Lesson participant or group name",
       "primaryAction": "Zakończ zajęcia",
       "expectedAnonymousStatuses": [307, 401]
+    },
+    {
+      "path": "/app/dzisiaj",
+      "heading": "Dzień dobry",
+      "primaryAction": "Rozpocznij przewodnik",
+      "expectedAnonymousStatuses": [307, 401]
+    },
+    {
+      "path": "/app/pomoc",
+      "heading": "Jak możemy pomóc?",
+      "primaryAction": "Uruchom przewodnik",
+      "expectedAnonymousStatuses": [307, 401]
     }
   ],
   "viewports": [
     { "name": "desktop", "width": 1440, "height": 900 },
-    { "name": "mobile", "width": 390, "height": 844 }
+    { "name": "tablet", "width": 768, "height": 1024 },
+    { "name": "mobile", "width": 390, "height": 844 },
+    { "name": "mobile-small", "width": 320, "height": 700 }
   ],
   "criticalFlows": [
     "open lesson workspace",
     "save plan and notes",
     "manage homework and materials",
     "mark individual and group attendance",
-    "complete lesson"
+    "complete lesson",
+    "dismiss first-time product-tour invitation",
+    "run the seven-step cross-page product tour",
+    "restart the tour from Help"
   ],
   "outputDir": ".next",
   "basePath": "",

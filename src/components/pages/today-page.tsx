@@ -70,7 +70,10 @@ export function TodayPage() {
 
   return (
     <div className="today-dashboard page-enter">
-      <header className="today-dashboard__header">
+      <header
+        className="today-dashboard__header"
+        data-tour="dashboard-overview"
+      >
         <div>
           <p className="eyebrow">Twój dzień w easy4tutor</p>
           <h1>Dzień dobry{teacherName ? `, ${teacherName}` : ""}</h1>
