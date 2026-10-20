@@ -62,6 +62,65 @@ export async function getFinancialOverview(
     packagesQuery = packagesQuery.eq("student_id", options.studentId);
   }
 
+  // Package history depends only on packages, not on the summary or payments.
+  const loadPackageDetails = async () => {
+    const packagesResult = await packagesQuery;
+    if (packagesResult.error) databaseFailure(packagesResult.error);
+    const packageRows = packagesResult.data ?? [];
+    const packageIds = packageRows.map((row) => row.id as string);
+    const [balancesResult, usagesResult, packageChargesResult] =
+      await Promise.all([
+        packageIds.length
+          ? supabase
+              .from("package_balances")
+              .select("package_id,used_lessons,remaining_lessons")
+              .eq("workspace_id", workspaceId)
+              .in("package_id", packageIds)
+          : Promise.resolve({ data: [], error: null }),
+        packageIds.length
+          ? supabase
+              .from("package_usages")
+              .select("id,package_id,lesson_id,kind,units,created_at")
+              .eq("workspace_id", workspaceId)
+              .in("package_id", packageIds)
+              .order("created_at", { ascending: false })
+              .order("id", { ascending: false })
+              .limit(300)
+          : Promise.resolve({ data: [], error: null }),
+        packageIds.length
+          ? supabase
+              .from("charge_balances")
+              .select("package_id,outstanding_grosz")
+              .eq("workspace_id", workspaceId)
+              .in("package_id", packageIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+    if (balancesResult.error) databaseFailure(balancesResult.error);
+    if (usagesResult.error) databaseFailure(usagesResult.error);
+    if (packageChargesResult.error) databaseFailure(packageChargesResult.error);
+    const lessonIds = [
+      ...new Set(
+        (usagesResult.data ?? []).map((row) => row.lesson_id as string),
+      ),
+    ];
+    const lessonsResult = lessonIds.length
+      ? await supabase
+          .from("lessons")
+          .select("id,title,starts_at")
+          .eq("workspace_id", workspaceId)
+          .in("id", lessonIds)
+      : { data: [], error: null };
+    if (lessonsResult.error) databaseFailure(lessonsResult.error);
+
+    return {
+      packageRows,
+      balancesResult,
+      usagesResult,
+      packageChargesResult,
+      lessonsResult,
+    };
+  };
+
   const dateKey = formatInTimeZone(new Date(), timezone, "yyyy-MM-01");
   const monthStart = fromZonedTime(
     `${dateKey}T00:00:00`,
@@ -71,7 +130,7 @@ export async function getFinancialOverview(
     studentsResult,
     chargesResult,
     paymentsResult,
-    packagesResult,
+    packageDetails,
     summaryResult,
     debtStudentsResult,
   ] = await Promise.all([
@@ -83,7 +142,7 @@ export async function getFinancialOverview(
       .limit(1000),
     chargesQuery,
     paymentsQuery,
-    packagesQuery,
+    loadPackageDetails(),
     supabase.rpc("finance_summary", {
       p_workspace_id: workspaceId,
       p_currency: currency,
@@ -102,7 +161,6 @@ export async function getFinancialOverview(
     studentsResult,
     chargesResult,
     paymentsResult,
-    packagesResult,
     summaryResult,
     debtStudentsResult,
   ].find((result) => result.error);
@@ -120,48 +178,13 @@ export async function getFinancialOverview(
     cursor,
     PAYMENT_PAGE_SIZE,
   );
-  const packageRows = packagesResult.data ?? [];
-  const packageIds = packageRows.map((row) => row.id as string);
-  const [balancesResult, usagesResult, packageChargesResult] = await Promise.all([
-    packageIds.length
-      ? supabase
-          .from("package_balances")
-          .select("package_id,used_lessons,remaining_lessons")
-          .eq("workspace_id", workspaceId)
-          .in("package_id", packageIds)
-      : Promise.resolve({ data: [], error: null }),
-    packageIds.length
-      ? supabase
-          .from("package_usages")
-          .select("id,package_id,lesson_id,kind,units,created_at")
-          .eq("workspace_id", workspaceId)
-          .in("package_id", packageIds)
-          .order("created_at", { ascending: false })
-          .order("id", { ascending: false })
-          .limit(300)
-      : Promise.resolve({ data: [], error: null }),
-    packageIds.length
-      ? supabase
-          .from("charge_balances")
-          .select("package_id,outstanding_grosz")
-          .eq("workspace_id", workspaceId)
-          .in("package_id", packageIds)
-      : Promise.resolve({ data: [], error: null }),
-  ]);
-  if (balancesResult.error) databaseFailure(balancesResult.error);
-  if (usagesResult.error) databaseFailure(usagesResult.error);
-  if (packageChargesResult.error) databaseFailure(packageChargesResult.error);
-  const lessonIds = [
-    ...new Set((usagesResult.data ?? []).map((row) => row.lesson_id as string)),
-  ];
-  const lessonsResult = lessonIds.length
-    ? await supabase
-        .from("lessons")
-        .select("id,title,starts_at")
-        .eq("workspace_id", workspaceId)
-        .in("id", lessonIds)
-    : { data: [], error: null };
-  if (lessonsResult.error) databaseFailure(lessonsResult.error);
+  const {
+    packageRows,
+    balancesResult,
+    usagesResult,
+    packageChargesResult,
+    lessonsResult,
+  } = packageDetails;
 
   const lessonById = new Map(
     (lessonsResult.data ?? []).map((row) => [row.id as string, row]),
@@ -269,13 +292,13 @@ export async function getFinancialOverview(
   return {
     workspace: { currency, timezone, dueDays },
     students: (studentsResult.data ?? []).map((row) => ({
-        id: row.id as string,
-        name: row.display_name as string,
-        currency: (row.currency as string | null) ?? currency,
-        status: row.status as "active" | "archived",
-        canRecordPayment:
-          row.status === "active" || debtStudentIds.has(row.id as string),
-      })),
+      id: row.id as string,
+      name: row.display_name as string,
+      currency: (row.currency as string | null) ?? currency,
+      status: row.status as "active" | "archived",
+      canRecordPayment:
+        row.status === "active" || debtStudentIds.has(row.id as string),
+    })),
     summary: {
       outstanding: databaseMinorUnits(
         summaryResult.data?.[0]?.outstanding_grosz,
@@ -416,9 +439,7 @@ async function localFinancialOverview(
           }))
       : [],
   );
-  const debtStudentIds = new Set(
-    openCharges.map((charge) => charge.studentId),
-  );
+  const debtStudentIds = new Set(openCharges.map((charge) => charge.studentId));
   return {
     workspace: { currency: "PLN", timezone: data.teacher.timezone, dueDays: 7 },
     students: students.map((student) => ({

@@ -11,13 +11,15 @@ import {
   UserPlus,
 } from "lucide-react";
 import Link from "next/link";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { bookingsOptions } from "@/lib/workspace-queries";
+import { useSessionTeacher } from "../app-shell";
 import { useEffect, useState } from "react";
 import {
   ClientApiError,
   cancelTutorBooking,
   convertTutorBooking,
   fetchTutorBooking,
-  fetchTutorBookings,
 } from "@/lib/api-client";
 import { formatDateTime, formatMoney } from "@/lib/format";
 import type {
@@ -31,28 +33,32 @@ export function BookingsPage({
 }: {
   initialBookingId?: string;
 }) {
-  const [bookings, setBookings] = useState<PublicBookingRecord[]>([]);
+  const teacher = useSessionTeacher();
+  const queryClient = useQueryClient();
+  const {
+    data: bookings = [],
+    isPending: loading,
+    error: listError,
+  } = useQuery({
+    ...bookingsOptions(teacher.id),
+    refetchInterval: 30_000,
+  });
   const [selected, setSelected] = useState<TutorBookingDetail | null>(null);
-  const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(Boolean(initialBookingId));
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (!initialBookingId) return;
     const controller = new AbortController();
-    Promise.all([
-      fetchTutorBookings(controller.signal),
-      initialBookingId
-        ? fetchTutorBooking(initialBookingId, controller.signal)
-        : Promise.resolve(null),
-    ])
-      .then(([items, detail]) => {
-        setBookings(items);
-        setSelected(detail);
+    fetchTutorBooking(initialBookingId, controller.signal)
+      .then((detail) => {
+        if (!controller.signal.aborted) setSelected(detail);
       })
-      .catch((reason) => setError(messageFor(reason)))
+      .catch((reason) => {
+        if (!controller.signal.aborted) setError(messageFor(reason));
+      })
       .finally(() => {
-        setLoading(false);
-        setDetailLoading(false);
+        if (!controller.signal.aborted) setDetailLoading(false);
       });
     return () => controller.abort();
   }, [initialBookingId]);
@@ -71,11 +77,16 @@ export function BookingsPage({
 
   function updateConverted(detail: TutorBookingDetail) {
     setSelected(detail);
-    setBookings((items) =>
-      items.map((item) =>
-        item.bookingId === detail.bookingId ? { ...item, ...detail } : item,
-      ),
+    queryClient.setQueryData<PublicBookingRecord[]>(
+      bookingsOptions(teacher.id).queryKey,
+      (items = []) =>
+        items.map((item) =>
+          item.bookingId === detail.bookingId ? { ...item, ...detail } : item,
+        ),
     );
+    for (const key of ["new-bookings", "app", "dashboard", "finance"]) {
+      void queryClient.invalidateQueries({ queryKey: [key, teacher.id] });
+    }
   }
 
   return (
@@ -90,9 +101,9 @@ export function BookingsPage({
         </div>
       </header>
 
-      {error && (
+      {(error || listError) && (
         <p className="booking-alert" role="alert">
-          {error}
+          {error || messageFor(listError)}
         </p>
       )}
       {loading ? (
@@ -138,16 +149,7 @@ export function BookingsPage({
               booking={selected}
               onBack={() => setSelected(null)}
               onConverted={updateConverted}
-              onCancelled={(detail) => {
-                setSelected(detail);
-                setBookings((items) =>
-                  items.map((item) =>
-                    item.bookingId === detail.bookingId
-                      ? { ...item, ...detail }
-                      : item,
-                  ),
-                );
-              }}
+              onCancelled={updateConverted}
             />
           ) : (
             <div className="panel booking-detail booking-empty booking-detail-placeholder">

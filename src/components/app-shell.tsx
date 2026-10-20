@@ -1,6 +1,8 @@
 "use client";
 
 import { BrandLogo } from "@/components/brand-logo";
+import { useQueryClient } from "@tanstack/react-query";
+import { useNavigationPrefetch } from "@/hooks/use-navigation-prefetch";
 
 import * as Dialog from "@radix-ui/react-dialog";
 import dynamic from "next/dynamic";
@@ -93,6 +95,8 @@ function ShellBody({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const prefetchData = useNavigationPrefetch(teacher.id, teacher.timezone);
   const {
     lessonComposer,
     openLessonComposer,
@@ -121,6 +125,8 @@ function ShellBody({
   async function logout() {
     try {
       await authRequest("logout");
+      await queryClient.cancelQueries();
+      queryClient.clear();
       router.push("/logowanie");
       router.refresh();
     } catch (error) {
@@ -214,6 +220,9 @@ function ShellBody({
                 key={href}
                 className={active ? "active" : ""}
                 href={href}
+                onMouseEnter={() => void prefetchData(href)}
+                onFocus={() => void prefetchData(href)}
+                onTouchStart={() => void prefetchData(href)}
                 aria-label={label}
                 title={label}
                 onClick={() => setMobileMenu(false)}
@@ -279,6 +288,9 @@ function ShellBody({
                 <Link
                   key={href}
                   href={href}
+                  onMouseEnter={() => void prefetchData(href)}
+                  onFocus={() => void prefetchData(href)}
+                  onTouchStart={() => void prefetchData(href)}
                   onClick={() => setMobileMenu(false)}
                   aria-current={pathname.startsWith(href) ? "page" : undefined}
                 >
@@ -381,6 +393,9 @@ function ShellBody({
           <Link
             key={href}
             href={href}
+            onMouseEnter={() => void prefetchData(href)}
+            onFocus={() => void prefetchData(href)}
+            onTouchStart={() => void prefetchData(href)}
             className={pathname.startsWith(href) ? "active" : ""}
           >
             <Icon size={20} aria-hidden="true" />

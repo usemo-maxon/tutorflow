@@ -7,16 +7,22 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   try {
+    const startedAt = performance.now();
     const teacherId = await currentTeacherId();
     if (!teacherId) throw unauthenticated();
+    const authorizedAt = performance.now();
     const search = new URL(request.url).searchParams;
     const cursor = Number(search.get("cursor") ?? 0);
-    return Response.json(
-      await getFinancialOverview(teacherId, {
-        studentId: search.get("studentId") ?? undefined,
-        cursor: Number.isInteger(cursor) && cursor >= 0 ? cursor : 0,
-      }),
-    );
+    const data = await getFinancialOverview(teacherId, {
+      studentId: search.get("studentId") ?? undefined,
+      cursor: Number.isInteger(cursor) && cursor >= 0 ? cursor : 0,
+    });
+    return Response.json(data, {
+      headers: {
+        "Cache-Control": "private, no-store",
+        "Server-Timing": `auth;dur=${(authorizedAt - startedAt).toFixed(1)}, finance;dur=${(performance.now() - authorizedAt).toFixed(1)}`,
+      },
+    });
   } catch (error) {
     return errorResponse(error);
   }

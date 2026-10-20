@@ -12,7 +12,7 @@ export default async function TeacherLayout({
   const teacher = await currentTeacher();
   if (!teacher) redirect("/logowanie");
   return (
-    <Providers>
+    <Providers key={teacher.id}>
       <AppShell teacher={teacher}>{children}</AppShell>
     </Providers>
   );

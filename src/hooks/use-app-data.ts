@@ -10,12 +10,9 @@ import type {
 import type { FinanceAction, FinancialOverview } from "@/lib/finance";
 import {
   ClientApiError,
-  fetchAppData,
-  fetchDashboardData,
   fetchLessonWorkspace,
   fetchStudentMemory,
   fetchNextLessonBriefing,
-  fetchFinancialOverview,
   fetchGroupContinuity,
   mutateApp,
   mutateLessonWorkspace,
@@ -25,6 +22,11 @@ import {
 } from "@/lib/api-client";
 import type { StudentHomeworkUpdate } from "@/lib/homework";
 import type { StudentMemory } from "@/lib/student-memory";
+import {
+  appDataOptions,
+  dashboardOptions,
+  financeOptions,
+} from "@/lib/workspace-queries";
 
 export function useGroupContinuity(
   teacherId: string,
@@ -53,8 +55,7 @@ export function useGroupContinuity(
 export function useDashboardData(teacherId: string) {
   const router = useRouter();
   return useQuery({
-    queryKey: ["dashboard", teacherId],
-    queryFn: ({ signal }) => fetchDashboardData(signal),
+    ...dashboardOptions(teacherId),
     refetchInterval: 60_000,
     retry(failureCount, error) {
       if (error instanceof ClientApiError && error.status < 500) return false;
@@ -177,6 +178,7 @@ export function useLessonWorkspaceMutation(
         queryKey: ["dashboard", teacherId],
       });
       void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
+      void queryClient.invalidateQueries({ queryKey: ["finance", teacherId] });
       void queryClient.invalidateQueries({
         queryKey: ["student-memory", teacherId],
       });
@@ -197,14 +199,7 @@ export function useAppData(
 ) {
   const router = useRouter();
   return useQuery({
-    queryKey: [
-      "app",
-      teacherId,
-      scope,
-      range?.start ?? "all",
-      range?.end ?? "all",
-    ],
-    queryFn: ({ signal }) => fetchAppData(signal, range, scope),
+    ...appDataOptions(teacherId, range, scope),
     refetchInterval: 60_000,
     retry(failureCount, error) {
       if (error instanceof ClientApiError && error.status < 500) return false;
@@ -229,6 +224,7 @@ export function useAppMutation(teacherId: string) {
         response.data,
       );
       void queryClient.invalidateQueries({ queryKey: ["app", teacherId] });
+      void queryClient.invalidateQueries({ queryKey: ["finance", teacherId] });
       void queryClient.invalidateQueries({
         queryKey: ["dashboard", teacherId],
       });
@@ -275,8 +271,7 @@ export function useFinancialOverview(
 ) {
   const router = useRouter();
   return useQuery({
-    queryKey: ["finance", teacherId, studentId ?? "workspace"],
-    queryFn: ({ signal }) => fetchFinancialOverview({ studentId }, signal),
+    ...financeOptions(teacherId, studentId),
     enabled,
     retry(failureCount, error) {
       if (error instanceof ClientApiError && error.status < 500) return false;

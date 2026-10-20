@@ -1,4 +1,5 @@
 import type { DashboardData } from "./dashboard";
+import type { MaterialsLibraryData } from "./materials";
 import type { FinanceAction, FinancialOverview } from "./finance";
 import type {
   LessonWorkspaceAction,
@@ -79,6 +80,17 @@ export async function fetchTutorBookings(
     cache: "no-store",
   });
   return parseResponse(response);
+}
+
+export async function fetchMaterials(
+  query = "",
+  signal?: AbortSignal,
+): Promise<MaterialsLibraryData> {
+  const response = await fetch(`/api/materials${query ? `?${query}` : ""}`, {
+    signal,
+    cache: "no-store",
+  });
+  return parseResponse<MaterialsLibraryData>(response);
 }
 
 export async function fetchTutorBooking(

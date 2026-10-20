@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, CalendarCheck2, Clock3, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { ClientApiError, fetchTutorBookings } from "@/lib/api-client";
+import { ClientApiError } from "@/lib/api-client";
+import { bookingsOptions } from "@/lib/workspace-queries";
 import { bookingDetailHref } from "@/lib/booking-schedule";
 import { formatDateTime, formatShortDay, formatTime } from "@/lib/format";
 import { selectNewBookings } from "@/lib/new-bookings";
@@ -19,10 +20,8 @@ export function NewBookings({
   now: Date;
 }) {
   const { data, isPending, isError, isFetching, refetch } = useQuery({
-    queryKey: ["new-bookings", teacherId],
-    queryFn: ({ signal }) => fetchTutorBookings(signal),
+    ...bookingsOptions(teacherId),
     refetchInterval: 30_000,
-    refetchOnMount: "always",
     retry: (count, error) =>
       !(error instanceof ClientApiError && error.status < 500) && count < 2,
   });

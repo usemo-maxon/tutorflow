@@ -2,6 +2,13 @@
 
 import * as Dialog from "@radix-ui/react-dialog";
 import {
+  keepPreviousData,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { materialsOptions } from "@/lib/workspace-queries";
+import { useSessionTeacher } from "../app-shell";
+import {
   Archive,
   BookOpenCheck,
   ExternalLink,
@@ -26,7 +33,6 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
-  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -58,8 +64,8 @@ export function MaterialsPage() {
   const { showError, showToast } = useAppUi();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [data, setData] = useState<MaterialsLibraryData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const teacher = useSessionTeacher();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState(searchParams.get("q") ?? "");
   const initialType = searchParams.get("type");
   const [type, setType] = useState<MaterialType | "">(
@@ -96,37 +102,43 @@ export function MaterialsPage() {
     return query.toString();
   }, [folder, level, search, subject, tag, type, view]);
 
-  const refresh = useCallback(
-    async (signal?: AbortSignal) => {
-      const next = await apiRequest<MaterialsLibraryData>(
-        `/api/materials${queryString ? `?${queryString}` : ""}`,
-        { signal, cache: "no-store" },
-      );
-      setData(next);
-      return next;
-    },
-    [queryString],
-  );
+  const [debouncedQuery, setDebouncedQuery] = useState(queryString);
+  const {
+    data,
+    isPending: loading,
+    error,
+    isFetching,
+  } = useQuery({
+    ...materialsOptions(teacher.id, debouncedQuery),
+    placeholderData: keepPreviousData,
+  });
+
+  async function refresh() {
+    await queryClient.invalidateQueries({
+      queryKey: ["materials", teacher.id],
+      refetchType: "none",
+    });
+    return queryClient.fetchQuery(materialsOptions(teacher.id, debouncedQuery));
+  }
 
   useEffect(() => {
-    const controller = new AbortController();
     const timer = window.setTimeout(() => {
-      router.replace(`/app/materialy${queryString ? `?${queryString}` : ""}`, {
-        scroll: false,
-      });
-      void refresh(controller.signal)
-        .catch((error) => {
-          if (!controller.signal.aborted) showError(error);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setLoading(false);
-        });
+      setDebouncedQuery(queryString);
+      if (searchParams.toString() !== queryString) {
+        router.replace(
+          `/app/materialy${queryString ? `?${queryString}` : ""}`,
+          {
+            scroll: false,
+          },
+        );
+      }
     }, 250);
-    return () => {
-      controller.abort();
-      window.clearTimeout(timer);
-    };
-  }, [queryString, refresh, router, showError]);
+    return () => window.clearTimeout(timer);
+  }, [queryString, router, searchParams]);
+
+  useEffect(() => {
+    if (error) showError(error);
+  }, [error, showError]);
 
   const hasFilters = Boolean(
     search || type || subject || level || tag || folder !== "all",
@@ -139,7 +151,15 @@ export function MaterialsPage() {
     folder !== "all" ? folder : "",
   ].filter(Boolean).length;
   if (loading && !data) return <PageLoading />;
-  if (!data) return null;
+  if (!data)
+    return (
+      <p role="alert">
+        Nie udało się wczytać materiałów.{" "}
+        <button onClick={() => void refresh().catch(showError)}>
+          Spróbuj ponownie
+        </button>
+      </p>
+    );
 
   function clearFilters() {
     setSearch("");
@@ -209,7 +229,11 @@ export function MaterialsPage() {
           </button>
         </div>
       </header>
-      <section className="materials-library" aria-label="Biblioteka materiałów">
+      <section
+        className="materials-library"
+        aria-label="Biblioteka materiałów"
+        aria-busy={isFetching}
+      >
         <div className="materials-toolbar">
           <label className="search-field materials-search">
             <Search size={18} />
