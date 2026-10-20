@@ -1492,30 +1492,23 @@ h3 {
 .brand-artwork {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  width: 174px;
   flex-shrink: 0;
-  background: white;
 }
-.brand-symbol {
-  width: 34px;
+.brand-logo-full,
+.brand-logo-compact {
+  display: block;
+  max-width: 100%;
   height: auto;
-  flex-shrink: 0;
-  object-fit: contain;
 }
-.brand-wordmark {
-  width: 132px;
-  height: auto;
-  flex-shrink: 0;
-  object-fit: contain;
-}
-.brand-compact-label {
+.brand-logo-compact {
   display: none;
 }
-.brand--public .brand-symbol {
-  width: 40px;
+.brand-logo-dark {
+  display: none;
 }
-.brand--public .brand-wordmark {
-  width: 146px;
+.brand--public .brand-artwork {
+  width: 194px;
 }
 .eyebrow {
   margin: 0 0 var(--space-2);
@@ -12480,14 +12473,14 @@ summary {
   border-bottom-color: var(--brand-primary);
 }
 @media (min-width: 768px) and (max-width: 1199px) {
-  .sidebar .brand-wordmark {
+  .sidebar .brand-artwork {
+    width: 56px;
+  }
+  .sidebar .brand-logo-full {
     display: none;
   }
-  .sidebar .brand-compact-label {
+  .sidebar .brand-logo-compact {
     display: block;
-  }
-  .sidebar .brand-symbol {
-    width: 38px;
   }
 }
 @media (max-width: 980px) {
@@ -12497,17 +12490,11 @@ summary {
   }
 }
 @media (max-width: 767px) {
-  .brand--public .brand-symbol {
-    width: 30px;
+  .brand--public .brand-artwork {
+    width: 158px;
   }
-  .brand--public .brand-wordmark {
-    width: 120px;
-  }
-  .mobile-header .brand-symbol {
-    width: 28px;
-  }
-  .mobile-header .brand-wordmark {
-    width: 112px;
+  .mobile-header .brand-artwork {
+    width: 148px;
   }
   .hero-product-preview {
     padding: 12px;

@@ -2274,6 +2274,249 @@
     gap: 35px;
   }
 }
+
+/* Dark theme — derived from the navy field of the supplied Easy4Tutor logo. */
+:global(:root[data-theme="dark"]) .page {
+  --blue: var(--brand-primary);
+  --cream: var(--canvas);
+  --line: var(--border);
+  --mint: #102c39;
+  --peach: #302531;
+  --muted: #a9b8ce;
+  color: var(--ink);
+  background: var(--canvas);
+}
+
+:global(:root[data-theme="dark"])
+  .page
+  :is(.navCta, .primaryButton, .demoBooking summary) {
+  color: #fff !important;
+  background: #0b70c9;
+}
+
+:global(:root[data-theme="dark"])
+  .page
+  :is(.navCta, .primaryButton, .demoBooking summary):hover {
+  background: #095fae;
+}
+
+:global(:root[data-theme="dark"])
+  .page
+  :is(
+    .desktopNav a,
+    .login,
+    .secondaryButton,
+    .sectionHeading h2,
+    .featureCopy h2,
+    .workflow h2,
+    .pricing h2,
+    .faq h2
+  ) {
+  color: var(--ink);
+}
+
+:global(:root[data-theme="dark"]) .header {
+  background: color-mix(in srgb, var(--canvas) 90%, transparent);
+  border-bottom-color: var(--border);
+}
+
+:global(:root[data-theme="dark"]) .mobileMenu summary {
+  color: var(--brand-primary);
+  background: var(--surface-subtle);
+  border: 1px solid var(--border);
+}
+
+:global(:root[data-theme="dark"]) .mobileMenu > div {
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-panel);
+}
+
+:global(:root[data-theme="dark"]) .mobileMenu a {
+  color: var(--ink);
+}
+
+:global(:root[data-theme="dark"])
+  .page
+  :is(
+    .calendar,
+    .floatCard,
+    .productPanel,
+    .lessonPanel,
+    .phone,
+    .confirmCard,
+    .shareCard,
+    .financePanel,
+    .priceCards article,
+    .skipLink
+  ) {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--border);
+  box-shadow: var(--shadow-panel);
+}
+
+:global(:root[data-theme="dark"])
+  .page
+  :is(
+    .hero h1 > span,
+    .lead,
+    .trust,
+    .hours,
+    .calendarHead > span,
+    .allDay,
+    .floatCard small,
+    .floatCard em,
+    .demoCaption,
+    .audienceItems small,
+    .sectionHeading > p:last-child,
+    .featureCopy > p:not(.kicker),
+    .panelTop small,
+    .panelTop p,
+    .lessonTitle small,
+    .homework small,
+    .phone small,
+    .phone .tutorIntro,
+    .phone > p,
+    .confirmCard small,
+    .confirmCard em,
+    .shareCard small,
+    .statRow small,
+    .memory small,
+    .memory p,
+    .financeHeader > span,
+    .financeTotal small,
+    .financeTotal > span,
+    .flowStep small,
+    .flowNumber,
+    .priceCards article > span,
+    .priceCards p,
+    .pricingCopy > p:not(.eyebrow),
+    .faq > div > p:last-child,
+    .faq details > p
+  ) {
+  color: var(--muted);
+}
+
+:global(:root[data-theme="dark"]) .heroGlow {
+  background: radial-gradient(
+    ellipse,
+    rgb(32 136 255 / 24%) 0,
+    transparent 70%
+  );
+}
+
+:global(:root[data-theme="dark"])
+  .page
+  :is(.windowBar, .calendarHead, .allDay, .financeRow, .faq details) {
+  border-color: var(--border);
+}
+
+:global(:root[data-theme="dark"]) .calendarGrid {
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+}
+
+:global(:root[data-theme="dark"]) .allDay b,
+:global(:root[data-theme="dark"]) .packageMeter {
+  color: var(--muted);
+  background: var(--surface-subtle);
+}
+
+:global(:root[data-theme="dark"]) .lessonMint {
+  color: #9cebd1;
+  background: #123b3b;
+  border-color: #39b991;
+}
+
+:global(:root[data-theme="dark"]) .lessonBlue {
+  color: #b8d7ff;
+  background: #142e57;
+  border-color: #5f95ff;
+}
+
+:global(:root[data-theme="dark"]) .lessonCoral {
+  color: #ffc5b3;
+  background: #3b2930;
+  border-color: #f28a69;
+}
+
+:global(:root[data-theme="dark"]) .page :is(.blueVisual, .financeVisual) {
+  background: #0e2341;
+}
+
+:global(:root[data-theme="dark"]) .mintVisual {
+  background: #102b35;
+}
+
+:global(:root[data-theme="dark"]) .peachVisual {
+  background: #302530;
+}
+
+:global(:root[data-theme="dark"]) .navyVisual {
+  background: #071329;
+}
+
+:global(:root[data-theme="dark"])
+  .page
+  :is(.statRow div, .memory, .homework, .dateStrip, .packageMeter > div) {
+  background: var(--surface-subtle);
+  border-color: var(--border);
+}
+
+:global(:root[data-theme="dark"]) .secondaryButton:hover {
+  color: var(--brand-primary);
+  background: var(--surface-raised);
+  border-color: var(--brand-primary);
+}
+
+:global(:root[data-theme="dark"]) .secondaryButton,
+:global(:root[data-theme="dark"]) .todayPill {
+  color: var(--ink);
+  background: var(--surface-subtle);
+  border-color: var(--border-strong);
+}
+
+:global(:root[data-theme="dark"]) .demoBooking p {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+:global(:root[data-theme="dark"]) .pending {
+  color: var(--warning);
+}
+
+:global(:root[data-theme="dark"]) .packageMeter b {
+  color: var(--success);
+}
+
+:global(:root[data-theme="dark"]) .workflow {
+  background: var(--surface-soft);
+}
+
+:global(:root[data-theme="dark"]) .flowStep {
+  border-color: var(--border-strong);
+}
+
+:global(:root[data-theme="dark"]) .pricing {
+  background: var(--canvas);
+}
+
+:global(:root[data-theme="dark"]) .priceCards .proCard {
+  background: linear-gradient(180deg, #142e50 0%, var(--surface) 100%);
+  border-color: var(--brand-primary);
+}
+
+:global(:root[data-theme="dark"]) .finalCta {
+  background: linear-gradient(135deg, #0c2140, #102f55);
+  border: 1px solid var(--border-strong);
+}
+
+:global(:root[data-theme="dark"]) .footer {
+  background: #071225;
+  border-top-color: var(--border);
+}
 @media (max-width: 900px) {
   .header {
     padding: 8px 16px;

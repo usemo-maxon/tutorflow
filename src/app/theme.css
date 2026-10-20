@@ -5,32 +5,65 @@
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --canvas: #101714;
-  --surface: #18211d;
-  --surface-subtle: #1d2924;
-  --ink: #edf4f0;
-  --muted: #a7b7af;
-  --brand-primary: #55c79f;
-  --brand-hover: #79d9b7;
-  --brand-logo: #55c79f;
-  --brand-soft: #18382d;
-  --attention: #e2ad68;
-  --success-bg: #173629;
-  --success: #72d6a4;
-  --warning-bg: #382d17;
-  --warning: #f0c777;
-  --error-bg: #3a211f;
-  --error: #f1958c;
-  --info-bg: #18352c;
-  --unavailable: #25302b;
-  --unavailable-ink: #b6c3bd;
-  --border: #32413a;
-  --border-strong: #53665d;
-  --control-border: #6d8177;
-  --warning-subtle: #2d281d;
-  --warning-border: #594b2f;
-  --focus: 0 0 0 3px rgb(85 199 159 / 28%);
-  --shadow-panel: 0 18px 44px rgb(0 0 0 / 28%);
+  /* Primitives sampled from the supplied dark logo: background #091426. */
+  --navy-1000: #050d1b;
+  --navy-950: #091426;
+  --navy-900: #0d1b31;
+  --navy-850: #12243d;
+  --navy-800: #182e4b;
+  --navy-700: #263d5d;
+  --navy-600: #3d587b;
+  --blue-400: #2aa7ff;
+  --blue-300: #5bc1ff;
+
+  /* Semantic theme tokens. */
+  --canvas: var(--navy-950);
+  --surface: var(--navy-900);
+  --surface-subtle: var(--navy-850);
+  --surface-soft: #102038;
+  --surface-raised: var(--navy-800);
+  --ink: #f4f8ff;
+  --muted: #a9b8ce;
+  --brand-primary: var(--blue-400);
+  --brand-hover: var(--blue-300);
+  --brand-logo: #18c9eb;
+  --brand-soft: #102e52;
+  --blue: var(--blue-400);
+  --blue-soft: #102e52;
+  --accent: var(--blue-400);
+  --accent-soft: #102e52;
+  --accent-strong: #8bd3ff;
+  --on-brand: #06172b;
+  --attention: #f0b86e;
+  --success-bg: #102f31;
+  --success: #69d7b1;
+  --warning-bg: #342b1c;
+  --warning: #f3c76f;
+  --error-bg: #372329;
+  --error: #ff9a92;
+  --info-bg: #102c4d;
+  --unavailable: #18283e;
+  --unavailable-ink: #b5c2d3;
+  --border: var(--navy-700);
+  --border-strong: var(--navy-600);
+  --control-border: #58759b;
+  --warning-subtle: #2a261d;
+  --warning-border: #655634;
+  --focus: 0 0 0 3px rgb(42 167 255 / 32%);
+  --shadow-panel: 0 18px 48px rgb(1 8 20 / 38%);
+  --shadow-card: 0 16px 38px rgb(1 8 20 / 32%);
+}
+
+:root[data-theme="dark"] .brand-logo-light {
+  display: none;
+}
+
+:root[data-theme="dark"] .brand-logo-full.brand-logo-dark {
+  display: block;
+}
+
+:root[data-theme="dark"] .brand-logo-compact.brand-logo-dark {
+  display: none;
 }
 
 .theme-toggle {
@@ -129,7 +162,7 @@
 }
 
 :root[data-theme="dark"] .dialog-overlay {
-  background: rgb(3 8 6 / 72%);
+  background: rgb(2 8 18 / 78%);
 }
 
 :root[data-theme="dark"] .button--quiet,
@@ -140,6 +173,16 @@
   border-color: var(--border);
 }
 
+:root[data-theme="dark"] .button--primary,
+:root[data-theme="dark"] .icon-button--blue {
+  color: var(--on-brand);
+  box-shadow: 0 7px 22px rgb(0 121 226 / 24%);
+}
+
+:root[data-theme="dark"] .button--primary:hover:not(:disabled) {
+  color: var(--on-brand);
+}
+
 :root[data-theme="dark"] .calendar-grid-shell,
 :root[data-theme="dark"] .profile-studio,
 :root[data-theme="dark"] .card,
@@ -148,7 +191,203 @@
 }
 
 :root[data-theme="dark"] img {
-  filter: brightness(0.94);
+  filter: none;
+}
+
+/* Compatibility layer for older light-only surfaces in the application. */
+:root[data-theme="dark"]
+  :is(
+    .auth-layout,
+    .legal-page,
+    .cookie-dialog,
+    .global-create-menu,
+    .calendar-range-menu,
+    .calendar-all-day-popover,
+    .calendar-grid-shell,
+    .data-table,
+    .student-card,
+    .booking-card,
+    .agenda-card,
+    .tab-panel,
+    .metric-card,
+    .skills-panel,
+    .score-trend-panel,
+    .current-plan-card,
+    .plan-card,
+    .subscription-card,
+    .context-materials,
+    .context-material-card,
+    .context-material-picker__item,
+    .tour-invitation,
+    .product-tour__popover,
+    .tour-complete,
+    .privacy-grid article
+  ) {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"]
+  :is(
+    .profile-studio-toolbar,
+    .profile-studio-basics,
+    .profile-editor-help,
+    .profile-repeat-card,
+    .tag-input__chip,
+    .booking-reminder-settings,
+    .integration-disclosure,
+    .delete-confirm,
+    .calendar-inspect-meta,
+    .package-meter,
+    .help-guide-list article
+  ) {
+  color: var(--ink);
+  background: var(--surface-subtle);
+  border-color: var(--border-strong);
+}
+
+:root[data-theme="dark"]
+  :is(
+    .profile-editor-step,
+    .sidebar-search,
+    .segmented-control button,
+    .settings-nav a,
+    .calendar-nav button,
+    .calendar-date-jump input
+  ):hover {
+  color: var(--ink);
+  background: var(--surface-raised);
+  border-color: var(--border-strong);
+}
+
+:root[data-theme="dark"] :is(.sidebar-nav a.active, .settings-nav a.active) {
+  color: #8bd3ff;
+  background: var(--brand-soft);
+}
+
+:root[data-theme="dark"] :is(.button--danger-soft, .button--danger) {
+  color: var(--error) !important;
+  background: var(--error-bg) !important;
+  border-color: color-mix(in srgb, var(--error) 42%, var(--border)) !important;
+}
+
+:root[data-theme="dark"]
+  :is(.booking-cancel-confirm, .delete-confirm, .privacy-danger) {
+  color: var(--error);
+  background: var(--error-bg);
+  border-color: color-mix(in srgb, var(--error) 42%, var(--border)) !important;
+}
+
+:root[data-theme="dark"] .booking-status {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+:root[data-theme="dark"] .material-archived-badge {
+  color: var(--muted);
+  background: var(--unavailable);
+}
+
+:root[data-theme="dark"] .cookie-overlay,
+:root[data-theme="dark"] .tour-complete-backdrop,
+:root[data-theme="dark"] .product-tour__veil {
+  background: rgb(2 8 18 / 76%);
+}
+
+:root[data-theme="dark"] .cookie-dialog > label {
+  border-color: var(--border);
+  background: var(--surface-subtle);
+}
+
+:root[data-theme="dark"] .calendar-day-heads > div,
+:root[data-theme="dark"] .calendar-times,
+:root[data-theme="dark"] .calendar-day-column {
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"]
+  :is(
+    .calendar-event,
+    .calendar-all-day-event,
+    .calendar-external-event,
+    .calendar-booking,
+    .month-calendar-item
+  ) {
+  color: var(--ink);
+  background: color-mix(
+    in srgb,
+    var(--calendar-color, var(--brand-primary)) 18%,
+    var(--surface-subtle)
+  );
+  border-color: color-mix(
+    in srgb,
+    var(--calendar-color, var(--brand-primary)) 54%,
+    var(--border)
+  );
+}
+
+:root[data-theme="dark"]
+  :is(
+    .calendar-event,
+    .calendar-all-day-event,
+    .calendar-external-event,
+    .calendar-booking,
+    .month-calendar-item
+  )
+  :is(strong, small, time) {
+  color: inherit;
+}
+
+:root[data-theme="dark"] .profile-completion::before {
+  background:
+    radial-gradient(circle, var(--surface) 56%, transparent 58%),
+    conic-gradient(var(--brand-primary) var(--completion), var(--border) 0);
+}
+
+:root[data-theme="dark"] .public-tutor-page {
+  --profile-accent-strong: color-mix(
+    in srgb,
+    var(--profile-accent) 58%,
+    #d8efff
+  );
+  --profile-accent-deep: color-mix(in srgb, var(--profile-accent) 38%, #f4f8ff);
+  --profile-accent-soft: color-mix(
+    in srgb,
+    var(--profile-accent) 18%,
+    var(--surface-subtle)
+  );
+  --profile-accent-wash: color-mix(
+    in srgb,
+    var(--profile-accent) 9%,
+    var(--surface)
+  );
+  --profile-accent-border: color-mix(
+    in srgb,
+    var(--profile-accent) 32%,
+    var(--border)
+  );
+  --profile-accent-shadow: rgb(1 8 20 / 28%);
+  --profile-page: color-mix(in srgb, var(--profile-accent) 6%, var(--canvas));
+  --profile-surface: var(--surface);
+  --profile-surface-raised: var(--surface-subtle);
+  --profile-ink: var(--ink);
+  --profile-muted: var(--muted);
+  --profile-on-accent: #06172b;
+}
+
+:root[data-theme="dark"] .public-tutor-page .public-tutor-content,
+:root[data-theme="dark"] .public-tutor-page .public-tutor-footer {
+  color: var(--profile-ink);
+}
+
+:root[data-theme="dark"] .public-tutor-page .public-video-consent {
+  background: #071225;
+}
+
+:root[data-theme="dark"] ::selection {
+  color: var(--ink);
+  background: rgb(42 167 255 / 32%);
 }
 
 @media (max-width: 767px) {
@@ -159,6 +398,16 @@
     margin: 12px 0;
     padding-top: 12px;
     border-top: 1px solid var(--border);
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+  :root[data-theme="dark"] .sidebar .brand-logo-full.brand-logo-dark {
+    display: none;
+  }
+
+  :root[data-theme="dark"] .sidebar .brand-logo-compact.brand-logo-dark {
+    display: block;
   }
 }
 

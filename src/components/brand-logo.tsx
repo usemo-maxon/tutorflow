@@ -1,30 +1,45 @@
 import Image from "next/image";
 
-/** Supplied blue artwork. CSS frames its existing symbol and wordmark without redrawing it. */
+/** Supplied Easy4Tutor artwork with its background removed. */
 export function BrandLogo() {
   return (
     <span className="brand-artwork">
-      <span className="brand-symbol brand-image-frame" aria-hidden="true">
-        <Image
-          src="/brand/easy4tutor-blue-original.png"
-          width={1254}
-          height={1254}
-          alt=""
-          loading="eager"
-          sizes="320px"
-        />
-      </span>
-      <span className="brand-wordmark brand-image-frame">
-        <Image
-          src="/brand/easy4tutor-blue-original.png"
-          width={1254}
-          height={1254}
-          alt="easy4tutor"
-          loading="eager"
-          sizes="320px"
-        />
-      </span>
-      <span className="brand-compact-label sr-only">easy4tutor</span>
+      <Image
+        className="brand-logo-full brand-logo-light"
+        src="/brand/easy4tutor-logo-transparent.png"
+        width={1465}
+        height={283}
+        alt="easy4tutor"
+        loading="eager"
+        sizes="200px"
+      />
+      <Image
+        className="brand-logo-compact brand-logo-light"
+        src="/brand/easy4tutor-monogram-transparent.png"
+        width={502}
+        height={283}
+        alt="easy4tutor"
+        loading="eager"
+        sizes="60px"
+      />
+      <Image
+        className="brand-logo-full brand-logo-dark"
+        src="/brand/easy4tutor-logo-dark-transparent.png"
+        width={1465}
+        height={283}
+        alt="easy4tutor"
+        loading="eager"
+        sizes="200px"
+      />
+      <Image
+        className="brand-logo-compact brand-logo-dark"
+        src="/brand/easy4tutor-monogram-transparent.png"
+        width={502}
+        height={283}
+        alt="easy4tutor"
+        loading="eager"
+        sizes="60px"
+      />
     </span>
   );
 }
