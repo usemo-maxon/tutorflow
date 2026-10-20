@@ -1,0 +1,180 @@
+/* Color themes: semantic tokens first, targeted compatibility overrides second. */
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #101714;
+  --surface: #18211d;
+  --surface-subtle: #1d2924;
+  --ink: #edf4f0;
+  --muted: #a7b7af;
+  --brand-primary: #55c79f;
+  --brand-hover: #79d9b7;
+  --brand-logo: #55c79f;
+  --brand-soft: #18382d;
+  --attention: #e2ad68;
+  --success-bg: #173629;
+  --success: #72d6a4;
+  --warning-bg: #382d17;
+  --warning: #f0c777;
+  --error-bg: #3a211f;
+  --error: #f1958c;
+  --info-bg: #18352c;
+  --unavailable: #25302b;
+  --unavailable-ink: #b6c3bd;
+  --border: #32413a;
+  --border-strong: #53665d;
+  --control-border: #6d8177;
+  --warning-subtle: #2d281d;
+  --warning-border: #594b2f;
+  --focus: 0 0 0 3px rgb(85 199 159 / 28%);
+  --shadow-panel: 0 18px 44px rgb(0 0 0 / 28%);
+}
+
+.theme-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  font-size: 12px;
+  font-weight: 650;
+  text-align: left;
+}
+
+.theme-toggle:hover {
+  color: var(--ink);
+  background: var(--surface-subtle);
+  border-color: var(--border);
+}
+
+.theme-toggle--compact {
+  width: 36px;
+  min-height: 36px;
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar-theme {
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.sidebar-theme + .sidebar-account {
+  margin-top: 0;
+}
+
+.admin-theme-toggle {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  z-index: 80;
+  padding: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  box-shadow: var(--shadow-panel);
+}
+
+:root[data-theme="dark"] .app-shell,
+:root[data-theme="dark"] .admin-app-shell {
+  background: var(--canvas);
+}
+
+:root[data-theme="dark"] .sidebar,
+:root[data-theme="dark"] .mobile-header,
+:root[data-theme="dark"] .bottom-nav,
+:root[data-theme="dark"] .mobile-menu-panel,
+:root[data-theme="dark"] .dialog,
+:root[data-theme="dark"] .popover,
+:root[data-theme="dark"] .command-palette,
+:root[data-theme="dark"] .calendar-toolbar,
+:root[data-theme="dark"] .calendar-page .planning-bar,
+:root[data-theme="dark"] .calendar-agenda section,
+:root[data-theme="dark"] .day-overview a,
+:root[data-theme="dark"] .next-lesson-card,
+:root[data-theme="dark"] .today-schedule,
+:root[data-theme="dark"] .today-action-grid .dashboard-attention,
+:root[data-theme="dark"] .today-action-grid .dashboard-rail-section,
+:root[data-theme="dark"] .today-action-grid .monthly-summary,
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .settings-card,
+:root[data-theme="dark"] .profile-studio,
+:root[data-theme="dark"] .public-settings-form,
+:root[data-theme="dark"] .profile-theme-option,
+:root[data-theme="dark"] .profile-repeat-card {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] .profile-studio-toolbar,
+:root[data-theme="dark"] .profile-studio-basics,
+:root[data-theme="dark"] .profile-editor-group > summary:hover,
+:root[data-theme="dark"] .profile-editor-help,
+:root[data-theme="dark"] .briefing-preview,
+:root[data-theme="dark"] .today-lesson__body,
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background-color: var(--surface-subtle);
+  border-color: var(--border-strong);
+}
+
+:root[data-theme="dark"] .dialog-overlay {
+  background: rgb(3 8 6 / 72%);
+}
+
+:root[data-theme="dark"] .button--quiet,
+:root[data-theme="dark"] .button--secondary,
+:root[data-theme="dark"] .icon-button {
+  color: var(--ink);
+  background: var(--surface-subtle);
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] .calendar-grid-shell,
+:root[data-theme="dark"] .profile-studio,
+:root[data-theme="dark"] .card,
+:root[data-theme="dark"] .panel {
+  box-shadow: 0 16px 44px rgb(0 0 0 / 24%);
+}
+
+:root[data-theme="dark"] img {
+  filter: brightness(0.94);
+}
+
+@media (max-width: 767px) {
+  .mobile-theme-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 12px 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  body,
+  .sidebar,
+  .mobile-header,
+  .bottom-nav,
+  .card,
+  .panel,
+  input,
+  select,
+  textarea {
+    transition:
+      color 160ms ease,
+      background-color 160ms ease,
+      border-color 160ms ease;
+  }
+}

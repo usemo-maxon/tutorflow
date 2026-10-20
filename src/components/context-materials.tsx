@@ -419,6 +419,7 @@ export function MaterialPicker({
   onOpen,
   actionLabel = "Przypisz",
   assignedLabel = "Przypisany",
+  onCreateLink,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -428,6 +429,7 @@ export function MaterialPicker({
   onOpen: (material: MaterialLibraryItem) => void;
   actionLabel?: string;
   assignedLabel?: string;
+  onCreateLink?: (title: string, url: string) => Promise<boolean>;
 }) {
   const [search, setSearch] = useState("");
   const [type, setType] = useState("");
@@ -435,6 +437,10 @@ export function MaterialPicker({
   const [tag, setTag] = useState("");
   const [subject, setSubject] = useState("");
   const [level, setLevel] = useState("");
+  const [newTitle, setNewTitle] = useState("");
+  const [newUrl, setNewUrl] = useState("");
+  const [createError, setCreateError] = useState("");
+  const [creating, setCreating] = useState(false);
   const params = useMemo(() => {
     const next = new URLSearchParams();
     if (search.trim()) next.set("q", search.trim());
@@ -604,6 +610,56 @@ export function MaterialPicker({
               <EmptyState title="Nie znaleziono materiałów pasujących do filtrów." />
             )}
           </div>
+          {onCreateLink && (
+            <div className="context-material-picker__create">
+              <div>
+                <strong>Nie ma właściwego materiału?</strong>
+                <small>Utwórz link i od razu dołącz go do tej lekcji.</small>
+              </div>
+              <label className="field">
+                <span>Nazwa</span>
+                <input
+                  value={newTitle}
+                  onChange={(event) => setNewTitle(event.target.value)}
+                  placeholder="Np. Ćwiczenia online"
+                />
+              </label>
+              <label className="field">
+                <span>Adres URL</span>
+                <input
+                  type="url"
+                  value={newUrl}
+                  onChange={(event) => setNewUrl(event.target.value)}
+                  placeholder="https://"
+                />
+              </label>
+              {createError && <p role="alert">{createError}</p>}
+              <button
+                className="button button--primary"
+                type="button"
+                disabled={creating || !newTitle.trim() || !newUrl.trim()}
+                onClick={() => {
+                  setCreateError("");
+                  setCreating(true);
+                  void onCreateLink(newTitle, newUrl)
+                    .then((created) => {
+                      if (!created) {
+                        setCreateError(
+                          "Nie udało się utworzyć materiału. Sprawdź nazwę i adres.",
+                        );
+                        return;
+                      }
+                      setNewTitle("");
+                      setNewUrl("");
+                      onOpenChange(false);
+                    })
+                    .finally(() => setCreating(false));
+                }}
+              >
+                {creating ? "Dodawanie…" : "Utwórz i dołącz"}
+              </button>
+            </div>
+          )}
         </Dialog.Content>
       </Dialog.Portal>
     </Dialog.Root>

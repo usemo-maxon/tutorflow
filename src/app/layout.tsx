@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import localFont from "next/font/local";
 import type { ReactNode } from "react";
 import "./globals.css";
 import "./motion-tokens.css";
 import "./redesign.css";
 import "./workspace-motion.css";
+import "./theme.css";
 import { CookieSettings } from "@/components/cookie-settings";
 
 const manrope = localFont({
@@ -37,10 +39,17 @@ export default function RootLayout({
   return (
     <html
       lang="pl"
+      suppressHydrationWarning
       data-scroll-behavior="smooth"
       className={`${manrope.variable} ${literata.variable}`}
     >
-      <body>{children}<CookieSettings /></body>
+      <body>
+        {children}
+        <CookieSettings />
+        <Script id="color-theme" strategy="beforeInteractive">
+          {`try{var t=localStorage.getItem("easy4tutor-color-theme");var d=t==="dark"||(t!=="light"&&matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.dataset.theme=d?"dark":"light";document.documentElement.style.colorScheme=d?"dark":"light"}catch(e){}`}
+        </Script>
+      </body>
     </html>
   );
 }

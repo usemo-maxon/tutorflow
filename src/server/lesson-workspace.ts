@@ -883,6 +883,20 @@ async function mutateRelationalWorkspace(
     if (planError) databaseFailure(planError);
     return;
   }
+  if (action.type === "setPlanItemCompleted") {
+    if (!editable) lifecycleConflict();
+    const { data: updatedItem, error: itemError } = await supabase
+      .from("lesson_plan_items")
+      .update({ completed: action.completed })
+      .eq("workspace_id", workspaceId)
+      .eq("lesson_id", lessonId)
+      .eq("id", action.itemId)
+      .select("id")
+      .maybeSingle();
+    if (itemError) databaseFailure(itemError);
+    if (!updatedItem) notFound();
+    return;
+  }
   if (action.type === "saveNote") {
     if (!editable && lesson.status !== "completed") lifecycleConflict();
     const noteType =
@@ -1501,6 +1515,12 @@ function mutateLocalWorkspace(
       minutes: item.minutes,
       completed: item.completed,
     }));
+  } else if (action.type === "setPlanItemCompleted") {
+    const item = lesson.planItems.find(
+      (candidate) => candidate.id === action.itemId,
+    );
+    if (!item) notFound();
+    item.completed = action.completed;
   } else if (action.type === "updateColor") {
     const targets =
       action.scope !== "single" && lesson.seriesId

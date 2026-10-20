@@ -44,6 +44,7 @@ import {
 import { AppUiProvider, useAppUi } from "./app-ui-context";
 import { GlobalCreateMenu } from "./global-create-menu";
 import { ProductTour } from "./product-tour";
+import { ThemeToggle } from "./theme-toggle";
 import {
   GlobalCommandPalette,
   type GlobalCommandPaletteHandle,
@@ -167,6 +168,9 @@ function ShellBody({
         <main id="main-content" className="admin-root" tabIndex={-1}>
           {children}
         </main>
+        <div className="admin-theme-toggle">
+          <ThemeToggle compact />
+        </div>
         <ToastNotification toast={toast} dismissToast={dismissToast} />
       </div>
     );
@@ -238,6 +242,9 @@ function ShellBody({
           <MessageSquareWarning size={18} aria-hidden="true" />
           <span>Zgłoś problem / Przekaż opinię</span>
         </a>
+        <div className="sidebar-theme">
+          <ThemeToggle />
+        </div>
         <div className="sidebar-account">
           <span className="avatar" aria-hidden="true">
             {teacher.name
@@ -306,6 +313,9 @@ function ShellBody({
               <MessageSquareWarning size={18} aria-hidden="true" />
               Zgłoś problem / Przekaż opinię
             </a>
+            <div className="mobile-theme-toggle">
+              <ThemeToggle />
+            </div>
             <button className="button button--quiet" onClick={logout}>
               <LogOut size={18} />
               Wyloguj się
@@ -329,6 +339,7 @@ function ShellBody({
           <BrandLogo />
         </Link>
         <div className="mobile-header__actions">
+          <ThemeToggle compact />
           <button
             type="button"
             className="icon-button"

@@ -153,6 +153,9 @@ function LessonWorkspaceView({
   const [materialTitle, setMaterialTitle] = useState("");
   const [materialUrl, setMaterialUrl] = useState("");
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [materialPickerTarget, setMaterialPickerTarget] = useState<
+    "lesson" | "homework"
+  >("lesson");
   const [materialPreview, setMaterialPreview] =
     useState<MaterialLibraryItem | null>(null);
   const [color, setColor] = useState(data.lesson.color);
@@ -326,23 +329,38 @@ function LessonWorkspaceView({
   }
 
   async function createMaterial() {
-    if (!materialTitle.trim() || !materialUrl.trim()) {
+    const created = await createAndAttachMaterial(materialTitle, materialUrl);
+    if (created) {
+      setMaterialTitle("");
+      setMaterialUrl("");
+    }
+  }
+
+  async function createAndAttachMaterial(title: string, url: string) {
+    if (!title.trim() || !url.trim()) {
       setError("Podaj nazwę i poprawny adres materiału.");
-      return;
+      return false;
     }
     const result = await run(
       "material",
       {
         type: "createAndAttachMaterial",
-        title: materialTitle,
-        url: materialUrl,
+        title,
+        url,
       },
       "Materiał dodany do zajęć",
     );
-    if (result) {
-      setMaterialTitle("");
-      setMaterialUrl("");
+    if (result && materialPickerTarget === "homework") {
+      const created = result.materials.find(
+        (material) => material.title === title.trim() && material.url === url,
+      );
+      if (created) {
+        setHomeworkMaterialIds((current) => [
+          ...new Set([...current, created.id]),
+        ]);
+      }
     }
+    return Boolean(result);
   }
 
   async function attachMaterial(materialId: string) {
@@ -351,7 +369,14 @@ function LessonWorkspaceView({
       { type: "attachMaterial", materialId },
       "Materiał dołączony do lekcji",
     );
-    if (result) setMaterialPickerOpen(false);
+    if (result) {
+      if (materialPickerTarget === "homework") {
+        setHomeworkMaterialIds((current) => [
+          ...new Set([...current, materialId]),
+        ]);
+      }
+      setMaterialPickerOpen(false);
+    }
   }
 
   async function saveColor() {
@@ -457,11 +482,22 @@ function LessonWorkspaceView({
   }
 
   async function togglePlanItem(id: string) {
-    const next = planItems.map((item) =>
-      item.id === id ? { ...item, completed: !item.completed } : item,
+    const currentItem = planItems.find((item) => item.id === id);
+    if (!currentItem) return;
+    const completed = !currentItem.completed;
+    const previous = planItems;
+    const next = previous.map((item) =>
+      item.id === id ? { ...item, completed } : item,
     );
     setPlanItems(next);
-    await savePlan(next);
+    const result = await run(
+      `plan-item:${id}`,
+      { type: "setPlanItemCompleted", itemId: id, completed },
+      completed
+        ? "Punkt oznaczony jako zrobiony"
+        : "Punkt oznaczony jako otwarty",
+    );
+    if (!result) setPlanItems(previous);
   }
 
   const totalMinutes = plannedMinutes(planItems);
@@ -952,6 +988,10 @@ function LessonWorkspaceView({
               onMaterialIdsChange={setHomeworkMaterialIds}
               onFeedbackChange={setHomeworkFeedback}
               onUpdateRecipient={updateHomeworkRecipient}
+              onAddMaterial={() => {
+                setMaterialPickerTarget("homework");
+                setMaterialPickerOpen(true);
+              }}
             />
           </WorkspaceSection>
 
@@ -1034,7 +1074,10 @@ function LessonWorkspaceView({
                     <button
                       className="button button--secondary"
                       type="button"
-                      onClick={() => setMaterialPickerOpen(true)}
+                      onClick={() => {
+                        setMaterialPickerTarget("lesson");
+                        setMaterialPickerOpen(true);
+                      }}
                     >
                       <Plus size={16} /> Dodaj materiał
                     </button>
@@ -1329,6 +1372,7 @@ function LessonWorkspaceView({
         onOpen={setMaterialPreview}
         actionLabel="Dołącz"
         assignedLabel="W tej lekcji"
+        onCreateLink={createAndAttachMaterial}
       />
       <MaterialPreview
         material={materialPreview}
@@ -1920,6 +1964,7 @@ function HomeworkAssignmentControls({
   onMaterialIdsChange,
   onFeedbackChange,
   onUpdateRecipient,
+  onAddMaterial,
 }: {
   data: LessonWorkspaceData;
   mutationPending: boolean;
@@ -1933,6 +1978,7 @@ function HomeworkAssignmentControls({
     studentId: string,
     status: HomeworkStatus,
   ) => Promise<void>;
+  onAddMaterial: () => void;
 }) {
   const materials = [
     ...new Map(
@@ -1971,6 +2017,11 @@ function HomeworkAssignmentControls({
       <fieldset className="homework-material-picker">
         <legend>Materiały (opcjonalnie)</legend>
         <p>Odwołania pozostają ważne także po archiwizacji materiału.</p>
+        {!materials.length && (
+          <p className="lesson-quiet-empty">
+            Nie masz jeszcze materiałów do wyboru.
+          </p>
+        )}
         <div>
           {materials.map((material) => (
             <label key={material.id}>
@@ -1992,6 +2043,14 @@ function HomeworkAssignmentControls({
             </label>
           ))}
         </div>
+        <button
+          className="button button--secondary"
+          type="button"
+          disabled={mutationPending || data.teacher.readOnly}
+          onClick={onAddMaterial}
+        >
+          <Plus size={16} /> Dodaj materiał
+        </button>
       </fieldset>
       {data.homework?.recipients?.length ? (
         <div className="homework-status-list" aria-label="Statusy uczniów">

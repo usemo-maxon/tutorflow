@@ -15801,6 +15801,28 @@ summary {
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.context-material-picker__create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+.context-material-picker__create > div:first-child {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 2px;
+}
+.context-material-picker__create small { color: var(--muted); }
+.context-material-picker__create > p {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--error);
+  font-size: .8rem;
+}
 .context-material-preview {
   display: grid;
   gap: 16px;
@@ -15864,6 +15886,9 @@ summary {
   .context-material-picker__actions {
     justify-content: flex-end;
   }
+  .context-material-picker__create { grid-template-columns: 1fr; }
+  .context-material-picker__create > div:first-child,
+  .context-material-picker__create > p { grid-column: auto; }
 }
 /* D3.7: canonical homework workflow */
 .homework-recipient-picker,
@@ -15906,6 +15931,8 @@ summary {
   background: var(--surface);
   font-size: 0.82rem;
 }
+
+.homework-material-picker > .button { margin-top: .65rem; }
 
 .homework-status-list {
   display: grid;

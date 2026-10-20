@@ -202,6 +202,11 @@ export const LessonWorkspaceActionSchema = z.discriminatedUnion("type", [
   }),
   HomeworkRecipientUpdateSchema,
   z.object({ type: z.literal("deleteHomework") }),
+  z.object({
+    type: z.literal("setPlanItemCompleted"),
+    itemId: entityId,
+    completed: z.boolean(),
+  }),
   z.object({ type: z.literal("attachMaterial"), materialId: entityId }),
   z.object({
     type: z.literal("createAndAttachMaterial"),

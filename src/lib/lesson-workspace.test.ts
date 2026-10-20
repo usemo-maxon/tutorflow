@@ -30,6 +30,13 @@ describe("LessonWorkspaceActionSchema", () => {
     ).toBe(true);
     expect(
       LessonWorkspaceActionSchema.safeParse({
+        type: "setPlanItemCompleted",
+        itemId: "10000000-0000-4000-8000-000000000001",
+        completed: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      LessonWorkspaceActionSchema.safeParse({
         type: "markAttendance",
         studentId: "10000000-0000-4000-8000-000000000002",
         status: "late",
