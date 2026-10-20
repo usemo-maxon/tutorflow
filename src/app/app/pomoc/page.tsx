@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { TourStartButton } from "@/components/tour-start-button";
 import { currentTeacher } from "@/server/auth";
+import { isSupabaseConfigured } from "@/server/env";
 import { createSupabaseServerClient } from "@/server/supabase";
 
 export default async function SupportPage({
@@ -12,12 +13,17 @@ export default async function SupportPage({
   const teacher = await currentTeacher();
   if (!teacher) redirect("/logowanie");
   const params = await searchParams;
-  const supabase = await createSupabaseServerClient();
-  const { data: tickets } = await supabase
-    .from("support_tickets")
-    .select("id,subject,category,priority,status,created_at,updated_at")
-    .order("updated_at", { ascending: false })
-    .limit(30);
+  const tickets = isSupabaseConfigured()
+    ? (
+        await (
+          await createSupabaseServerClient()
+        )
+          .from("support_tickets")
+          .select("id,subject,category,priority,status,created_at,updated_at")
+          .order("updated_at", { ascending: false })
+          .limit(30)
+      ).data
+    : [];
 
   return (
     <div className="page-enter">

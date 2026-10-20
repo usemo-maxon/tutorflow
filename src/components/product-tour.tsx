@@ -40,6 +40,8 @@ export function ProductTour({ teacher }: { teacher: Teacher }) {
   const [mobile, setMobile] = useState(false);
   const previousFocus = useRef<HTMLElement | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const completionRef = useRef<HTMLElement | null>(null);
+  const completionPrimaryRef = useRef<HTMLButtonElement | null>(null);
 
   const persist = useCallback(async (next: ProductTourState) => {
     try {
@@ -133,6 +135,38 @@ export function ProductTour({ teacher }: { teacher: Teacher }) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [active, closeTour]);
+
+  useEffect(() => {
+    if (!completeOpen) return;
+    completionPrimaryRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setCompleteOpen(false);
+        window.setTimeout(
+          () => document.getElementById("main-content")?.focus(),
+          0,
+        );
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const controls = completionRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+      );
+      if (!controls?.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [completeOpen]);
 
   useEffect(() => {
     if (!active) return;
@@ -249,30 +283,33 @@ export function ProductTour({ teacher }: { teacher: Teacher }) {
         </aside>
       )}
 
-      {active && (
-        <TourStepOverlay
-          state={state}
-          targetRect={targetRect}
-          targetMissing={targetMissing}
-          onBack={() => {
-            setTargetRect(null);
-            setTargetMissing(false);
-            apply({ type: "back" });
-          }}
-          onNext={() => {
-            setTargetRect(null);
-            setTargetMissing(false);
-            apply({ type: "next" });
-          }}
-          onSkip={() => closeTour("skip")}
-          onComplete={() => closeTour("complete")}
-          headingRef={headingRef}
-        />
-      )}
+      {active &&
+        MAIN_TOUR_STEPS[state.currentStep]?.route === pathname &&
+        (targetRect || targetMissing) && (
+          <TourStepOverlay
+            state={state}
+            targetRect={targetRect}
+            targetMissing={targetMissing}
+            onBack={() => {
+              setTargetRect(null);
+              setTargetMissing(false);
+              apply({ type: "back" });
+            }}
+            onNext={() => {
+              setTargetRect(null);
+              setTargetMissing(false);
+              apply({ type: "next" });
+            }}
+            onSkip={() => closeTour("skip")}
+            onComplete={() => closeTour("complete")}
+            headingRef={headingRef}
+          />
+        )}
 
       {completeOpen && (
         <div className="tour-complete-backdrop" role="presentation">
           <section
+            ref={completionRef}
             className="tour-complete"
             role="dialog"
             aria-modal="true"
@@ -290,6 +327,7 @@ export function ProductTour({ teacher }: { teacher: Teacher }) {
             </p>
             <div>
               <button
+                ref={completionPrimaryRef}
                 className="button button--primary"
                 onClick={() => {
                   setCompleteOpen(false);
@@ -300,7 +338,13 @@ export function ProductTour({ teacher }: { teacher: Teacher }) {
               </button>
               <button
                 className="button button--secondary"
-                onClick={() => setCompleteOpen(false)}
+                onClick={() => {
+                  setCompleteOpen(false);
+                  window.setTimeout(
+                    () => document.getElementById("main-content")?.focus(),
+                    0,
+                  );
+                }}
               >
                 Odkrywaj samodzielnie
               </button>

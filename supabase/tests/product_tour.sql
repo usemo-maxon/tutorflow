@@ -1,5 +1,5 @@
 begin;
-select plan(6);
+select plan(7);
 
 select has_table('public', 'product_tour_states', 'product tour state is durable');
 
