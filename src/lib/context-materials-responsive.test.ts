@@ -22,4 +22,14 @@ describe("Student and Group materials UI", () => {
     expect(css).toContain("@media (max-width: 700px)");
     expect(css).toContain("max-height: 92dvh");
   });
+
+  it("keeps Student 360 resource and homework panels comfortably inset", () => {
+    expect(css).toMatch(/\.student-homework\s*\{[^}]*padding:\s*24px;/s);
+    expect(css).toMatch(
+      /\.student-resource-overview\s*\{[^}]*padding:\s*24px;/s,
+    );
+    expect(css).toMatch(
+      /\.student-resource-overview,\s*\.student-homework\s*\{[^}]*padding:\s*18px 14px;/s,
+    );
+  });
 });

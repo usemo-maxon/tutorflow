@@ -15,7 +15,7 @@ const notStarted: ProductTourState = {
 };
 
 describe("product tour", () => {
-  it("shows the first-time invitation only after setup on Dzisiaj", () => {
+  it("greets a new user on the setup page and returns after setup on Dzisiaj", () => {
     expect(
       shouldShowTourInvitation({
         pathname: "/app/dzisiaj",
@@ -26,6 +26,13 @@ describe("product tour", () => {
     expect(
       shouldShowTourInvitation({
         pathname: "/app/start",
+        onboardingCompleted: false,
+        state: notStarted,
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowTourInvitation({
+        pathname: "/app/dzisiaj",
         onboardingCompleted: false,
         state: notStarted,
       }),

@@ -15936,12 +15936,14 @@ summary {
 .student-homework {
   display: grid;
   gap: 1rem;
+  padding: 24px;
 }
 
 /* D3.8 — compact derived resource view on Student 360 */
 .student-resource-overview {
   display: grid;
   gap: 1rem;
+  padding: 24px;
 }
 
 .student-resource-overview__grid {
@@ -16022,6 +16024,11 @@ summary {
 }
 
 @media (max-width: 720px) {
+  .student-resource-overview,
+  .student-homework {
+    padding: 18px 14px;
+  }
+
   .student-resource-overview__grid {
     grid-template-columns: 1fr;
   }

@@ -24,53 +24,53 @@ export interface ProductTourStep {
 export const MAIN_TOUR_STEPS: ProductTourStep[] = [
   {
     route: "/app/dzisiaj",
-    title: "Twój dzień w jednym miejscu",
+    title: "Najpierw rytm, potem klikologia",
     description:
-      "Tutaj zobaczysz dzisiejsze lekcje, najbliższe spotkania i ważne zadania do wykonania.",
+      "Dodajesz ucznia, planujesz lekcję, a po zajęciach zapisujesz krótkie podsumowanie i zadanie. Ekran Dzisiaj pilnuje, co jest teraz i co dalej.",
     desktopTarget: "dashboard-overview",
   },
   {
     route: "/app/dzisiaj",
-    title: "Wszystkie narzędzia pod ręką",
+    title: "Tu się nie zgubisz",
     description:
-      "Z nawigacji przejdziesz do kalendarza, uczniów, materiałów, rezerwacji i płatności.",
+      "Nawigacja prowadzi do kalendarza, uczniów, materiałów, rezerwacji, płatności i statystyk. Gdyby co — Pomoc też jest pod ręką.",
     desktopTarget: "desktop-navigation",
     mobileTarget: "mobile-navigation",
   },
   {
     route: "/app/dzisiaj",
-    title: "Dodawaj wszystko jednym kliknięciem",
+    title: "Plus robi porządek",
     description:
-      "To menu pozwala dodawać lekcje, uczniów, grupy, materiały, płatności i pakiety. Przewodnik nie utworzy żadnych danych.",
+      "Z jednego menu dodasz lekcję, ucznia, grupę, materiał, płatność lub pakiet. Sam przewodnik niczego nie utworzy — tylko pokazuje palcem 🙂",
     desktopTarget: "desktop-global-create",
     mobileTarget: "mobile-global-create",
   },
   {
     route: "/app/kalendarz",
-    title: "Planuj lekcje bez chaosu",
+    title: "Kalendarz bez Tetrisa",
     description:
-      "Kalendarz łączy lekcje indywidualne i grupowe, cykle oraz dostępność. Synchronizacja z Google Calendar jest opcjonalna i zależy od planu.",
+      "Tutaj planujesz lekcje indywidualne, grupowe i cykle oraz ustawiasz dostępność. Synchronizacja z Google Calendar jest opcjonalna i zależy od planu.",
     desktopTarget: "calendar-overview",
   },
   {
     route: "/app/uczniowie",
-    title: "Poznaj historię każdego ucznia",
+    title: "Każdy uczeń ma własną historię",
     description:
-      "Profile uczniów porządkują cele, grupy, historię lekcji i najważniejszy kontekst nauki.",
+      "W profilu ucznia znajdziesz cel, grupy, obecność, materiały, zadania i historię lekcji. Kontekst rośnie po każdym zapisanym podsumowaniu.",
     desktopTarget: "students-overview",
   },
   {
     route: "/app/materialy",
-    title: "Materiały i przygotowanie lekcji",
+    title: "Materiały gotowe do ponownego użycia",
     description:
-      "W bibliotece zbierzesz materiały, szablony i pomoce potrzebne do przygotowania kolejnych zajęć.",
+      "Biblioteka zbiera materiały, foldery i szablony. Przypisujesz je do ucznia, grupy lub lekcji, zamiast za każdym razem szukać od zera.",
     desktopTarget: "materials-overview",
   },
   {
     route: "/app/rezerwacje",
-    title: "Pozwól uczniom rezerwować terminy",
+    title: "Rezerwacje bez ping-ponga",
     description:
-      "Tutaj trafiają zapisy z Twojej strony publicznej. Link rezerwacyjny i dostępne opcje zależą od konfiguracji profilu oraz planu.",
+      "Tutaj trafiają zgłoszenia ze strony publicznej; Ty nadal decydujesz, co z nimi zrobić. Link i dostępne opcje zależą od konfiguracji profilu oraz planu.",
     desktopTarget: "bookings-overview",
   },
 ];
@@ -85,8 +85,8 @@ export function shouldShowTourInvitation(input: {
   state: ProductTourState;
 }) {
   return (
-    input.pathname === "/app/dzisiaj" &&
-    input.onboardingCompleted &&
+    (input.pathname === "/app/start" ||
+      (input.pathname === "/app/dzisiaj" && input.onboardingCompleted)) &&
     input.state.version === PRODUCT_TOUR_VERSION &&
     input.state.status === "not_started"
   );

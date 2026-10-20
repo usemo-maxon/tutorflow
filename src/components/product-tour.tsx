@@ -241,6 +241,7 @@ export function ProductTour({ teacher }: { teacher: Teacher }) {
     onboardingCompleted: Boolean(teacher.onboardingCompletedAt),
     state,
   });
+  const onboardingCompleted = Boolean(teacher.onboardingCompletedAt);
 
   return createPortal(
     <>
@@ -257,10 +258,11 @@ export function ProductTour({ teacher }: { teacher: Teacher }) {
             <Compass size={20} />
           </span>
           <div>
-            <h2 id="tour-invite-title">Poznaj Easy4Tutor</h2>
+            <h2 id="tour-invite-title">Cześć! Jestem Twoim przewodnikiem 🙂</h2>
             <p>
-              Zobacz, gdzie znajdziesz najważniejsze funkcje i jak zacząć z nich
-              korzystać. Krótka wycieczka zajmie około 2 minut.
+              W 2 minuty pokażę Ci rytm pracy w Easy4Tutor i najważniejsze
+              miejsca. Spokojnie — podczas wycieczki niczego nie zapiszę ani nie
+              zepsuję.
             </p>
           </div>
           <div className="tour-invitation__actions">
@@ -322,8 +324,9 @@ export function ProductTour({ teacher }: { teacher: Teacher }) {
               Gotowe! Znasz już podstawy Easy4Tutor.
             </h2>
             <p>
-              Możesz teraz spokojnie odkrywać aplikację. Przewodnik uruchomisz
-              ponownie w sekcji Pomoc.
+              {onboardingCompleted
+                ? "Możesz teraz spokojnie odkrywać aplikację. Przewodnik uruchomisz ponownie w sekcji Pomoc."
+                : "Teraz wróć do pierwszych kroków i przygotuj swój prawdziwy plan pracy. Przewodnik zawsze znajdziesz też w sekcji Pomoc."}
             </p>
             <div>
               <button
@@ -331,10 +334,14 @@ export function ProductTour({ teacher }: { teacher: Teacher }) {
                 className="button button--primary"
                 onClick={() => {
                   setCompleteOpen(false);
-                  router.push("/app/dzisiaj");
+                  router.push(
+                    onboardingCompleted ? "/app/dzisiaj" : "/app/start",
+                  );
                 }}
               >
-                Przejdź do Dzisiaj
+                {onboardingCompleted
+                  ? "Przejdź do Dzisiaj"
+                  : "Wróć do pierwszych kroków"}
               </button>
               <button
                 className="button button--secondary"
