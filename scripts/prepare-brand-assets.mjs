@@ -19,6 +19,49 @@ const symbol = await sharp(source)
   .png()
   .toBuffer();
 await sharp(symbol).png().toFile("public/brand/easy4tutor-symbol.png");
+
+// The supplied dark-mode artwork is already composited on the product's navy
+// background. Key out that uniform background and crop to the exact artwork;
+// this preserves the approved gradient, typography and spacing pixel-for-pixel.
+const darkLogoSource = "public/brand/easy4tutor-logo-dark-source.png";
+if (existsSync(darkLogoSource)) {
+  const { data, info } = await sharp(darkLogoSource)
+    .extract({ left: 113, top: 323, width: 1465, height: 283 })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const rgba = Buffer.alloc(info.width * info.height * 4);
+
+  for (let y = 0; y < info.height; y += 1) {
+    for (let x = 0; x < info.width; x += 1) {
+      const sourceOffset = (y * info.width + x) * info.channels;
+      const targetOffset = (y * info.width + x) * 4;
+      const red = data[sourceOffset];
+      const green = data[sourceOffset + 1];
+      const blue = data[sourceOffset + 2];
+      const brightness = Math.max(red, green, blue);
+
+      rgba[targetOffset] = red;
+      rgba[targetOffset + 1] = green;
+      rgba[targetOffset + 2] = blue;
+      rgba[targetOffset + 3] = Math.max(
+        0,
+        Math.min(255, Math.round(((brightness - 40) / 30) * 255)),
+      );
+    }
+  }
+
+  await sharp(rgba, {
+    raw: {
+      width: info.width,
+      height: info.height,
+      channels: 4,
+    },
+  })
+    .png()
+    .toFile("public/brand/easy4tutor-logo-dark-transparent.png");
+}
+
 for (const [path, size] of [
   ["src/app/icon.png", 64],
   ["src/app/apple-icon.png", 180],
