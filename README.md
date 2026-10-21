@@ -4,6 +4,17 @@ easy4tutor is a Next.js 16 App Router application for private teachers. The prod
 
 Local development can use the existing file-backed demo store. It is deliberately disabled in `NODE_ENV=production`; production fails closed unless Supabase is configured.
 
+To start a persistent, isolated local demo even when `.env.local` contains
+Supabase credentials, run:
+
+```bash
+npm run dev:demo
+```
+
+The command stores synthetic demo data under `.tutorflow/demo`, clears Supabase
+credentials only for that development process, and keeps production behavior
+unchanged.
+
 ## Development checks
 
 ```bash

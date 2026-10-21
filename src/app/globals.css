@@ -8960,8 +8960,8 @@ h3 {
 }
 .lesson-plan-empty {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: stretch;
+  flex-direction: column;
   gap: 18px;
   padding: 18px;
   background: color-mix(in srgb, var(--lesson-tint, white) 76%, white);
@@ -8981,7 +8981,7 @@ h3 {
 }
 .lesson-plan-empty > div:last-child {
   display: flex;
-  flex-shrink: 0;
+  flex-wrap: wrap;
   gap: 7px;
 }
 .lesson-plan-duration {

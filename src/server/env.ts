@@ -71,6 +71,16 @@ export function siteUrl(): string {
 }
 
 export function isSupabaseConfigured(): boolean {
+  // An explicit local data directory selects the file-backed development
+  // backend even when .env.local also contains Supabase credentials. This
+  // keeps demo sessions, repositories and authorization on the same backend.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    Boolean(process.env.TUTORFLOW_DATA_DIR?.trim())
+  ) {
+    return false;
+  }
+
   return Boolean(
     (process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL) &&
     (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
