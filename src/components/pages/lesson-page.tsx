@@ -61,10 +61,7 @@ import { useAppUi } from "../app-ui-context";
 import { PageLoading } from "../ui/loading";
 import { LessonStatusBadge } from "../ui/status-badge";
 import { CalendarColorPicker } from "../calendar-color-picker";
-import {
-  getCalendarEventSurface,
-  getCalendarTint,
-} from "@/lib/calendar-colors";
+import { getCalendarEventSurface } from "@/lib/calendar-colors";
 import type { RecurrenceMutationScope } from "@/lib/domain";
 import { difficultyLabel } from "@/lib/lesson-completion";
 import { LessonCompletionDialog } from "../lesson-completion-dialog";
@@ -509,7 +506,6 @@ function LessonWorkspaceView({
       style={
         {
           "--lesson-color": lesson.color,
-          "--lesson-tint": getCalendarTint(lesson.color),
           "--lesson-event-surface": getCalendarEventSurface(lesson.color),
         } as CSSProperties
       }

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CALENDAR_COLOR,
+  calendarHexToHsl,
+  calendarHslToHex,
   getCalendarEventSurface,
   getCalendarTint,
   getReadableForeground,
@@ -24,6 +26,18 @@ describe("calendar colors", () => {
   it("selects a readable foreground for light and dark custom colors", () => {
     expect(getReadableForeground("#FFF000")).toBe("#000000");
     expect(getReadableForeground("#10152B")).toBe("#FFFFFF");
+  });
+
+  it("converts custom colors between HEX and the in-app HSL controls", () => {
+    expect(calendarHexToHsl("#FF0000")).toEqual({
+      hue: 0,
+      saturation: 100,
+      lightness: 50,
+    });
+    expect(calendarHslToHex({ hue: 210, saturation: 100, lightness: 50 })).toBe(
+      "#0080FF",
+    );
+    expect(calendarHslToHex(calendarHexToHsl("#6F8FEF"))).toBe("#6F8FEF");
   });
 
   it.each(["#FFFFFF", "#050505", "#FF00FF"])(

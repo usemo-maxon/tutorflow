@@ -6898,20 +6898,122 @@ h3 {
 .calendar-color-custom[data-selected] {
   box-shadow: 0 0 0 2px var(--ink);
 }
+.calendar-color-custom-wrap {
+  position: relative;
+}
 .calendar-color-custom__preview {
   width: 16px;
   height: 16px;
-  border: 1px solid rgb(23 33 30 / 24%);
+  border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
   border-radius: 50%;
 }
-.calendar-color-native {
+.calendar-color-popover {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  white-space: nowrap;
+  right: 0;
+  z-index: 50;
+  top: calc(100% + 10px);
+  display: grid;
+  width: min(320px, calc(100vw - 40px));
+  gap: 14px;
+  padding: 16px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-panel, 0 18px 48px rgb(23 33 30 / 18%));
+}
+.calendar-color-popover__header,
+.calendar-color-popover__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.calendar-color-popover__header > div {
+  display: grid;
+  gap: 2px;
+}
+.calendar-color-popover__header small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.calendar-color-popover__header .icon-button {
+  width: 32px;
+  min-height: 32px;
+}
+.calendar-color-popover__preview {
+  height: 58px;
+  background: var(--picker-color);
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  border-radius: 10px;
+}
+.calendar-color-slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 5px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.calendar-color-slider output {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.calendar-color-slider input[type="range"] {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  accent-color: var(--picker-color);
+}
+.calendar-color-slider--hue input[type="range"] {
+  accent-color: hsl(var(--picker-hue) 85% 50%);
+}
+.calendar-color-hex {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+}
+.calendar-color-hex input {
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 10px;
+  color: var(--ink);
+  background: var(--surface-subtle);
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.calendar-color-hex input[aria-invalid="true"] {
+  border-color: var(--error);
+}
+.calendar-color-popover__actions {
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+.calendar-color-popover__actions .button {
+  min-height: 36px;
+}
+@media (max-width: 480px) {
+  .calendar-color-popover {
+    position: fixed;
+    top: 50%;
+    right: 16px;
+    left: 16px;
+    z-index: 1000;
+    width: auto;
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    transform: translateY(-50%);
+  }
 }
 .calendar-range-selection,
 .calendar-drag-preview {
@@ -8239,6 +8341,11 @@ h3 {
 
 /* Stage 3 — focused lesson workspace */
 .lesson-workspace-page {
+  --lesson-accent-surface: color-mix(
+    in srgb,
+    var(--lesson-color, var(--brand-primary)) 12%,
+    var(--surface)
+  );
   max-width: 1180px;
   margin-inline: auto;
   padding-bottom: 56px;
@@ -8267,7 +8374,7 @@ h3 {
   align-items: end;
   margin-inline: -24px;
   padding: 22px 24px 28px;
-  background: var(--lesson-tint, transparent);
+  background: var(--lesson-accent-surface);
   border-bottom: 1px solid var(--border-strong);
   border-left: 4px solid var(--lesson-color, var(--brand-primary));
   border-radius: var(--radius-panel) var(--radius-panel) 0 0;
@@ -8336,7 +8443,11 @@ h3 {
   align-items: center;
   margin-top: 18px;
   padding: 14px 16px;
-  background: color-mix(in srgb, var(--lesson-tint, white) 72%, white);
+  background: color-mix(
+    in srgb,
+    var(--lesson-accent-surface) 72%,
+    var(--surface)
+  );
   border: 1px solid
     color-mix(in srgb, var(--lesson-color, var(--border)) 28%, var(--border));
   border-radius: var(--radius-control);
@@ -8390,8 +8501,8 @@ h3 {
   overflow: hidden;
   background: linear-gradient(
     110deg,
-    color-mix(in srgb, var(--lesson-tint, white) 58%, white),
-    white 58%
+    color-mix(in srgb, var(--lesson-accent-surface) 58%, var(--surface)),
+    var(--surface) 58%
   );
   border: 1px solid
     color-mix(in srgb, var(--lesson-color, var(--border)) 24%, var(--border));
@@ -8520,11 +8631,7 @@ h3 {
   font-size: 11px;
 }
 .lesson-briefing__field--prominent {
-  background: color-mix(
-    in srgb,
-    var(--lesson-tint, transparent) 68%,
-    transparent
-  );
+  background: color-mix(in srgb, var(--lesson-accent-surface) 68%, transparent);
 }
 .lesson-briefing__difficulty {
   justify-self: start;
@@ -8678,7 +8785,11 @@ h3 {
 .lesson-preparation-resource-list article > div:nth-child(2) > span em {
   padding: 0.13rem 0.38rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--lesson-tint, white) 62%, white);
+  background: color-mix(
+    in srgb,
+    var(--lesson-accent-surface) 62%,
+    var(--surface)
+  );
   color: var(--muted);
   font-size: 0.7rem;
   font-style: normal;
@@ -8870,7 +8981,7 @@ h3 {
   padding: 18px 18px 38px 76px;
   background: linear-gradient(
     135deg,
-    var(--lesson-tint, transparent),
+    var(--lesson-accent-surface),
     transparent 74%
   );
   border-radius: var(--radius-panel);
@@ -8964,7 +9075,11 @@ h3 {
   flex-direction: column;
   gap: 18px;
   padding: 18px;
-  background: color-mix(in srgb, var(--lesson-tint, white) 76%, white);
+  background: color-mix(
+    in srgb,
+    var(--lesson-accent-surface) 76%,
+    var(--surface)
+  );
   border: 1px dashed
     color-mix(in srgb, var(--lesson-color, var(--border)) 42%, var(--border));
   border-radius: var(--radius-control);
